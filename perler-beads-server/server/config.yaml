@@ -1,0 +1,59 @@
+# Perler Beads Server 配置文件
+
+# 系统配置
+system:
+  env: develop  # develop | production
+  addr: 8012
+  db-type: mysql
+
+# JWT 配置
+jwt:
+  signing-key: "perler-beads-secret-key-2026"
+  expires-time: 7d
+  buffer-time: 1d
+  issuer: "perler-beads"
+
+# MySQL 配置 (本地 XAMPP)
+mysql:
+  path: "127.0.0.1"
+  port: "3306"
+  config: "charset=utf8mb4&parseTime=True&loc=Local"
+  db-name: "perler_beads"
+  username: "root"
+  password: "123456"
+  max-idle-conns: 10
+  max-open-conns: 100
+  log-mode: "info"
+  log-zap: false
+
+# Redis 配置
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 1
+
+# 日志配置
+zap:
+  level: info
+  format: console
+  prefix: "[PERLER]"
+  director: log
+  show-line: true
+  encode-level: LowercaseColorLevelEncoder
+  stacktrace-key: stacktrace
+  log-in-console: true
+
+# 腾讯云 COS 配置
+tencent-cos:
+  bucket: "perler-beads-1251621644"
+  region: "ap-guangzhou"
+  secret-id: "AKIDYyzrVwZkmcKrAG9qMfniQvD1e6YnpiPt"
+  secret-key: "OJ7i7cuzHNF6k9NOsCLJ4e3FDyWr57yb"
+  base-url: "https://perler-beads-1251621644.cos.ap-guangzhou.myqcloud.com"
+
+# 微信配置
+wechat:
+  app-id: ""
+  app-secret: ""
+  mch-id: ""
+  api-key: ""
