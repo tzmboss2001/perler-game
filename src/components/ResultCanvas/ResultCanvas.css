@@ -1,0 +1,13 @@
+.result-canvas-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 0.75rem 0 1rem;
+  overflow: hidden;
+}
+
+.result-canvas {
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  max-width: 100%;
+  height: auto;
+}

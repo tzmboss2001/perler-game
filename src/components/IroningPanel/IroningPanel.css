@@ -1,0 +1,186 @@
+.ironing-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #1a1a2e;
+  color: white;
+  padding: 1rem;
+  gap: 1rem;
+  overflow-y: auto;
+}
+
+.ironing-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ironing-header h3 {
+  flex: 1;
+  text-align: center;
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.ironing-back-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.7);
+  padding: 0.4rem 0.8rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.ironing-back-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 温度控制 */
+.temp-control {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.temp-label-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.temp-value {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.temp-slider {
+  width: 100%;
+  height: 8px;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.temp-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  border: 3px solid #667eea;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.temp-slider:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.temp-marks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  opacity: 0.4;
+  margin-top: 0.25rem;
+}
+
+/* 时间显示 */
+.time-display {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.time-value {
+  font-weight: 700;
+  font-size: 1.2rem;
+  min-width: 50px;
+}
+
+.time-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.time-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+
+/* 轨迹区域 */
+.trajectory-area {
+  display: flex;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+}
+
+.trajectory-canvas {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.75rem;
+  cursor: crosshair;
+  touch-action: none;
+  max-width: 100%;
+  max-height: 280px;
+  aspect-ratio: 1;
+}
+
+/* 操作按钮 */
+.ironing-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.start-ironing-btn {
+  flex: 1;
+  padding: 0.9rem;
+  border: none;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #ff9a56, #ff6b6b);
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.15s;
+}
+
+.start-ironing-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.start-ironing-btn:active {
+  transform: translateY(0);
+}
+
+.finish-ironing-btn {
+  flex: 1;
+  padding: 0.9rem;
+  border: 2px solid #ff6b6b;
+  border-radius: 0.75rem;
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff9a9a;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { border-color: #ff6b6b; }
+  50% { border-color: #ffaa56; }
+}

@@ -1,0 +1,8 @@
+.game-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #16213e;
+  color: white;
+  overflow: hidden;
+}
