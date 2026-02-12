@@ -380,7 +380,7 @@ function ContourSliceDetailModal({
       >
         <div style={modalStyles.header}>
           <h3 style={{ margin: 0, color: '#fff', fontSize: '16px' }}>
-            {slice.id} (第{slice.layerIndex + 1}层)
+            {slice.id} (第{slice.id.replace('Layer-', '')}层)
           </h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>
