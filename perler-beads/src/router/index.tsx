@@ -17,6 +17,15 @@ const UserAgreementPage = lazy(() => import('../pages/mobile/UserAgreementPage')
 const FeedbackPage = lazy(() => import('../pages/mobile/FeedbackPage'));
 const TemplateDetailPage = lazy(() => import('../pages/mobile/TemplateDetailPage'));
 
+// 3D功能页面
+const Home3DPage = lazy(() => import('../pages/mobile/3d/Home3DPage'));
+const Upload3DPage = lazy(() => import('../pages/mobile/3d/Upload3DPage'));
+const Preview3DPage = lazy(() => import('../pages/mobile/3d/Preview3DPage'));
+const TemplateTestPage = lazy(() => import('../pages/mobile/3d/TemplateTestPage'));
+const TemplateFlowPage = lazy(() => import('../pages/mobile/3d/TemplateFlowPage'));
+const DepthTo3DPage = lazy(() => import('../pages/mobile/3d/DepthTo3DPage'));
+const ModelTo3DPage = lazy(() => import('../pages/mobile/3d/ModelTo3DPage'));
+
 // Loading fallback component
 const LoadingFallback: React.FC = () => (
   <div
@@ -94,6 +103,15 @@ const AppRouter: React.FC = () => {
 
           {/* Template detail page (模板详情页) */}
           <Route path="/mobile/template/:id" element={<TemplateDetailPage />} />
+
+          {/* 3D功能页面 */}
+          <Route path="/mobile/3d" element={<Home3DPage />} />
+          <Route path="/mobile/3d/upload" element={<Upload3DPage />} />
+          <Route path="/mobile/3d/preview" element={<Preview3DPage />} />
+          <Route path="/mobile/3d/template-test" element={<TemplateTestPage />} />
+          <Route path="/mobile/3d/template-flow" element={<TemplateFlowPage />} />
+          <Route path="/mobile/3d/depth-to-3d" element={<DepthTo3DPage />} />
+          <Route path="/mobile/3d/model-to-slices" element={<ModelTo3DPage />} />
 
           {/* Catch all: redirect to root */}
           <Route path="*" element={<Navigate to="/" replace />} />

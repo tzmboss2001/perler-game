@@ -1,0 +1,120 @@
+{
+  "id": "animal_bear_001",
+  "name": "泰迪熊-站立",
+  "category": "animal",
+  "resolution": { "x": 24, "y": 24, "z": 8 },
+  "difficulty": "basic",
+  "style": "pixel_round",
+  "description": "可爱的站立泰迪熊，大头圆身短四肢",
+
+  "shapes": [
+    {
+      "type": "ellipsoid",
+      "name": "head",
+      "center": [12, 17, 5],
+      "radii": [5, 5, 3],
+      "slot": "head"
+    },
+    {
+      "type": "sphere",
+      "name": "left_ear",
+      "center": [7, 21, 6],
+      "radius": 2,
+      "slot": "ear"
+    },
+    {
+      "type": "sphere",
+      "name": "right_ear",
+      "center": [17, 21, 6],
+      "radius": 2,
+      "slot": "ear"
+    },
+    {
+      "type": "ellipsoid",
+      "name": "body",
+      "center": [12, 9, 4],
+      "radii": [5, 6, 3],
+      "slot": "body"
+    },
+    {
+      "type": "ellipsoid",
+      "name": "belly",
+      "center": [12, 8, 5],
+      "radii": [3, 4, 2],
+      "slot": "belly"
+    },
+    {
+      "type": "ellipsoid",
+      "name": "left_arm",
+      "center": [5, 10, 4],
+      "radii": [2, 4, 2],
+      "slot": "arm"
+    },
+    {
+      "type": "ellipsoid",
+      "name": "right_arm",
+      "center": [19, 10, 4],
+      "radii": [2, 4, 2],
+      "slot": "arm"
+    },
+    {
+      "type": "ellipsoid",
+      "name": "left_leg",
+      "center": [9, 3, 2],
+      "radii": [2, 3, 2],
+      "slot": "leg"
+    },
+    {
+      "type": "ellipsoid",
+      "name": "right_leg",
+      "center": [15, 3, 2],
+      "radii": [2, 3, 2],
+      "slot": "leg"
+    },
+    {
+      "type": "sphere",
+      "name": "nose",
+      "center": [12, 15, 7],
+      "radius": 1,
+      "slot": "nose"
+    }
+  ],
+
+  "regions": [
+    { "name": "head", "z_range": [4, 8], "y_range": [14, 24] },
+    { "name": "body", "z_range": [2, 6], "y_range": [5, 14] },
+    { "name": "arms", "z_range": [2, 6], "y_range": [6, 14] },
+    { "name": "legs", "z_range": [0, 4], "y_range": [0, 6] }
+  ],
+
+  "params": {
+    "head_scale": { "min": 0.8, "max": 1.3, "default": 1.0, "description": "头部大小" },
+    "belly_scale": { "min": 0.8, "max": 1.5, "default": 1.0, "description": "肚子大小" },
+    "ear_scale": { "min": 0.7, "max": 1.3, "default": 1.0, "description": "耳朵大小" },
+    "limb_length": { "min": -1, "max": 2, "default": 0, "description": "四肢长度调整" }
+  },
+
+  "color_slots": {
+    "fur_primary": { "default": "#8B4513", "description": "主毛色" },
+    "fur_secondary": { "default": "#D2B48C", "description": "副毛色/肚子" },
+    "nose": { "default": "#2F1810", "description": "鼻子颜色" },
+    "eyes": { "default": "#000000", "description": "眼睛颜色" },
+    "inner_ear": { "default": "#DEB887", "description": "耳朵内侧" }
+  },
+
+  "slot_to_color": {
+    "head": "fur_primary",
+    "ear": "fur_primary",
+    "body": "fur_primary",
+    "belly": "fur_secondary",
+    "arm": "fur_primary",
+    "leg": "fur_primary",
+    "nose": "nose"
+  },
+
+  "constraints": {
+    "min_support_neighbors": 2,
+    "max_overhang": 1,
+    "min_layer_area_ratio": 0.3
+  }
+}

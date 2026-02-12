@@ -9,6 +9,7 @@ type Server struct {
 	Zap        Zap        `mapstructure:"zap" json:"zap" yaml:"zap"`
 	TencentCOS TencentCOS `mapstructure:"tencent-cos" json:"tencent-cos" yaml:"tencent-cos"`
 	Wechat     Wechat     `mapstructure:"wechat" json:"wechat" yaml:"wechat"`
+	Replicate  Replicate  `mapstructure:"replicate" json:"replicate" yaml:"replicate"`
 }
 
 // System 系统配置
@@ -74,4 +75,10 @@ type Wechat struct {
 	AppSecret string `mapstructure:"app-secret" json:"app-secret" yaml:"app-secret"`
 	MchID     string `mapstructure:"mch-id" json:"mch-id" yaml:"mch-id"`
 	APIKey    string `mapstructure:"api-key" json:"api-key" yaml:"api-key"`
+}
+
+// Replicate AI 配置
+type Replicate struct {
+	APIToken        string `mapstructure:"api-token" json:"api-token" yaml:"api-token"`
+	MarigoldVersion string `mapstructure:"marigold-version" json:"marigold-version" yaml:"marigold-version"`
 }

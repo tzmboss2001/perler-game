@@ -29,6 +29,7 @@ func Routers() *gin.Engine {
 		router.InitProjectRouter(publicGroup)  // 支持游客模式，使用 DeviceID 验证
 		router.InitUploadRouter(publicGroup)   // 图片上传
 		router.InitFeedbackRouter(publicGroup) // 意见反馈（无需登录也可提交）
+		router.InitDepthRouter(publicGroup)    // 深度估计（Marigold AI）
 	}
 	{
 		// 私有路由（需要登录）
