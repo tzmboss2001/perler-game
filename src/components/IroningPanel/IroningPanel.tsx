@@ -3,10 +3,15 @@
  * 温度滑块、熨烫按钮、时间显示、实时风险提示
  */
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '@/store/gameStore';
+import { useAchievementStore } from '@/store/achievementStore';
+import { useChallengeStore } from '@/store/challengeStore';
 import { IroningSystem } from '@/core/IroningSystem';
+import { BeadBoard } from '@/core/BeadBoard';
+import { canRescue } from '@/core/RescueSystem';
+import { scoreChallengeResult } from '@/core/ChallengeScoring';
 import { useSound } from '@/hooks/useSound';
 import './IroningPanel.css';
 
@@ -26,14 +31,36 @@ const TEMP_COLORS: Record<number, string> = {
 export default function IroningPanel() {
   const navigate = useNavigate();
   const board = useGameStore((s) => s.board);
+  const survivingBeads = useGameStore((s) => s.survivingBeads);
+  const addStepRecord = useGameStore((s) => s.addStepRecord);
   const setPhase = useGameStore((s) => s.setPhase);
   const setIroningResult = useGameStore((s) => s.setIroningResult);
   const setResultSnapshot = useGameStore((s) => s.setResultSnapshot);
   const triggerRender = useGameStore((s) => s.triggerRender);
+  const rescueUsed = useGameStore((s) => s.rescueUsed);
+
+  // 使用存活豆子构建临时画板（经过翻转/去钉板后的豆子）
+  const ironingBoard = useMemo(() => {
+    const tmpBoard = new BeadBoard(board.width, board.height);
+    const beads = survivingBeads || board.beads;
+    for (const [key, bead] of beads) {
+      tmpBoard.beads.set(key, { ...bead });
+    }
+    return tmpBoard;
+  }, [board, survivingBeads]);
+
+  const paperCoverage = useGameStore((s) => s.paperCoverage);
+  const activeChallenge = useChallengeStore((s) => s.activeChallenge);
+  const setChallengeResult = useChallengeStore((s) => s.setChallengeResult);
 
   const sound = useSound();
 
-  const [temperature, setTemperature] = useState(5);
+  // 挑战模式约束
+  const isChallenge = !!activeChallenge;
+  const fixedTemp = activeChallenge?.constraints.fixedTemp;
+  const timeLimit = activeChallenge?.constraints.timeLimit;
+
+  const [temperature, setTemperature] = useState(fixedTemp || 5);
   const [isIroning, setIsIroning] = useState(false);
   const [duration, setDuration] = useState(0);
   const [trajectory, setTrajectory] = useState<{ x: number; y: number }[]>([]);
@@ -53,7 +80,14 @@ export default function IroningPanel() {
   // 开始熨烫
   const handleStartIroning = () => {
     const sys = ironingRef.current;
-    sys.setTemperature(temperature);
+    const actualTemp = fixedTemp || temperature;
+    sys.setTemperature(actualTemp);
+    // 传入前置步骤数据
+    const originalCount = board.beads.size;
+    const currentCount = ironingBoard.count;
+    const lossRate = originalCount > 0 ? 1 - currentCount / originalCount : 0;
+    sys.setPreStepData(paperCoverage, lossRate);
+    setTemperature(actualTemp);
     sys.start();
     setIsIroning(true);
     setDuration(0);
@@ -77,42 +111,79 @@ export default function IroningPanel() {
     // 停止熨烫音效
     sound.stopIroning();
 
-    // 执行熨烫，应用失败效果到画板
-    const result = sys.finish(board);
+    // 执行熨烫，应用失败效果到画板（使用存活豆子的临时画板）
+    const result = sys.finish(ironingBoard);
     setIsIroning(false);
     setIroningResult(result);
 
-    // 播放成功/失败音效
+    // 播放成功/失败音效 + 记录成就统计
     if (result.success) {
       sound.success();
+      useAchievementStore.getState().recordWork(result.report.score);
+      // 3秒内完成 = 手速之王
+      if (result.report.score >= 80 && sys.duration <= 3) {
+        useAchievementStore.getState().recordFastIroning();
+      }
     } else {
       sound.failure();
+      if (result.failureType) {
+        useAchievementStore.getState().recordCrash(result.failureType);
+      }
     }
 
     // 保存带失败效果的拼豆快照（用于结果页可视化）
-    const snapshot = board.getAllBeads().map((b) => ({ ...b }));
-    setResultSnapshot(snapshot, board.width, board.height);
+    const snapshot = ironingBoard.getAllBeads().map((b) => ({ ...b }));
+    setResultSnapshot(snapshot, ironingBoard.width, ironingBoard.height);
+
+    // 记录熨烫步骤
+    addStepRecord({
+      step: 'ironing',
+      score: result.report.score,
+      detail: result.success ? '熨烫成功!' : `熨烫失败: ${result.report.title}`,
+      beadsBefore: ironingBoard.count,
+      beadsAfter: ironingBoard.count,
+    });
     triggerRender();
+
+    // 挑战模式：计算挑战结果
+    if (isChallenge && activeChallenge) {
+      const challengeRes = scoreChallengeResult(activeChallenge, result, sys.duration);
+      setChallengeResult(challengeRes);
+      if (challengeRes.passed) {
+        useAchievementStore.getState().recordChallengeComplete();
+      }
+      // 挑战模式不进入抢救
+      setPhase('result');
+      navigate('/result');
+      return;
+    }
+
+    // 失败且可抢救且未使用过抢救 → 进入抢救阶段
+    if (!result.success && !rescueUsed && canRescue(result.failureType)) {
+      setPhase('rescuing');
+      return;
+    }
 
     // 跳转结果页
     setPhase('result');
     navigate('/result');
-  }, [board, setIroningResult, setResultSnapshot, setPhase, navigate, triggerRender, sound]);
+  }, [ironingBoard, setIroningResult, setResultSnapshot, setPhase, navigate, triggerRender, sound, rescueUsed, isChallenge, activeChallenge, setChallengeResult, addStepRecord]);
 
-  // 返回放置阶段
+  // 返回上一阶段（铺烘焙纸）
   const handleBack = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
-    setPhase('placing');
+    setPhase('papering');
   };
 
-  // 自动停止（超过15秒）
+  // 自动停止（超过限时或15秒）
+  const maxDuration = timeLimit || 15;
   useEffect(() => {
-    if (isIroning && duration >= 15) {
+    if (isIroning && duration >= maxDuration) {
       handleFinishIroning();
     }
-  }, [duration, isIroning, handleFinishIroning]);
+  }, [duration, isIroning, handleFinishIroning, maxDuration]);
 
   // 熨斗轨迹绘制 - 在小画布上拖拽
   const handleTrajectoryStart = (e: React.MouseEvent | React.TouchEvent) => {
@@ -144,8 +215,8 @@ export default function IroningPanel() {
       clientY = e.clientY;
     }
 
-    const x = ((clientX - rect.left) / rect.width) * board.width;
-    const y = ((clientY - rect.top) / rect.height) * board.height;
+    const x = ((clientX - rect.left) / rect.width) * ironingBoard.width;
+    const y = ((clientY - rect.top) / rect.height) * ironingBoard.height;
 
     ironingRef.current.addTrajectoryPoint(x, y);
     setTrajectory((prev) => [...prev, { x, y }]);
@@ -172,9 +243,9 @@ export default function IroningPanel() {
     ctx.strokeRect(2, 2, w - 4, h - 4);
 
     // 绘制简化的拼豆位置
-    const cellW = (w - 4) / board.width;
-    const cellH = (h - 4) / board.height;
-    for (const bead of board.beads.values()) {
+    const cellW = (w - 4) / ironingBoard.width;
+    const cellH = (h - 4) / ironingBoard.height;
+    for (const bead of ironingBoard.beads.values()) {
       const bx = 2 + bead.x * cellW + cellW / 2;
       const by = 2 + bead.y * cellH + cellH / 2;
       ctx.fillStyle = bead.color;
@@ -193,10 +264,10 @@ export default function IroningPanel() {
       ctx.lineJoin = 'round';
       ctx.beginPath();
       const firstPt = trajectory[0];
-      ctx.moveTo(2 + (firstPt.x / board.width) * (w - 4), 2 + (firstPt.y / board.height) * (h - 4));
+      ctx.moveTo(2 + (firstPt.x / ironingBoard.width) * (w - 4), 2 + (firstPt.y / ironingBoard.height) * (h - 4));
       for (let i = 1; i < trajectory.length; i++) {
         const pt = trajectory[i];
-        ctx.lineTo(2 + (pt.x / board.width) * (w - 4), 2 + (pt.y / board.height) * (h - 4));
+        ctx.lineTo(2 + (pt.x / ironingBoard.width) * (w - 4), 2 + (pt.y / ironingBoard.height) * (h - 4));
       }
       ctx.stroke();
 
@@ -219,7 +290,7 @@ export default function IroningPanel() {
       ctx.textAlign = 'center';
       ctx.fillText('在这里拖动熨斗！', w / 2, h / 2);
     }
-  }, [trajectory, isIroning, board]);
+  }, [trajectory, isIroning, ironingBoard]);
 
   // cleanup
   useEffect(() => {
@@ -235,15 +306,23 @@ export default function IroningPanel() {
     <div className="ironing-panel">
       <div className="ironing-header">
         <button className="ironing-back-btn" onClick={handleBack}>
-          ← 继续放豆
+          ← {isChallenge ? '放弃挑战' : '返回铺纸'}
         </button>
-        <h3>熨烫控制</h3>
+        <h3>{isChallenge ? `挑战: ${activeChallenge?.name}` : '熨烫控制'}</h3>
       </div>
+
+      {/* 挑战提示 */}
+      {isChallenge && activeChallenge && (
+        <div className="challenge-hint-bar">
+          <span>{activeChallenge.icon}</span>
+          <span>{activeChallenge.description}</span>
+        </div>
+      )}
 
       {/* 温度控制 */}
       <div className="temp-control">
         <div className="temp-label-row">
-          <span>温度</span>
+          <span>温度{fixedTemp ? '（锁定）' : ''}</span>
           <span className="temp-value" style={{ color: tempColor }}>
             {temperature} - {tempLabel}
           </span>
@@ -255,7 +334,7 @@ export default function IroningPanel() {
           value={temperature}
           onChange={handleTempChange}
           className="temp-slider"
-          disabled={isIroning}
+          disabled={isIroning || !!fixedTemp}
           style={{
             background: `linear-gradient(to right, #5b9bd5, #5cd85c, #e84a4a)`,
           }}
@@ -267,14 +346,14 @@ export default function IroningPanel() {
 
       {/* 时间显示 */}
       <div className="time-display">
-        <span>时间</span>
+        <span>时间{timeLimit ? ` (限${timeLimit}s)` : ''}</span>
         <span className="time-value">{duration.toFixed(1)}s</span>
         <div className="time-bar">
           <div
             className="time-fill"
             style={{
-              width: `${Math.min(duration / 15 * 100, 100)}%`,
-              backgroundColor: duration > 10 ? '#e84a4a' : duration > 7 ? '#e8c44a' : '#5cd85c',
+              width: `${Math.min(duration / maxDuration * 100, 100)}%`,
+              backgroundColor: duration > maxDuration * 0.8 ? '#e84a4a' : duration > maxDuration * 0.5 ? '#e8c44a' : '#5cd85c',
             }}
           />
         </div>

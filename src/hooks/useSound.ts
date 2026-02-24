@@ -118,6 +118,119 @@ function playSuccessSound() {
   });
 }
 
+/** 贴胶带：撕拉声（滤波噪声） */
+function playTapeSound() {
+  const ctx = getAudioContext();
+  const bufferSize = ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * 0.3;
+  }
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.setValueAtTime(2000, ctx.currentTime);
+  filter.frequency.exponentialRampToValueAtTime(6000, ctx.currentTime + 0.15);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  source.start();
+  source.stop(ctx.currentTime + 0.25);
+}
+
+/** 翻转：低频翻转音 */
+function playFlipSound() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(200, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3);
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.35);
+}
+
+/** 掉豆：散落音（多个短促高音） */
+function playDropSound() {
+  const ctx = getAudioContext();
+  for (let i = 0; i < 5; i++) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    const delay = i * 0.04 + Math.random() * 0.02;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200 + Math.random() * 800, ctx.currentTime + delay);
+    osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + delay + 0.08);
+    gain.gain.setValueAtTime(0.06, ctx.currentTime + delay);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.1);
+
+    osc.start(ctx.currentTime + delay);
+    osc.stop(ctx.currentTime + delay + 0.1);
+  }
+}
+
+/** 提起钉板：向上滑音 */
+function playLiftSound() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(150, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.4);
+  gain.gain.setValueAtTime(0.08, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.5);
+}
+
+/** 铺纸：柔和摩擦声 */
+function playPaperSound() {
+  const ctx = getAudioContext();
+  const bufferSize = ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * 0.2;
+  }
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(1500, ctx.currentTime);
+  filter.Q.setValueAtTime(3, ctx.currentTime);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.06, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  source.start();
+  source.stop(ctx.currentTime + 0.3);
+}
+
 /** 失败：下行和弦 */
 function playFailureSound() {
   const ctx = getAudioContext();
@@ -175,5 +288,30 @@ export function useSound() {
     playFailureSound();
   }, [soundEnabled]);
 
-  return { place, remove, startIroning, stopIroning, success, failure };
+  const tape = useCallback(() => {
+    if (!soundEnabled) return;
+    playTapeSound();
+  }, [soundEnabled]);
+
+  const flip = useCallback(() => {
+    if (!soundEnabled) return;
+    playFlipSound();
+  }, [soundEnabled]);
+
+  const drop = useCallback(() => {
+    if (!soundEnabled) return;
+    playDropSound();
+  }, [soundEnabled]);
+
+  const lift = useCallback(() => {
+    if (!soundEnabled) return;
+    playLiftSound();
+  }, [soundEnabled]);
+
+  const paper = useCallback(() => {
+    if (!soundEnabled) return;
+    playPaperSound();
+  }, [soundEnabled]);
+
+  return { place, remove, startIroning, stopIroning, success, failure, tape, flip, drop, lift, paper };
 }

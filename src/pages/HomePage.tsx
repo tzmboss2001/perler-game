@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '@/store/gameStore';
+import { useUserStore } from '@/store/userStore';
+import { LoginModal } from '@/components/LoginModal';
 import { BOARD_SIZE_OPTIONS } from '@/types/game';
 import type { TemplateCategory, Template } from '@/types/game';
 import { TEMPLATES, TEMPLATE_CATEGORIES, DIFFICULTY_LABELS } from '@/data/templates';
@@ -51,7 +53,9 @@ function TemplateThumb({ template }: { template: Template }) {
 export default function HomePage() {
   const navigate = useNavigate();
   const { setBoardSize, setPhase, setTemplate } = useGameStore();
+  const { isLoggedIn, userInfo, logout } = useUserStore();
   const [activeCategory, setActiveCategory] = useState<TemplateCategory | 'all'>('all');
+  const [showLogin, setShowLogin] = useState(false);
 
   const handleFreeStart = (width: number, height: number) => {
     setBoardSize(width, height);
@@ -78,10 +82,60 @@ export default function HomePage() {
 
   return (
     <div className="home-page">
+      {/* 顶部用户栏 */}
+      <div className="home-user-bar">
+        {isLoggedIn ? (
+          <div className="user-info-bar">
+            <span className="user-nickname">{userInfo?.nickname}</span>
+            <button className="user-logout-btn" onClick={logout}>退出</button>
+          </div>
+        ) : (
+          <button className="user-login-btn" onClick={() => setShowLogin(true)}>
+            登录
+          </button>
+        )}
+      </div>
+
       <div className="home-header">
         <h1 className="home-title">云拼豆</h1>
         <p className="home-subtitle">数字拼豆创作游戏</p>
         <p className="home-slogan">失败不是惩罚，是内容</p>
+      </div>
+
+      {/* 作品广场入口 */}
+      <div className="section-card gallery-entry entry-gallery" onClick={() => navigate('/gallery')}>
+        <div className="gallery-entry-content">
+          <span className="gallery-entry-icon">🏛️</span>
+          <div className="gallery-entry-text">
+            <h3>作品广场</h3>
+            <p>浏览社区作品 · 翻车排行榜</p>
+          </div>
+          <span className="gallery-entry-arrow">→</span>
+        </div>
+      </div>
+
+      {/* 挑战模式入口 */}
+      <div className="section-card gallery-entry entry-challenge" onClick={() => navigate('/challenge')}>
+        <div className="gallery-entry-content">
+          <span className="gallery-entry-icon">🎯</span>
+          <div className="gallery-entry-text">
+            <h3>挑战模式</h3>
+            <p>每日挑战 · 限时限温 · 翻车目标</p>
+          </div>
+          <span className="gallery-entry-arrow">→</span>
+        </div>
+      </div>
+
+      {/* 成就入口 */}
+      <div className="section-card gallery-entry entry-achievement" onClick={() => navigate('/achievements')}>
+        <div className="gallery-entry-content">
+          <span className="gallery-entry-icon">🏆</span>
+          <div className="gallery-entry-text">
+            <h3>成就</h3>
+            <p>收集成就徽章 · 查看统计</p>
+          </div>
+          <span className="gallery-entry-arrow">→</span>
+        </div>
       </div>
 
       {/* 自由创作区域 */}
@@ -152,6 +206,14 @@ export default function HomePage() {
       <div className="home-footer">
         <p>选择模板或自由创作，完成后熨烫看看会发生什么吧！</p>
       </div>
+
+      {/* 登录弹窗 */}
+      {showLogin && (
+        <LoginModal
+          onClose={() => setShowLogin(false)}
+          onSuccess={() => setShowLogin(false)}
+        />
+      )}
     </div>
   );
 }

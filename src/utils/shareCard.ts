@@ -3,7 +3,9 @@
  * 使用 Canvas 绘制分享图片（作品图 + 评分 + 失败类型 + 水印）
  */
 
-import type { Bead, FailureType } from '@/types/game';
+import type { Bead, FailureType, IroningPhysics } from '@/types/game';
+import { drawContinuous } from '@/components/ResultCanvas/ContinuousRenderer';
+import { BEAD_R_RATIO, HOLE_R_RATIO } from '@/core/beadSpec';
 
 const CARD_WIDTH = 600;
 const CARD_HEIGHT = 800;
@@ -32,6 +34,7 @@ interface ShareCardOptions {
   success: boolean;
   failureType?: FailureType;
   failureTitle: string;
+  physics?: IroningPhysics;
 }
 
 /** 生成分享卡片（返回 data URL） */
@@ -80,19 +83,27 @@ export function generateShareCard(options: ShareCardOptions): string {
   roundRect(ctx, artX, artY, artSize, artSize, 8);
   ctx.fill();
 
-  // 绘制拼豆
+  // 绘制拼豆（使用连续渐变渲染）
   const maxDim = Math.max(boardWidth, boardHeight);
   const cellSize = (artSize - 20) / maxDim;
   const offX = artX + (artSize - boardWidth * cellSize) / 2;
   const offY = artY + (artSize - boardHeight * cellSize) / 2;
 
-  for (const bead of beads) {
-    const cx = offX + bead.x * cellSize + cellSize / 2;
-    const cy = offY + bead.y * cellSize + cellSize / 2;
-    ctx.fillStyle = bead.color;
-    ctx.beginPath();
-    ctx.arc(cx, cy, cellSize * 0.4, 0, Math.PI * 2);
-    ctx.fill();
+  if (options.physics) {
+    drawContinuous(ctx, beads, options.physics, offX, offY, boardWidth, boardHeight, {
+      cell: cellSize,
+      beadR: cellSize * BEAD_R_RATIO,
+      holeR: cellSize * HOLE_R_RATIO,
+    });
+  } else {
+    for (const bead of beads) {
+      const cx = offX + bead.x * cellSize + cellSize / 2;
+      const cy = offY + bead.y * cellSize + cellSize / 2;
+      ctx.fillStyle = bead.color;
+      ctx.beginPath();
+      ctx.arc(cx, cy, cellSize * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // 评分区域

@@ -117,7 +117,28 @@ export function calcTrajectoryRisk(
 }
 
 /**
+ * 计算前置步骤风险因子 (0-100)
+ * paperCoverage < 1 → 未覆盖区域有烧焦风险
+ * beadLossRate > 0 → 前面掉了太多豆子也算风险
+ */
+export function calcPreStepRisk(
+  paperCoverage: number,
+  beadLossRate: number,
+): number {
+  // 未覆盖区域烧焦风险：coverage<0.8时急剧上升
+  const paperRisk = paperCoverage < 0.8
+    ? (1 - paperCoverage) * 120  // 0.5覆盖 → 60分风险
+    : (1 - paperCoverage) * 40;  // 0.9覆盖 → 4分风险
+
+  // 豆子损失率风险
+  const lossRisk = beadLossRate * 50;
+
+  return Math.min(100, paperRisk * 0.7 + lossRisk * 0.3);
+}
+
+/**
  * 计算综合风险值 (0-100)
+ * 支持可选的前置步骤参数（paperCoverage 等）
  */
 export function calculateRisk(
   temperature: number,
@@ -125,10 +146,20 @@ export function calculateRisk(
   trajectory: Point[],
   boardWidth: number,
   boardHeight: number,
+  paperCoverage?: number,
+  beadLossRate?: number,
 ): number {
   const tempRisk = calcTemperatureRisk(temperature);
   const timeRisk = calcTimeRisk(duration);
   const trajRisk = calcTrajectoryRisk(trajectory, boardWidth, boardHeight);
 
-  return tempRisk * 0.4 + timeRisk * 0.3 + trajRisk * 0.3;
+  const ironingRisk = tempRisk * 0.4 + timeRisk * 0.3 + trajRisk * 0.3;
+
+  // 如果有前置步骤数据，混合计算
+  if (paperCoverage !== undefined) {
+    const preRisk = calcPreStepRisk(paperCoverage, beadLossRate ?? 0);
+    return preRisk * 0.2 + ironingRisk * 0.8;
+  }
+
+  return ironingRisk;
 }

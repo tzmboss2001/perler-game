@@ -7,15 +7,16 @@ import { useRef, useEffect, useCallback } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { useCanvasGesture } from '@/hooks/useCanvasGesture';
 import { useSound } from '@/hooks/useSound';
+import { beadSpec } from '@/core/beadSpec';
+import { drawBeadCached } from '@/core/BeadRenderer3D';
 import './GameCanvas.css';
 
 const CELL_SIZE = 24; // 每格像素大小
-const BEAD_RADIUS = 10; // 拼豆半径
+const { beadR: BEAD_RADIUS, pegR: PEG_RADIUS } = beadSpec(CELL_SIZE);
 const GRID_COLOR = 'rgba(255, 255, 255, 0.08)';
 const GRID_BORDER_COLOR = 'rgba(255, 255, 255, 0.2)';
 const BG_COLOR = '#16213e';
 const PEG_COLOR = 'rgba(255, 255, 255, 0.15)';
-const PEG_RADIUS = 2;
 
 export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -201,23 +202,8 @@ export default function GameCanvas() {
         ctx.translate(-cx, -cy);
       }
 
-      // 拼豆主体
-      ctx.fillStyle = bead.color;
-      ctx.beginPath();
-      ctx.arc(cx, cy, BEAD_RADIUS, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 中孔（拼豆特征）
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-      ctx.beginPath();
-      ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 高光
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.beginPath();
-      ctx.arc(cx - 2.5, cy - 2.5, 3, 0, Math.PI * 2);
-      ctx.fill();
+      // 3D 拼豆渲染（使用缓存图）
+      drawBeadCached(ctx, cx, cy, bead.color, CELL_SIZE);
 
       // 模板引导：放错颜色的格子加红色标记
       if (hasGuide) {

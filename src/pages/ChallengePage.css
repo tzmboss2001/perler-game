@@ -1,0 +1,167 @@
+.challenge-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-purple) 100%);
+  padding: 0 16px 24px;
+  padding-top: var(--safe-top);
+  color: #fff;
+}
+
+/* 头部 */
+.challenge-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 0;
+  gap: 12px;
+}
+
+.challenge-back-btn {
+  background: var(--glass-bg);
+  border: none;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.challenge-back-btn:hover {
+  background: var(--glass-hover);
+}
+
+.challenge-page-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+/* 区块 */
+.challenge-section {
+  margin-bottom: 24px;
+}
+
+.challenge-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.challenge-section-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.challenge-section-tag {
+  background: rgba(255, 215, 0, 0.15);
+  color: var(--color-accent);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.challenge-section-tag.weekly {
+  background: rgba(232, 74, 74, 0.15);
+  color: #e84a4a;
+}
+
+/* 空状态 */
+.challenge-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.challenge-empty-icon {
+  font-size: 40px;
+  display: block;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+/* 挑战卡片网格 */
+.challenge-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.challenge-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-smooth);
+}
+
+.challenge-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.challenge-card:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.challenge-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.challenge-card-icon {
+  font-size: 28px;
+}
+
+.challenge-card-index {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+}
+
+.challenge-card-name {
+  margin: 0 0 4px;
+  font-size: 16px;
+  color: #fff;
+}
+
+.challenge-card-desc {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.challenge-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.challenge-card-diff {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+
+/* 难度色彩差异化背景 */
+.challenge-card-diff.diff-easy {
+  background: rgba(92, 216, 92, 0.12);
+}
+
+.challenge-card-diff.diff-medium {
+  background: rgba(255, 170, 86, 0.12);
+}
+
+.challenge-card-diff.diff-hard {
+  background: rgba(232, 74, 74, 0.12);
+}
+
+.challenge-card-score {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+}

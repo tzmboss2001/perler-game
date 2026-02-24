@@ -1,44 +1,45 @@
 .color-palette {
   background: rgba(255, 255, 255, 0.06);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  transition: max-height 0.3s ease;
+  border-top: 1px solid var(--glass-border);
+  transition: max-height var(--duration-normal) ease;
+  padding-bottom: var(--safe-bottom);
 }
 
 .palette-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.6rem 1rem;
+  padding: 0.6rem var(--space-md);
   cursor: pointer;
 }
 
 .palette-preview {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-sm);
 }
 
 .current-color {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   border: 2px solid rgba(255, 255, 255, 0.4);
 }
 
 .palette-label {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
 }
 
 .palette-toggle {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 .brand-tabs {
   display: flex;
-  gap: 0.25rem;
-  padding: 0 0.75rem 0.5rem;
+  gap: var(--space-xs);
+  padding: 0 0.75rem var(--space-sm);
 }
 
 .brand-tab {
@@ -47,14 +48,14 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 0.4rem;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   font-size: 0.75rem;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--duration-fast);
 }
 
 .brand-tab.active {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--glass-hover);
   color: white;
   border-color: rgba(255, 255, 255, 0.3);
 }
@@ -80,10 +81,10 @@
 .color-cell {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   border: 2px solid transparent;
   cursor: pointer;
-  transition: transform 0.1s, border-color 0.15s;
+  transition: transform 0.1s, border-color var(--duration-fast);
   padding: 0;
 }
 

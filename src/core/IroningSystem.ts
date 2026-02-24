@@ -5,8 +5,9 @@
 
 import type { IroningParams, IroningResult, Point } from '@/types/game';
 import type { BeadBoard } from './BeadBoard';
-import { calculateRisk } from './RiskCalculator';
+import { calculateRisk, calcUniformity, calcCoverage } from './RiskCalculator';
 import { determineFailure, generateReport, applyFailureToBoard } from './FailureEngine';
+import { calculatePhysics } from './PhysicsCalculator';
 
 export class IroningSystem {
   temperature: number = 5;  // 默认温度 (1-10)
@@ -14,6 +15,8 @@ export class IroningSystem {
   trajectory: Point[] = []; // 熨烫轨迹
   isIroning: boolean = false;
   startTime: number = 0;
+  paperCoverage: number = 1;   // 烘焙纸覆盖率（1=完全覆盖）
+  beadLossRate: number = 0;    // 前置步骤豆子损失率
 
   /** 设置温度 */
   setTemperature(temp: number): void {
@@ -53,13 +56,15 @@ export class IroningSystem {
       pressure: 1,
     };
 
-    // 计算风险值
+    // 计算风险值（含前置步骤风险因子）
     const riskScore = calculateRisk(
       params.temperature,
       params.duration,
       params.trajectory,
       board.width,
       board.height,
+      this.paperCoverage,
+      this.beadLossRate,
     );
 
     // 判定失败类型
@@ -74,13 +79,32 @@ export class IroningSystem {
     const success = !failureType;
     const report = generateReport(success, failureType, riskScore, params);
 
+    // 计算连续物理参数
+    const uniformity = calcUniformity(params.trajectory, board.width, board.height);
+    const physics = calculatePhysics(
+      params.temperature,
+      params.duration,
+      params.trajectory,
+      board.width,
+      board.height,
+      uniformity,
+      riskScore,
+    );
+
     return {
       success,
       riskScore,
       failureType: failureType ?? undefined,
       affectedBeads,
       report,
+      physics,
     };
+  }
+
+  /** 设置前置步骤数据 */
+  setPreStepData(paperCoverage: number, beadLossRate: number): void {
+    this.paperCoverage = paperCoverage;
+    this.beadLossRate = beadLossRate;
   }
 
   /** 重置 */
@@ -90,5 +114,7 @@ export class IroningSystem {
     this.trajectory = [];
     this.isIroning = false;
     this.startTime = 0;
+    this.paperCoverage = 1;
+    this.beadLossRate = 0;
   }
 }

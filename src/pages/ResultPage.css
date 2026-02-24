@@ -5,8 +5,8 @@
   flex-direction: column;
   width: 100%;
   height: 100%;
-  padding: 1.5rem;
-  padding-top: 3rem;
+  padding: var(--space-lg);
+  padding-top: calc(var(--space-xl) + var(--safe-top));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -15,15 +15,15 @@
 .result-card {
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(10px);
-  border-radius: 1.5rem;
-  padding: 2rem 1.5rem;
+  border-radius: var(--radius-xl);
+  padding: var(--space-xl) var(--space-lg);
   text-align: center;
   color: white;
   max-width: 380px;
   width: 100%;
   opacity: 0;
   transform: translateY(60px);
-  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity var(--duration-slow) ease, transform var(--duration-slow) var(--ease-bounce);
 }
 
 .result-card.show {
@@ -34,22 +34,29 @@
 /* 大表情 */
 .result-emoji {
   font-size: 4rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-sm);
+  animation: emojiPop 0.6s var(--ease-bounce);
+}
+
+@keyframes emojiPop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); }
 }
 
 /* 标题 */
 .result-title {
-  font-size: 1.8rem;
+  font-size: var(--font-2xl);
   font-weight: 800;
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-md);
 }
 
-/* 评分圆环 */
+/* 评分圆环 - 响应式 */
 .result-score-ring {
   position: relative;
-  width: 120px;
-  height: 120px;
-  margin: 0 auto 1rem;
+  width: min(120px, 30vw);
+  height: min(120px, 30vw);
+  margin: 0 auto var(--space-md);
 }
 
 .score-svg {
@@ -74,7 +81,7 @@
 .result-canvas-wrap {
   opacity: 0;
   transform: scale(0.9);
-  transition: opacity 0.5s ease 0.1s, transform 0.5s ease 0.1s;
+  transition: opacity var(--duration-slow) ease 0.1s, transform var(--duration-slow) ease 0.1s;
 }
 
 .result-canvas-wrap.show {
@@ -85,7 +92,7 @@
 /* 描述 */
 .result-desc {
   opacity: 0.9;
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-md);
   line-height: 1.6;
   font-size: 0.9rem;
 }
@@ -96,10 +103,10 @@
   justify-content: space-between;
   align-items: center;
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 0.5rem;
-  padding: 0.5rem 1rem;
-  margin-bottom: 1rem;
-  font-size: 0.85rem;
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+  font-size: var(--font-sm);
 }
 
 .risk-value {
@@ -110,15 +117,15 @@
 /* 改进建议 */
 .result-tips {
   text-align: left;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--glass-bg);
   border-radius: 0.75rem;
-  padding: 0.75rem 1rem;
-  margin-bottom: 1.5rem;
+  padding: 0.75rem var(--space-md);
+  margin-bottom: var(--space-lg);
 }
 
 .result-tips h4 {
-  margin: 0 0 0.5rem;
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-sm);
   opacity: 0.7;
 }
 
@@ -128,27 +135,27 @@
 }
 
 .result-tips li {
-  font-size: 0.85rem;
+  font-size: var(--font-sm);
   opacity: 0.85;
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-xs);
   line-height: 1.5;
 }
 
 /* 分享按钮 */
 .result-share-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-sm);
   margin-bottom: 0.75rem;
 }
 
 .share-btn {
   flex: 1;
   padding: 0.6rem;
-  border-radius: 0.5rem;
-  font-size: 0.85rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-fast);
 }
 
 .share-btn.save-image {
@@ -172,21 +179,66 @@
   background: rgba(255, 255, 255, 0.4);
 }
 
+.share-btn.publish {
+  border: none;
+  background: rgba(255, 200, 50, 0.4);
+  color: white;
+  font-weight: 600;
+  position: relative;
+}
+
+.share-btn.publish:hover:not(:disabled) {
+  background: rgba(255, 200, 50, 0.55);
+}
+
+.share-btn.publish:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.share-btn.published {
+  background: rgba(50, 205, 50, 0.4) !important;
+}
+
+/* 发布loading动画 */
+.publish-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: var(--radius-full);
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.publish-error {
+  margin: var(--space-xs) 0 0;
+  color: var(--color-danger);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
 /* 按钮 */
 .result-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-sm);
 }
 
 .result-btn {
   width: 100%;
   padding: 0.8rem;
   border-radius: 2rem;
-  font-size: 1rem;
+  font-size: var(--font-base);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--duration-fast);
 }
 
 .result-btn.primary {
@@ -208,4 +260,137 @@
 
 .result-btn.secondary:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* 挑战结果区块 */
+.result-challenge-block {
+  background: var(--glass-bg);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 16px;
+  animation: challengeFadeIn 0.5s ease 0.3s both;
+}
+
+@keyframes challengeFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.challenge-result-badge {
+  display: inline-block;
+  padding: 4px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.challenge-result-badge.passed {
+  background: rgba(92, 216, 92, 0.2);
+  color: var(--color-success);
+  border: 1px solid rgba(92, 216, 92, 0.3);
+  animation: passedPulse 1s ease;
+}
+
+@keyframes passedPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(92, 216, 92, 0.3); }
+  50% { box-shadow: 0 0 16px 4px rgba(92, 216, 92, 0.2); }
+}
+
+.challenge-result-badge.failed {
+  background: rgba(232, 74, 74, 0.2);
+  color: #e84a4a;
+  border: 1px solid rgba(232, 74, 74, 0.3);
+}
+
+.challenge-result-score {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 8px;
+}
+
+.challenge-result-score span {
+  color: var(--color-accent);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.challenge-bonus-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.challenge-bonus-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+/* 过程回顾 */
+.result-step-review {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.result-step-review h4 {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 8px;
+}
+
+.step-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.8rem;
+}
+
+.step-item.good {
+  border-left: 3px solid #5cd85c;
+}
+
+.step-item.ok {
+  border-left: 3px solid #e8c44a;
+}
+
+.step-item.bad {
+  border-left: 3px solid #e84a4a;
+}
+
+.step-name {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  min-width: 4em;
+}
+
+.step-score {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+}
+
+.step-detail {
+  flex: 1;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step-loss {
+  color: #e84a4a;
+  font-weight: 600;
+  font-size: 0.75rem;
 }

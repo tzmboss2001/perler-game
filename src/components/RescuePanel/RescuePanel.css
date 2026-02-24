@@ -1,0 +1,280 @@
+.rescue-panel {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-purple) 100%);
+  padding: 16px;
+  padding-top: calc(16px + var(--safe-top));
+  padding-bottom: calc(16px + var(--safe-bottom));
+}
+
+.rescue-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  border-radius: 20px;
+  padding: 28px 20px;
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+  animation: rescueSlideUp 0.4s ease-out;
+}
+
+@keyframes rescueSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 头部 */
+.rescue-header {
+  margin-bottom: 20px;
+}
+
+.rescue-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 8px;
+  animation: rescueShake 0.5s ease-in-out;
+}
+
+@keyframes rescueShake {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-10deg); }
+  75% { transform: rotate(10deg); }
+}
+
+.rescue-title {
+  color: #fff;
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+
+.rescue-failure-type {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin: 0;
+}
+
+/* 抢救方案卡片 */
+.rescue-option-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.rescue-method {
+  color: var(--color-accent);
+  font-size: 18px;
+  margin: 0 0 6px;
+}
+
+.rescue-operation {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
+.rescue-score-limit {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.rescue-score-limit span {
+  color: var(--color-accent);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+/* 抢救操作区域 */
+.rescue-action-area {
+  margin-bottom: 16px;
+}
+
+.rescue-progress-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.rescue-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-danger));
+  border-radius: var(--radius-xs);
+  transition: width 0.1s linear;
+}
+
+.rescue-progress-text {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.rescue-interaction-zone {
+  background: rgba(255, 255, 255, 0.04);
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 36px 16px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: all var(--duration-fast);
+  margin-bottom: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.rescue-interaction-zone:hover {
+  border-color: rgba(255, 215, 0, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rescue-interaction-zone:active {
+  background: rgba(255, 215, 0, 0.1);
+  border-color: rgba(255, 215, 0, 0.5);
+}
+
+/* 点击涟漪 */
+.rescue-interaction-zone::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: var(--radius-full);
+  background: rgba(255, 215, 0, 0.15);
+  transform: translate(-50%, -50%);
+  transition: width 0.3s, height 0.3s;
+}
+
+.rescue-interaction-zone:active::after {
+  width: 200px;
+  height: 200px;
+}
+
+.rescue-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.rescue-hint-icon {
+  font-size: 24px;
+}
+
+.rescue-finish-btn {
+  background: rgba(255, 215, 0, 0.2);
+  color: var(--color-accent);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 10px;
+  padding: 10px 24px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.rescue-finish-btn:hover {
+  background: rgba(255, 215, 0, 0.3);
+}
+
+.rescue-finish-btn:active {
+  background: rgba(255, 215, 0, 0.3);
+  transform: scale(0.97);
+}
+
+/* 完成状态 */
+.rescue-completed {
+  padding: 20px 0;
+  animation: rescueFadeIn 0.3s ease-out;
+}
+
+@keyframes rescueFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.rescue-completed-icon {
+  font-size: 40px;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.rescue-completed p {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.rescue-new-score {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+}
+
+.rescue-new-score span {
+  color: var(--color-accent);
+  font-weight: 700;
+  font-size: 20px;
+}
+
+/* 底部按钮 */
+.rescue-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rescue-start-btn {
+  background: linear-gradient(135deg, var(--color-accent), #ff8c00);
+  color: var(--bg-dark);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.rescue-start-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.rescue-start-btn:active {
+  transform: scale(0.97);
+}
+
+.rescue-skip-btn {
+  background: none;
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.rescue-skip-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.rescue-skip-btn:active {
+  background: rgba(255, 255, 255, 0.05);
+}

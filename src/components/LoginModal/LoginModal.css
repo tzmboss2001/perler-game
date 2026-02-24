@@ -1,0 +1,123 @@
+.login-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  animation: loginFadeIn 0.2s ease;
+}
+
+@keyframes loginFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.login-modal {
+  position: relative;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  border-radius: var(--radius-xl);
+  padding: var(--space-xl) var(--space-lg);
+  width: 90%;
+  max-width: 360px;
+  color: white;
+  animation: loginSlideUp var(--duration-normal) ease;
+}
+
+@keyframes loginSlideUp {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.login-close {
+  position: absolute;
+  top: 0.75rem;
+  right: var(--space-md);
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: color var(--duration-fast);
+}
+
+.login-close:hover {
+  color: white;
+}
+
+.login-title {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--font-xl);
+  font-weight: 700;
+  text-align: center;
+}
+
+.login-hint {
+  text-align: center;
+  opacity: 0.6;
+  font-size: 0.8rem;
+  margin: 0 0 var(--space-lg);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.login-input {
+  width: 100%;
+  padding: 0.75rem var(--space-md);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: var(--font-base);
+  outline: none;
+  transition: border-color var(--duration-fast);
+  box-sizing: border-box;
+}
+
+.login-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.login-input:focus {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.login-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-sm);
+  text-align: center;
+}
+
+.login-submit {
+  width: 100%;
+  padding: 0.8rem;
+  border: none;
+  border-radius: 2rem;
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+  font-size: var(--font-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  margin-top: var(--space-xs);
+}
+
+.login-submit:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.login-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,0 +1,271 @@
+.achievement-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-purple) 100%);
+  padding: 0 16px 24px;
+  padding-top: var(--safe-top);
+  color: #fff;
+}
+
+/* 头部 */
+.achievement-header {
+  display: flex;
+  align-items: center;
+  padding: 16px 0;
+  gap: 12px;
+}
+
+.achievement-back-btn {
+  background: var(--glass-bg);
+  border: none;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.achievement-back-btn:hover {
+  background: var(--glass-hover);
+}
+
+.achievement-page-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+/* 总进度卡片 */
+.achievement-progress-card {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.achievement-progress-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.achievement-progress-count {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.achievement-progress-percent {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.achievement-progress-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+
+.achievement-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), #ff8c00);
+  border-radius: var(--radius-xs);
+  transition: width var(--duration-slow) ease;
+}
+
+/* 统计摘要 - 响应式 */
+.achievement-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 320px) {
+  .achievement-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.stat-item {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 10px 8px;
+  text-align: center;
+  transition: all var(--duration-fast);
+}
+
+.stat-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.stat-value {
+  display: block;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 分类标签 */
+.achievement-category-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.achievement-category-tabs::-webkit-scrollbar {
+  height: 3px;
+}
+
+.achievement-category-tabs::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+.achievement-cat-tab {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.achievement-cat-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.achievement-cat-tab.active {
+  background: rgba(255, 215, 0, 0.15);
+  border-color: rgba(255, 215, 0, 0.3);
+  color: var(--color-accent);
+}
+
+/* 空状态 */
+.achievement-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.achievement-empty-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 12px;
+  opacity: 0.4;
+}
+
+/* 成就列表 */
+.achievement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.achievement-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 12px;
+  transition: all var(--duration-fast);
+}
+
+.achievement-item:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.achievement-item.unlocked {
+  background: rgba(255, 215, 0, 0.08);
+  border: 1px solid rgba(255, 215, 0, 0.15);
+}
+
+.achievement-item.unlocked:hover {
+  border-color: rgba(255, 215, 0, 0.3);
+  background: rgba(255, 215, 0, 0.12);
+}
+
+.achievement-item.locked {
+  opacity: 0.7;
+}
+
+.achievement-item-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  width: 40px;
+  text-align: center;
+}
+
+.locked-icon {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.achievement-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.achievement-item-name {
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.achievement-item-rarity {
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.achievement-item-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.achievement-item-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.achievement-mini-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.achievement-mini-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width var(--duration-normal);
+}
+
+.achievement-mini-text {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+}

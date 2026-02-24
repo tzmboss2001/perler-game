@@ -94,9 +94,10 @@ export function applyFailureToBoard(
     }
 
     case 'collapse':
-      // 整体塌陷：所有拼豆变形
+      // 整体塌陷：温度比burned更极端，颜色也会变焦 + 变形
       for (const bead of allBeads) {
         bead.state = 'collapsed';
+        bead.color = applyBurnColor(bead.color, intensity * 0.7); // 比burned略轻的焦色
         affected.push(bead);
       }
       break;
@@ -111,10 +112,27 @@ export function applyFailureToBoard(
       break;
 
     case 'sticky':
-      // 粘连拉扯：随机拼豆位移
+      // 粘连拉扯：温度足够高才会粘连，所有豆子都已完全融合
       for (const bead of allBeads) {
-        if (Math.random() < 0.4) {
-          bead.state = 'melted';
+        bead.state = 'melted';
+        affected.push(bead);
+      }
+      break;
+
+    case 'bead_drop':
+    case 'tape_fail':
+      // 掉豆/胶带失败：前置步骤已处理豆子减少，这里不额外修改
+      break;
+
+    case 'paper_gap':
+      // 烘焙纸覆盖不全：边缘部分烧焦
+      for (const bead of allBeads) {
+        // 边缘豆子更容易受影响
+        const isEdge = bead.x <= 1 || bead.y <= 1 ||
+          bead.x >= board.width - 2 || bead.y >= board.height - 2;
+        if (isEdge) {
+          bead.state = 'burned';
+          bead.color = applyBurnColor(bead.color, 0.4);
           affected.push(bead);
         }
       }
@@ -125,18 +143,25 @@ export function applyFailureToBoard(
 }
 
 /**
- * 烧焦颜色偏移：向黄褐色偏移
+ * 烧焦颜色偏移：整体变暗、发焦
+ * 真实烧焦 = 颜色大幅变暗 + 偏向深棕/焦黑
  */
 function applyBurnColor(hex: string, intensity: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
 
-  const nr = Math.min(255, r + Math.round(intensity * 40));
-  const ng = Math.max(0, g - Math.round(intensity * 30));
-  const nb = Math.max(0, b - Math.round(intensity * 50));
+  // 整体变暗：intensity越高越暗（0.6~0.3的保留比例）
+  const darken = 1 - intensity * 0.6; // intensity=1 → darken=0.4
+  // 向深棕色 (80, 40, 10) 混合
+  const burnR = 80, burnG = 40, burnB = 10;
+  const mix = intensity * 0.5; // 混入焦色的比例
 
-  return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`;
+  const nr = Math.round(r * darken * (1 - mix) + burnR * mix);
+  const ng = Math.round(g * darken * (1 - mix) + burnG * mix);
+  const nb = Math.round(b * darken * (1 - mix) + burnB * mix);
+
+  return `#${Math.min(255, Math.max(0, nr)).toString(16).padStart(2, '0')}${Math.min(255, Math.max(0, ng)).toString(16).padStart(2, '0')}${Math.min(255, Math.max(0, nb)).toString(16).padStart(2, '0')}`;
 }
 
 // ============ 翻车报告文案 ============
@@ -172,6 +197,24 @@ const FAILURE_TITLES: Record<FailureType, string[]> = {
     '面目全非',
     '拉丝芝士效果',
   ],
+  bead_drop: [
+    '豆子掉了一地！',
+    '翻转翻车了！',
+    '哗啦啦~',
+    '地心引力赢了！',
+  ],
+  tape_fail: [
+    '胶带没贴好！',
+    '豆子大逃亡！',
+    '贴纸大师？不是吧',
+    '胶带：我尽力了',
+  ],
+  paper_gap: [
+    '烘焙纸没盖住！',
+    '露馅了！',
+    '纸短豆长',
+    '局部烧焦预警！',
+  ],
 };
 
 const FAILURE_DESCRIPTIONS: Record<FailureType, string[]> = {
@@ -194,6 +237,18 @@ const FAILURE_DESCRIPTIONS: Record<FailureType, string[]> = {
   sticky: [
     '揭开的时候拉出了丝...拼豆之间互相粘连，作品被拉变形了。',
     '揭的时候手太快了！粘连在一起的拼豆被撕扯得七零八落。',
+  ],
+  bead_drop: [
+    '翻转的时候豆子们纷纷跳水...地上的比板上的还多。',
+    '胶带覆盖不够，翻过来的时候豆子掉了一堆。下次多贴点胶带！',
+  ],
+  tape_fail: [
+    '胶带没贴牢，翻转时整片豆子从缝隙里滑出来了...',
+    '按压不够实，胶带翘起来了，豆子从边缘大量掉落。',
+  ],
+  paper_gap: [
+    '烘焙纸没盖到的地方被熨斗直接接触了，颜色发焦...',
+    '露出来的部分直接被烫焦了。烘焙纸一定要完全覆盖！',
   ],
 };
 
@@ -222,6 +277,21 @@ const FAILURE_TIPS: Record<FailureType, string[]> = {
     '等稍微冷却再揭开',
     '速度均匀一点',
     '试试调整压力和速度',
+  ],
+  bead_drop: [
+    '胶带要覆盖70%以上面积',
+    '翻转时慢慢来，不要猛甩',
+    '边角区域记得多贴一条',
+  ],
+  tape_fail: [
+    '拖拽速度慢一点，按压更实',
+    '多贴几条，交叉覆盖更牢固',
+    '确保每条胶带都按压到位',
+  ],
+  paper_gap: [
+    '烘焙纸要完全盖住所有豆子',
+    '可以用「居中」按钮快速对准',
+    '边缘也要覆盖到',
   ],
 };
 

@@ -1,0 +1,44 @@
+# Perler Game Server 配置文件
+
+# 系统配置
+system:
+  env: develop  # develop | production
+  addr: 8013
+  db-type: mysql
+
+# JWT 配置
+jwt:
+  signing-key: "perler-game-secret-key-2026"
+  expires-time: 7d
+  buffer-time: 1d
+  issuer: "perler-game"
+
+# MySQL 配置 (本地 XAMPP)
+mysql:
+  path: "127.0.0.1"
+  port: "3306"
+  config: "charset=utf8mb4&parseTime=True&loc=Local"
+  db-name: "perler_game"
+  username: "root"
+  password: "123456"
+  max-idle-conns: 10
+  max-open-conns: 100
+  log-mode: "info"
+  log-zap: false
+
+# Redis 配置
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 2
+
+# 日志配置
+zap:
+  level: info
+  format: console
+  prefix: "[PERLER-GAME]"
+  director: log
+  show-line: true
+  encode-level: LowercaseColorLevelEncoder
+  stacktrace-key: stacktrace
+  log-in-console: true

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { BeadBoard, beadKey } from '@/core/BeadBoard';
-import type { Bead, GamePhase, IroningResult, Template } from '@/types/game';
+import type { Bead, GamePhase, IroningResult, Template, TapingResult, FlipState, RemovalState, PaperState, StepRecord } from '@/types/game';
 
 // 绘制工具类型
 export type DrawTool = 'pen' | 'eraser';
@@ -52,6 +52,42 @@ interface GameState {
   showGuide: boolean;
   setTemplate: (template: Template | null) => void;
   toggleGuide: () => void;
+
+  // 贴美纹纸结果
+  tapingResult: TapingResult | null;
+  setTapingResult: (result: TapingResult | null) => void;
+
+  // 存活的豆子（翻转/去钉板后）
+  survivingBeads: Map<string, Bead> | null;
+  setSurvivingBeads: (beads: Map<string, Bead> | null) => void;
+
+  // 掉落的豆子 key 列表
+  droppedBeads: string[];
+  setDroppedBeads: (keys: string[]) => void;
+
+  // 烘焙纸覆盖率
+  paperCoverage: number;
+  setPaperCoverage: (coverage: number) => void;
+
+  // 翻转状态
+  flipState: FlipState | null;
+  setFlipState: (state: FlipState | null) => void;
+
+  // 去钉板状态
+  removalState: RemovalState | null;
+  setRemovalState: (state: RemovalState | null) => void;
+
+  // 烘焙纸状态
+  paperState: PaperState | null;
+  setPaperState: (state: PaperState | null) => void;
+
+  // 过程记录（用于结果页回顾）
+  stepRecords: StepRecord[];
+  addStepRecord: (record: StepRecord) => void;
+
+  // 抢救
+  rescueUsed: boolean;
+  setRescueUsed: (used: boolean) => void;
 
   // 音效
   soundEnabled: boolean;
@@ -164,6 +200,34 @@ export const useGameStore = create<GameState>((set, get) => ({
   setTemplate: (template) => set({ selectedTemplate: template, showGuide: template !== null }),
   toggleGuide: () => set((s) => ({ showGuide: !s.showGuide })),
 
+  // 新增阶段状态
+  tapingResult: null,
+  setTapingResult: (result) => set({ tapingResult: result }),
+
+  survivingBeads: null,
+  setSurvivingBeads: (beads) => set({ survivingBeads: beads }),
+
+  droppedBeads: [],
+  setDroppedBeads: (keys) => set({ droppedBeads: keys }),
+
+  paperCoverage: 0,
+  setPaperCoverage: (coverage) => set({ paperCoverage: coverage }),
+
+  flipState: null,
+  setFlipState: (state) => set({ flipState: state }),
+
+  removalState: null,
+  setRemovalState: (state) => set({ removalState: state }),
+
+  paperState: null,
+  setPaperState: (state) => set({ paperState: state }),
+
+  stepRecords: [],
+  addStepRecord: (record) => set((s) => ({ stepRecords: [...s.stepRecords, record] })),
+
+  rescueUsed: false,
+  setRescueUsed: (used) => set({ rescueUsed: used }),
+
   soundEnabled: true,
   toggleSound: () => set((s) => ({ soundEnabled: !s.soundEnabled })),
 
@@ -182,5 +246,15 @@ export const useGameStore = create<GameState>((set, get) => ({
     renderVersion: 0,
     selectedTemplate: null,
     showGuide: true,
+    rescueUsed: false,
+    // 新增阶段状态重置
+    tapingResult: null,
+    survivingBeads: null,
+    droppedBeads: [],
+    paperCoverage: 0,
+    flipState: null,
+    removalState: null,
+    paperState: null,
+    stepRecords: [],
   }),
 }));

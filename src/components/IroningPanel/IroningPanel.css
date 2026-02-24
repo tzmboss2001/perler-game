@@ -4,15 +4,16 @@
   height: 100vh;
   background: #1a1a2e;
   color: white;
-  padding: 1rem;
-  gap: 1rem;
+  padding: var(--space-md);
+  padding-bottom: calc(var(--space-md) + var(--safe-bottom));
+  gap: var(--space-md);
   overflow-y: auto;
 }
 
 .ironing-header {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: var(--space-md);
 }
 
 .ironing-header h3 {
@@ -25,34 +26,35 @@
 .ironing-back-btn {
   background: none;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
   padding: 0.4rem 0.8rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   font-size: 0.8rem;
   cursor: pointer;
+  transition: all var(--duration-fast);
 }
 
 .ironing-back-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--glass-bg);
 }
 
 /* 温度控制 */
 .temp-control {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 0.75rem;
-  padding: 1rem;
+  padding: var(--space-md);
 }
 
 .temp-label-row {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-sm);
   font-size: 0.9rem;
 }
 
 .temp-value {
   font-weight: 700;
-  font-size: 1rem;
+  font-size: var(--font-base);
 }
 
 .temp-slider {
@@ -60,21 +62,40 @@
   height: 8px;
   -webkit-appearance: none;
   appearance: none;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   outline: none;
   cursor: pointer;
 }
 
+/* WebKit slider thumb */
 .temp-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: white;
-  border: 3px solid #667eea;
+  border: 3px solid var(--color-primary);
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Firefox slider thumb */
+.temp-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: white;
+  border: 3px solid var(--color-primary);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Firefox slider track */
+.temp-slider::-moz-range-track {
+  height: 8px;
+  border-radius: var(--radius-xs);
+  background: linear-gradient(to right, #5b9bd5, #5cd85c, #e84a4a);
 }
 
 .temp-slider:disabled {
@@ -82,19 +103,29 @@
   cursor: not-allowed;
 }
 
+.temp-slider:disabled::-webkit-slider-thumb {
+  background: #aaa;
+  border-color: #888;
+}
+
+.temp-slider:disabled::-moz-range-thumb {
+  background: #aaa;
+  border-color: #888;
+}
+
 .temp-marks {
   display: flex;
   justify-content: space-between;
-  font-size: 0.7rem;
+  font-size: var(--font-xs);
   opacity: 0.4;
-  margin-top: 0.25rem;
+  margin-top: var(--space-xs);
 }
 
 /* 时间显示 */
 .time-display {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 0.75rem;
-  padding: 0.75rem 1rem;
+  padding: 0.75rem var(--space-md);
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -103,7 +134,7 @@
 
 .time-value {
   font-weight: 700;
-  font-size: 1.2rem;
+  font-size: var(--font-lg);
   min-width: 50px;
 }
 
@@ -130,11 +161,11 @@
 }
 
 .trajectory-canvas {
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--glass-border);
   border-radius: 0.75rem;
   cursor: crosshair;
   touch-action: none;
-  max-width: 100%;
+  width: min(100%, 300px);
   max-height: 280px;
   aspect-ratio: 1;
 }
@@ -150,12 +181,12 @@
   padding: 0.9rem;
   border: none;
   border-radius: 0.75rem;
-  background: linear-gradient(135deg, #ff9a56, #ff6b6b);
+  background: linear-gradient(135deg, var(--color-warning), var(--color-danger));
   color: white;
   font-size: 1.1rem;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 0.1s, opacity 0.15s;
+  transition: transform 0.1s, opacity var(--duration-fast);
 }
 
 .start-ironing-btn:hover {
@@ -170,17 +201,30 @@
 .finish-ironing-btn {
   flex: 1;
   padding: 0.9rem;
-  border: 2px solid #ff6b6b;
+  border: 2px solid var(--color-danger);
   border-radius: 0.75rem;
   background: rgba(255, 107, 107, 0.2);
   color: #ff9a9a;
-  font-size: 1rem;
+  font-size: var(--font-base);
   font-weight: 600;
   cursor: pointer;
   animation: pulse 1s infinite;
 }
 
 @keyframes pulse {
-  0%, 100% { border-color: #ff6b6b; }
-  50% { border-color: #ffaa56; }
+  0%, 100% { border-color: var(--color-danger); }
+  50% { border-color: var(--color-warning); }
+}
+
+/* 挑战提示栏 */
+.challenge-hint-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--color-accent);
 }

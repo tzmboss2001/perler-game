@@ -35,10 +35,10 @@ export default function Toolbar({ onSave }: ToolbarProps) {
   const _canUndo = canUndo();
   const _canRedo = canRedo();
 
-  const handleIroning = () => {
+  const handleNextStep = () => {
     if (board.count === 0) return;
-    setPhase('ironing');
-    navigate('/game'); // 保持在游戏页面，切换熨烫UI
+    setPhase('taping'); // 新流程：placing → taping → flipping → removing → papering → ironing
+    navigate('/game');
   };
 
   const tools: { id: DrawTool; label: string }[] = [
@@ -131,10 +131,10 @@ export default function Toolbar({ onSave }: ToolbarProps) {
         <span className="bead-count">{board.count}</span>
         <button
           className={`ironing-btn ${board.count === 0 ? 'disabled' : ''}`}
-          onClick={handleIroning}
+          onClick={handleNextStep}
           disabled={board.count === 0}
         >
-          熨烫
+          下一步
         </button>
       </div>
     </div>
