@@ -5,7 +5,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Check, MagnifyingGlass } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../styles/designSystem';
-import { BeadColor, perlerColors } from '../data/beadColors';
+import { BeadColor, allBeadColors } from '../data/beadColors';
 import { deltaE, getContrastColor } from '../utils/colorUtils';
 
 interface ColorReplaceModalProps {
@@ -28,7 +28,7 @@ const ColorReplaceModal: React.FC<ColorReplaceModalProps> = ({
 
   // 计算推荐颜色（按色差排序）
   const recommendedColors = useMemo(() => {
-    return perlerColors
+    return allBeadColors
       .filter(c => c.id !== currentColor.id)
       .map(c => ({
         color: c,
@@ -42,7 +42,7 @@ const ColorReplaceModal: React.FC<ColorReplaceModalProps> = ({
   const filteredColors = useMemo(() => {
     if (!searchText.trim()) return [];
     const search = searchText.toLowerCase();
-    return perlerColors
+    return allBeadColors
       .filter(c =>
         c.id !== currentColor.id &&
         (c.name.toLowerCase().includes(search) ||

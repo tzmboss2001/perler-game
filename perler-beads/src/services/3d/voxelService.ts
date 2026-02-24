@@ -5,7 +5,7 @@
 
 import { Voxel, VoxelModel, DepthData, Generate3DConfig } from '../../types/3d/voxel';
 import { findClosestBeadColorLabWithVibrancy } from '../colorMatchService';
-import { artkalColors, BeadColor } from '../../data/beadColors';
+import { allBeadColors, BeadColor } from '../../data/beadColors';
 
 /**
  * 将图片和深度数据转换为体素模型
@@ -52,7 +52,7 @@ export async function imageToVoxels(
 
       // 匹配拼豆颜色
       const rgb: [number, number, number] = [r, g, b];
-      const matchedBead: BeadColor = findClosestBeadColorLabWithVibrancy(rgb, artkalColors, 0.3);
+      const matchedBead: BeadColor = findClosestBeadColorLabWithVibrancy(rgb, allBeadColors, 0.3);
 
       // 为每一层创建体素
       for (let z = 0; z < layerCount; z++) {

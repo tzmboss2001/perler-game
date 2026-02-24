@@ -3,7 +3,7 @@ import { ArrowLeft, CheckCircle, Eye, EyeSlash, Gear, Lightning, LightningSlash,
 import { useNavigate, useLocation } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, mixins } from '../../styles/designSystem';
 import { BeadPixelData } from '../../services/colorMatchService';
-import { BeadColor, perlerColors } from '../../data/beadColors';
+import { BeadColor, allBeadColors } from '../../data/beadColors';
 // projectApi 不再需要，进度只保存在本地
 import { useToast } from '../../components/Toast';
 import ExportModal from '../../components/ExportModal';
@@ -80,7 +80,7 @@ const MakingPage: React.FC = () => {
     const params = new URLSearchParams(location.search);
     if (params.get('test') !== '1') return null;
 
-    // 使用真实的 perlerColors ID
+    // 使用真实的 allBeadColors ID
     const testColors: BeadColor[] = [
       { id: '80-19001', name: 'White', hex: '#eaefee', brand: 'perler' },
       { id: '80-19002', name: 'Creme', hex: '#e1e2bb', brand: 'perler' },
@@ -187,7 +187,7 @@ const MakingPage: React.FC = () => {
   // 获取选中的 BeadColor 对象
   const selectedBeadColor = useMemo((): BeadColor | null => {
     if (!selection.colorId) return null;
-    return perlerColors.find(c => c.id === selection.colorId) || null;
+    return allBeadColors.find(c => c.id === selection.colorId) || null;
   }, [selection.colorId]);
 
   // 计算合适的缩放

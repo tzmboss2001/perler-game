@@ -4,7 +4,7 @@
  */
 
 import { VoxelModel, Layer, LayerBead, BeadStats3D } from '../../types/3d/voxel';
-import { artkalColors } from '../../data/beadColors';
+import { allBeadColors } from '../../data/beadColors';
 
 /**
  * 将体素模型切片为逐层数据
@@ -18,7 +18,7 @@ export function sliceModel(model: VoxelModel): Layer[] {
     const layerVoxels = model.voxels.filter(v => v.z === z);
 
     const beads: LayerBead[] = layerVoxels.map(v => {
-      const beadInfo = artkalColors.find(b => b.id === v.beadId);
+      const beadInfo = allBeadColors.find(b => b.id === v.beadId);
       return {
         x: v.x,
         y: v.y,
@@ -52,7 +52,7 @@ export function calculateBeadStats(model: VoxelModel): BeadStats3D {
     if (existing) {
       existing.count++;
     } else {
-      const beadInfo = artkalColors.find(b => b.id === voxel.beadId);
+      const beadInfo = allBeadColors.find(b => b.id === voxel.beadId);
       colorMap.set(voxel.beadId, {
         beadId: voxel.beadId,
         beadName: beadInfo?.name || voxel.beadId,
