@@ -28,6 +28,14 @@ import {
   ConnectionType,
   ConnectionRecommendation,
 } from '../../../services/3d/contourSliceService';
+import {
+  generatePanelAssembly,
+  renderFacePanelToCanvas,
+  getFaceLabel,
+  getAssemblyGuide,
+} from '../../../services/3d/panelAssemblyService';
+import { FacePanel, PanelAssemblyResult, PanelAssemblyConfig } from '../../../types/3d/panel';
+import PanelAssembly3DViewer from '../../../components/3d/PanelAssembly3DViewer';
 
 // ========================= 3D模型预览组件 =========================
 
@@ -648,6 +656,300 @@ function TanghuluSkewerDetailModal({
   );
 }
 
+// ========================= 面板拼接缩略图组件 =========================
+
+function FacePanelThumbnail({
+  panel,
+  onClick,
+}: {
+  panel: FacePanel;
+  onClick: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    const rendered = renderFacePanelToCanvas(panel, 4, false, true);
+    const ctx = canvasRef.current.getContext('2d')!;
+    canvasRef.current.width = rendered.width;
+    canvasRef.current.height = rendered.height;
+    ctx.drawImage(rendered, 0, 0);
+  }, [panel]);
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '6px',
+        cursor: 'pointer',
+      }}
+    >
+      <div
+        style={{
+          background: '#fff',
+          borderRadius: '8px',
+          padding: '4px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          border: '2px solid #3b82f6',
+        }}
+      >
+        <canvas
+          ref={canvasRef}
+          style={{
+            display: 'block',
+            maxWidth: '100px',
+            maxHeight: '100px',
+            objectFit: 'contain',
+          }}
+        />
+      </div>
+      <div style={{ textAlign: 'center' }}>
+        <span
+          style={{
+            fontSize: '12px',
+            fontWeight: 'bold',
+            color: '#3b82f6',
+            display: 'block',
+          }}
+        >
+          {getFaceLabel(panel.face)}
+        </span>
+        <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)' }}>
+          {panel.baseWidth}x{panel.baseHeight} · {panel.beadCount}颗
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ========================= 面板详情弹窗（支持左右滑动） =========================
+
+function FacePanelDetailModal({
+  panels,
+  currentIndex,
+  onClose,
+  onNavigate,
+}: {
+  panels: FacePanel[];
+  currentIndex: number;
+  onClose: () => void;
+  onNavigate: (index: number) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const touchStartX = useRef<number>(0);
+  const touchStartY = useRef<number>(0);
+  const panel = panels[currentIndex];
+
+  useEffect(() => {
+    if (!canvasRef.current || !panel) return;
+    const cellSize = Math.min(16, Math.floor(350 / Math.max(panel.width, panel.height)));
+    const rendered = renderFacePanelToCanvas(panel, Math.max(cellSize, 4), true, true);
+    canvasRef.current.width = rendered.width;
+    canvasRef.current.height = rendered.height;
+    const ctx = canvasRef.current.getContext('2d')!;
+    ctx.drawImage(rendered, 0, 0);
+  }, [panel]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        onNavigate(currentIndex - 1);
+      } else if (e.key === 'ArrowRight' && currentIndex < panels.length - 1) {
+        onNavigate(currentIndex + 1);
+      } else if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentIndex, panels.length, onNavigate, onClose]);
+
+  const handleExport = () => {
+    if (!panel) return;
+    const cellSize = 20;
+    const rendered = renderFacePanelToCanvas(panel, cellSize, true, true);
+    const link = document.createElement('a');
+    link.download = `${panel.id}_panel.png`;
+    link.href = rendered.toDataURL('image/png');
+    link.click();
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+      if (dx < 0 && currentIndex < panels.length - 1) {
+        onNavigate(currentIndex + 1);
+      } else if (dx > 0 && currentIndex > 0) {
+        onNavigate(currentIndex - 1);
+      }
+    }
+  };
+
+  if (!panel) return null;
+
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex < panels.length - 1;
+
+  const navBtnStyle: CSSProperties = {
+    background: 'rgba(255,255,255,0.15)',
+    border: 'none',
+    color: '#fff',
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    fontSize: '18px',
+    flexShrink: 0,
+  };
+
+  const navBtnDisabled: CSSProperties = {
+    ...navBtnStyle,
+    opacity: 0.2,
+    cursor: 'default',
+  };
+
+  // 统计凹凸数量
+  const concaveCount = Object.values(panel.edgeSlots).flat().filter(s => s.type === 'concave').length;
+  const convexCount = Object.values(panel.edgeSlots).flat().filter(s => s.type === 'convex').length;
+
+  return (
+    <div style={modalStyles.overlay} onClick={onClose}>
+      <div
+        style={modalStyles.content}
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div style={modalStyles.header}>
+          <h3 style={{ margin: 0, color: '#fff', fontSize: '16px' }}>
+            {panel.id} ({getFaceLabel(panel.face)})
+          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>
+              {currentIndex + 1}/{panels.length}
+            </span>
+            <button style={modalStyles.closeBtn} onClick={onClose}>
+              ×
+            </button>
+          </div>
+        </div>
+        <div style={modalStyles.info}>
+          <span>尺寸: {panel.baseWidth} × {panel.baseHeight}</span>
+          <span>珠子: {panel.beadCount}颗</span>
+          <span style={{ color: '#3b82f6' }}>凹: {concaveCount}组</span>
+          <span style={{ color: '#f59e0b' }}>凸: {convexCount}组</span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 10px' }}>
+          <button
+            style={hasPrev ? navBtnStyle : navBtnDisabled}
+            onClick={() => hasPrev && onNavigate(currentIndex - 1)}
+          >
+            <CaretLeft size={20} weight="bold" />
+          </button>
+
+          <div style={{ ...modalStyles.canvasWrap, flex: 1, margin: 0 }}>
+            <canvas
+              ref={canvasRef}
+              style={{ maxWidth: '100%', maxHeight: '50vh', objectFit: 'contain' }}
+            />
+          </div>
+
+          <button
+            style={hasNext ? navBtnStyle : navBtnDisabled}
+            onClick={() => hasNext && onNavigate(currentIndex + 1)}
+          >
+            <CaretRight size={20} weight="bold" />
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', padding: '12px 20px' }}>
+          <button
+            style={{
+              ...modalStyles.exportBtn,
+              margin: 0,
+              flex: 1,
+              background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+            }}
+            onClick={handleExport}
+          >
+            <Download size={16} /> 导出面板图纸
+          </button>
+        </div>
+
+        <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '11px', margin: '0 0 12px', padding: 0 }}>
+          左右滑动 · 箭头键切换
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ========================= 组装顺序指南组件 =========================
+
+function AssemblyGuideCard({
+  assemblyResult,
+}: {
+  assemblyResult: PanelAssemblyResult;
+}) {
+  const steps = getAssemblyGuide(assemblyResult.assemblyOrder);
+
+  return (
+    <div
+      style={{
+        background: 'rgba(59,130,246,0.1)',
+        border: '1px solid rgba(59,130,246,0.3)',
+        borderRadius: '12px',
+        padding: '12px 16px',
+        marginTop: '12px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+        <span style={{ fontSize: '16px' }}>&#x1F527;</span>
+        <span style={{ color: '#3b82f6', fontSize: '14px', fontWeight: 'bold' }}>
+          组装顺序
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {steps.map((step, idx) => (
+          <div
+            key={idx}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '6px 10px',
+              background: 'rgba(255,255,255,0.05)',
+              borderRadius: '8px',
+              fontSize: '13px',
+              color: 'rgba(255,255,255,0.8)',
+            }}
+          >
+            {step}
+          </div>
+        ))}
+      </div>
+
+      {/* 边缘连接统计 */}
+      <div style={{ marginTop: '10px', fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+        共 {assemblyResult.edges.length} 条卡槽边缘连接
+      </div>
+    </div>
+  );
+}
+
 // ========================= 推荐卡片组件 =========================
 
 function RecommendationCard({
@@ -789,6 +1091,9 @@ const modalStyles: Record<string, CSSProperties> = {
 
 // ========================= 主页面 =========================
 
+/** 构建模式 */
+type BuildMode = 'contour' | 'panel';
+
 export default function ModelTo3DPage() {
   const navigate = useNavigate();
 
@@ -796,9 +1101,14 @@ export default function ModelTo3DPage() {
   const [modelUrl, setModelUrl] = useState<string>('');
   const [modelName, setModelName] = useState<string>('');
   const [resolution, setResolution] = useState(32);
+  // 构建模式
+  const [buildMode, setBuildMode] = useState<BuildMode>('contour');
   // 等高线参数
   const [shellThickness, setShellThickness] = useState(3);
   const [connectionType, setConnectionType] = useState<ConnectionType>('auto');
+  // 面板拼接参数
+  const [slotGroupSize, setSlotGroupSize] = useState(3);
+  const [slotDepth, setSlotDepth] = useState(2);
   // 处理状态
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ percent: 0, message: '' });
@@ -814,18 +1124,29 @@ export default function ModelTo3DPage() {
   const [selectedSkewer, setSelectedSkewer] = useState<TanghuluSkewer | null>(null);
   // 推荐结果
   const [recommendation, setRecommendation] = useState<ConnectionRecommendation | null>(null);
+  // 面板拼接结果
+  const [panelResult, setPanelResult] = useState<PanelAssemblyResult | null>(null);
+  const [selectedPanelIndex, setSelectedPanelIndex] = useState<number>(-1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 选择示例模型
-  const handleSelectExample = (model: string) => {
-    setModelUrl(`/models/${model}`);
-    setModelName(model);
+  // 重置所有结果
+  const resetResults = () => {
     setVoxelGrid(null);
     setContourSlices([]);
     setConnectors([]);
     setSkewers([]);
     setRecommendation(null);
+    setPanelResult(null);
+    setSelectedPanelIndex(-1);
+    setSelectedContourIndex(-1);
+  };
+
+  // 选择示例模型
+  const handleSelectExample = (model: string) => {
+    setModelUrl(`/models/${model}`);
+    setModelName(model);
+    resetResults();
   };
 
   // 上传 GLB 文件
@@ -839,23 +1160,15 @@ export default function ModelTo3DPage() {
     const url = URL.createObjectURL(file);
     setModelUrl(url);
     setModelName(file.name);
-    setVoxelGrid(null);
-    setContourSlices([]);
-    setConnectors([]);
-    setSkewers([]);
-    setRecommendation(null);
+    resetResults();
   };
 
-  // 开始生成切片
+  // 开始生成
   const handleGenerate = useCallback(async () => {
     if (!modelUrl) return;
     setProcessing(true);
     setProgress({ percent: 0, message: '加载模型...' });
-    setContourSlices([]);
-    setConnectors([]);
-    setSkewers([]);
-    setRecommendation(null);
-    setVoxelGrid(null);
+    resetResults();
 
     try {
       // 1. 加载模型
@@ -870,22 +1183,37 @@ export default function ModelTo3DPage() {
       const stats = getVoxelStats(grid);
       console.log('体素化完成:', stats);
       setVoxelGrid(grid);
-      setProgress({ percent: 85, message: '生成切片...' });
 
-      // 等高线镂空切片 + 连接结构
-      const result = generateContourSlices(grid, {
-        shellThickness,
-        connectionType,
-      });
-      const contourStats = getContourSliceStats(result.slices);
-      console.log('等高线切片完成:', contourStats);
-      console.log('蜈蚣连接器:', result.connectors.length, '个');
-      console.log('糖葫芦串:', result.skewers.length, '个');
-      console.log('推荐:', result.recommendation);
-      setContourSlices(result.slices);
-      setConnectors(result.connectors);
-      setSkewers(result.skewers);
-      setRecommendation(result.recommendation ?? null);
+      if (buildMode === 'contour') {
+        // === 逐层叠加模式 ===
+        setProgress({ percent: 85, message: '生成切片...' });
+
+        const result = generateContourSlices(grid, {
+          shellThickness,
+          connectionType,
+        });
+        const contourStats = getContourSliceStats(result.slices);
+        console.log('等高线切片完成:', contourStats);
+        console.log('蜈蚣连接器:', result.connectors.length, '个');
+        console.log('糖葫芦串:', result.skewers.length, '个');
+        console.log('推荐:', result.recommendation);
+        setContourSlices(result.slices);
+        setConnectors(result.connectors);
+        setSkewers(result.skewers);
+        setRecommendation(result.recommendation ?? null);
+      } else {
+        // === 面板拼接模式 ===
+        setProgress({ percent: 85, message: '生成面板图纸...' });
+
+        const result = generatePanelAssembly(grid, {
+          slotGroupSize,
+          slotDepth,
+        });
+        console.log('面板拼接完成:', result.stats);
+        console.log('面板数:', result.panels.length);
+        console.log('边缘连接:', result.edges.length);
+        setPanelResult(result);
+      }
 
       setProgress({ percent: 100, message: '完成！' });
     } catch (err) {
@@ -894,11 +1222,10 @@ export default function ModelTo3DPage() {
     } finally {
       setProcessing(false);
     }
-  }, [modelUrl, resolution, shellThickness, connectionType]);
+  }, [modelUrl, resolution, buildMode, shellThickness, connectionType, slotGroupSize, slotDepth]);
 
   // 导出所有图纸（等高线 + 连接器 + 插条）
   const handleExportAllContour = () => {
-    // 导出层图纸
     for (const slice of contourSlices) {
       const canvas = renderContourSliceToCanvas(slice, 20, true, true);
       const link = document.createElement('a');
@@ -906,7 +1233,6 @@ export default function ModelTo3DPage() {
       link.href = canvas.toDataURL('image/png');
       link.click();
     }
-    // 导出连接器图纸
     for (const conn of connectors) {
       const canvas = renderCentipedeToCanvas(conn, 24, true);
       const link = document.createElement('a');
@@ -914,11 +1240,22 @@ export default function ModelTo3DPage() {
       link.href = canvas.toDataURL('image/png');
       link.click();
     }
-    // 导出糖葫芦串插条图纸
     for (const skewer of skewers) {
       const canvas = renderSkewerToCanvas(skewer, 24, true);
       const link = document.createElement('a');
       link.download = `${skewer.id}_skewer.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+  };
+
+  // 导出所有面板图纸
+  const handleExportAllPanels = () => {
+    if (!panelResult) return;
+    for (const panel of panelResult.panels) {
+      const canvas = renderFacePanelToCanvas(panel, 20, true, true);
+      const link = document.createElement('a');
+      link.download = `${panel.id}_panel.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
     }
@@ -964,6 +1301,12 @@ export default function ModelTo3DPage() {
           >
             <Cube size={18} /> Avocado
           </button>
+          <button
+            style={{ ...pageStyles.actionBtn, background: 'linear-gradient(135deg, #f6d365 0%, #fda085 100%)' }}
+            onClick={() => handleSelectExample('ColorBox.glb')}
+          >
+            <Cube size={18} /> Box
+          </button>
         </div>
         <input
           ref={fileInputRef}
@@ -995,6 +1338,45 @@ export default function ModelTo3DPage() {
         <div style={pageStyles.card}>
           <h3 style={pageStyles.cardTitle}>参数设置</h3>
 
+          {/* 构建方式选择器 */}
+          <div style={pageStyles.paramRow}>
+            <span style={pageStyles.paramLabel}>构建方式</span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {([
+                { mode: 'contour' as BuildMode, label: '逐层叠加', desc: '水平切片+连接器', color: '#43e97b' },
+                { mode: 'panel' as BuildMode, label: '面板拼接', desc: '6面板+凹凸卡槽', color: '#3b82f6' },
+              ]).map(({ mode, label, color }) => (
+                <button
+                  key={mode}
+                  style={{
+                    padding: '8px 18px',
+                    border: buildMode === mode
+                      ? `2px solid ${color}`
+                      : '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '10px',
+                    background: buildMode === mode
+                      ? `${color}22`
+                      : 'transparent',
+                    color: buildMode === mode ? color : 'rgba(255,255,255,0.6)',
+                    fontSize: '14px',
+                    fontWeight: buildMode === mode ? 'bold' : 'normal',
+                    cursor: 'pointer',
+                    flex: 1,
+                    textAlign: 'center',
+                  }}
+                  onClick={() => setBuildMode(mode)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', marginTop: '6px' }}>
+              {buildMode === 'contour'
+                ? '适合有机形状（鸭子、牛油果等），逐层堆叠组装'
+                : '适合规则几何体（盒子、立方体），6面板卡槽拼接'}
+            </p>
+          </div>
+
           {/* 分辨率 */}
           <div style={pageStyles.paramRow}>
             <span style={pageStyles.paramLabel}>分辨率</span>
@@ -1014,7 +1396,9 @@ export default function ModelTo3DPage() {
             </div>
           </div>
 
-          {/* 等高线参数 */}
+          {/* === 逐层叠加模式参数 === */}
+          {buildMode === 'contour' && (
+            <>
               <div style={pageStyles.paramRow}>
                 <span style={pageStyles.paramLabel}>壳厚度（珠子宽度）</span>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -1081,12 +1465,72 @@ export default function ModelTo3DPage() {
                     : '不使用连接结构，适合简单模型'}
                 </p>
               </div>
+            </>
+          )}
+
+          {/* === 面板拼接模式参数 === */}
+          {buildMode === 'panel' && (
+            <>
+              <div style={pageStyles.paramRow}>
+                <span style={pageStyles.paramLabel}>凹凸分组大小</span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {[2, 3, 4].map((s) => (
+                    <button
+                      key={s}
+                      style={{
+                        ...pageStyles.chipBtn,
+                        ...(slotGroupSize === s ? {
+                          ...pageStyles.chipBtnActive,
+                          background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                        } : {}),
+                      }}
+                      onClick={() => setSlotGroupSize(s)}
+                    >
+                      {s}珠
+                    </button>
+                  ))}
+                </div>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', marginTop: '4px' }}>
+                  {slotGroupSize === 2 ? '2珠一组：卡槽密集，咬合紧密'
+                    : slotGroupSize === 3 ? '3珠一组：平衡稳固与简洁（推荐）'
+                    : '4珠一组：卡槽较少，适合大模型'}
+                </p>
+              </div>
+
+              <div style={pageStyles.paramRow}>
+                <span style={pageStyles.paramLabel}>槽深度</span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {[2, 3].map((d) => (
+                    <button
+                      key={d}
+                      style={{
+                        ...pageStyles.chipBtn,
+                        ...(slotDepth === d ? {
+                          ...pageStyles.chipBtnActive,
+                          background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                        } : {}),
+                      }}
+                      onClick={() => setSlotDepth(d)}
+                    >
+                      {d}珠
+                    </button>
+                  ))}
+                </div>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', marginTop: '4px' }}>
+                  {slotDepth === 2 ? '2珠深：标准深度，适合大多数模型（推荐）'
+                    : '3珠深：更深卡槽，咬合更牢固'}
+                </p>
+              </div>
+            </>
+          )}
 
           {/* 生成按钮 */}
           <button
             style={{
               ...pageStyles.generateBtn,
-              background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+              background: buildMode === 'contour'
+                ? 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)'
+                : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
               opacity: processing ? 0.6 : 1,
             }}
             onClick={handleGenerate}
@@ -1098,7 +1542,8 @@ export default function ModelTo3DPage() {
               </>
             ) : (
               <>
-                <CaretRight size={20} weight="bold" /> 开始生成等高线
+                <CaretRight size={20} weight="bold" />
+                {buildMode === 'contour' ? '开始生成等高线' : '开始生成面板图纸'}
               </>
             )}
           </button>
@@ -1109,7 +1554,9 @@ export default function ModelTo3DPage() {
               <div
                 style={{
                   ...pageStyles.progressFill,
-                  background: 'linear-gradient(90deg, #43e97b, #38f9d7)',
+                  background: buildMode === 'contour'
+                    ? 'linear-gradient(90deg, #43e97b, #38f9d7)'
+                    : 'linear-gradient(90deg, #3b82f6, #1d4ed8)',
                   width: `${progress.percent}%`,
                 }}
               />
@@ -1273,6 +1720,102 @@ export default function ModelTo3DPage() {
             );
           })()}
         </div>
+      )}
+
+      {/* ========================= 面板拼接结果 ========================= */}
+
+      {/* 面板拼接3D预览 */}
+      {panelResult && voxelGrid && (
+        <div style={pageStyles.card}>
+          <h3 style={pageStyles.cardTitle}>面板拼接3D预览</h3>
+          <PanelAssembly3DViewer
+            panels={panelResult.panels}
+            gridSizeX={voxelGrid.sizeX}
+            gridSizeY={voxelGrid.sizeY}
+            gridSizeZ={voxelGrid.sizeZ}
+            height={300}
+          />
+          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', marginTop: '8px', textAlign: 'center' }}>
+            6个面板按立方体拼接的3D效果 · 拖动旋转 · 滚轮缩放
+          </p>
+        </div>
+      )}
+
+      {/* 面板图纸 */}
+      {panelResult && panelResult.panels.length > 0 && (
+        <div style={pageStyles.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ ...pageStyles.cardTitle, marginBottom: 0 }}>面板图纸</h3>
+            <button style={pageStyles.exportAllBtn} onClick={handleExportAllPanels}>
+              <Download size={14} /> 导出全部
+            </button>
+          </div>
+
+          <p style={{ color: '#3b82f6', fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>
+            共 {panelResult.panels.length} 个面板
+          </p>
+
+          <div style={pageStyles.sliceGrid}>
+            {panelResult.panels.map((panel, idx) => (
+              <FacePanelThumbnail
+                key={panel.id}
+                panel={panel}
+                onClick={() => setSelectedPanelIndex(idx)}
+              />
+            ))}
+          </div>
+
+          {/* 组装顺序指南 */}
+          <AssemblyGuideCard assemblyResult={panelResult} />
+
+          {/* 面板统计 */}
+          <div style={{ ...pageStyles.statsGrid, marginTop: '16px', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            <div style={pageStyles.statItem}>
+              <span style={{ ...pageStyles.statValue, color: '#3b82f6' }}>{panelResult.stats.totalPanels}</span>
+              <span style={pageStyles.statLabel}>面板数</span>
+            </div>
+            <div style={pageStyles.statItem}>
+              <span style={pageStyles.statValue}>{panelResult.stats.totalBeads}</span>
+              <span style={pageStyles.statLabel}>总珠子数</span>
+            </div>
+            <div style={pageStyles.statItem}>
+              <span style={pageStyles.statValue}>{panelResult.edges.length}</span>
+              <span style={pageStyles.statLabel}>边缘连接</span>
+            </div>
+          </div>
+
+          {/* 每面珠子分布 */}
+          <div style={{ marginTop: '12px' }}>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', marginBottom: '8px' }}>各面珠子分布:</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {panelResult.stats.panelBreakdown.map(({ face, beadCount }) => (
+                <div
+                  key={face}
+                  style={{
+                    padding: '4px 10px',
+                    background: 'rgba(59,130,246,0.1)',
+                    border: '1px solid rgba(59,130,246,0.2)',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    color: 'rgba(255,255,255,0.7)',
+                  }}
+                >
+                  {getFaceLabel(face)}: {beadCount}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 面板详情弹窗（支持左右滑动） */}
+      {selectedPanelIndex >= 0 && panelResult && panelResult.panels.length > 0 && (
+        <FacePanelDetailModal
+          panels={panelResult.panels}
+          currentIndex={selectedPanelIndex}
+          onClose={() => setSelectedPanelIndex(-1)}
+          onNavigate={(idx) => setSelectedPanelIndex(idx)}
+        />
       )}
 
       {/* 等高线切片详情弹窗（支持左右滑动） */}
