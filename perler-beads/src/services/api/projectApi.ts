@@ -115,7 +115,7 @@ export interface ProjectDetail extends ProjectInfo {
   };
 }
 
-// 通用请求函数（带超时处理）
+// 通用请求函数（带超时处理，支持外部取消信号）
 async function request<T>(url: string, options: RequestInit = {}, timeout = 120000): Promise<ApiResponse<T>> {
   const deviceId = getDeviceId();
   const token = getToken();
@@ -129,6 +129,16 @@ async function request<T>(url: string, options: RequestInit = {}, timeout = 1200
   // 创建 AbortController 用于超时控制
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  // 如果外部传入了 signal，监听其 abort 事件以联动取消
+  const externalSignal = options.signal;
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      clearTimeout(timeoutId);
+      throw new Error('请求已被取消');
+    }
+    externalSignal.addEventListener('abort', () => controller.abort());
+  }
 
   // 构建 headers，如果有 token 则添加
   const headers: Record<string, string> = {
@@ -160,6 +170,10 @@ async function request<T>(url: string, options: RequestInit = {}, timeout = 1200
   } catch (error) {
     clearTimeout(timeoutId);
     if (error instanceof Error && error.name === 'AbortError') {
+      // 区分外部取消和超时
+      if (externalSignal?.aborted) {
+        throw error; // 保持 AbortError 让调用方识别
+      }
       throw new Error(`请求超时 (${timeout / 1000}秒)`);
     }
     throw error;
@@ -185,13 +199,13 @@ export const projectApi = {
   /**
    * 获取方案列表
    */
-  getList: async (params: { page?: number; pageSize?: number; status?: number } = {}): Promise<ApiResponse<PageResult<ProjectInfo>>> => {
-    const { page = 1, pageSize = 20, status } = params;
+  getList: async (params: { page?: number; pageSize?: number; status?: number; signal?: AbortSignal } = {}): Promise<ApiResponse<PageResult<ProjectInfo>>> => {
+    const { page = 1, pageSize = 20, status, signal } = params;
     let url = `/api/v1/project/list?page=${page}&pageSize=${pageSize}`;
     if (status !== undefined) {
       url += `&status=${status}`;
     }
-    return request(url, { method: 'GET' });
+    return request(url, { method: 'GET', signal });
   },
 
   /**

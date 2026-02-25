@@ -48,7 +48,7 @@ const ProfilePage: React.FC = () => {
     const loadProjects = async () => {
       try {
         setLoading(true);
-        const response = await projectApi.getList({ page: 1, pageSize: 20 });
+        const response = await projectApi.getList({ page: 1, pageSize: 20, signal: controller.signal });
         if (isMounted && response.code === 0) {
           setProjects(response.data.list || []);
         }

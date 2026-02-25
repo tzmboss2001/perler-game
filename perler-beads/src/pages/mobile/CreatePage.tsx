@@ -33,6 +33,13 @@ const CreatePage: React.FC = () => {
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      // 文件大小校验（最大 10MB）
+      const MAX_SIZE = 10 * 1024 * 1024;
+      if (file.size > MAX_SIZE) {
+        alert(`图片太大（${(file.size / 1024 / 1024).toFixed(1)}MB），请选择 10MB 以内的图片`);
+        event.target.value = ''; // 清空 input 以便重新选择
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (e) => {
         // 设置原始图片，进入裁剪流程

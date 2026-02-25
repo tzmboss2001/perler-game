@@ -437,6 +437,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: radius.card,
     boxShadow: shadows.sm,
     opacity: 0.7,
+    pointerEvents: 'none' as const,
   },
 
   communityContent: {

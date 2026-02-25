@@ -208,6 +208,18 @@ const MakingPage: React.FC = () => {
     }
   }, [beadData]);
 
+  // 适应屏幕：重置缩放和位移
+  const handleFitScreen = useCallback(() => {
+    if (!beadData) return;
+    const vh = window.innerHeight;
+    const availableHeight = vh - 40 - 64 - 50 - 60 - 24;
+    const baseHeight = beadData.height * baseCellSize;
+    const fitScale = availableHeight / baseHeight;
+    setScale(Math.min(6, Math.max(1, fitScale)));
+    setTranslateX(0);
+    setTranslateY(0);
+  }, [beadData]);
+
   // ===== 状态保存与恢复 =====
   const getStorageKey = useCallback(() => {
     if (projectId) return `making_state_${projectId}`;
@@ -914,11 +926,8 @@ const MakingPage: React.FC = () => {
           const b = parseInt(contrastColor.slice(5, 7), 16);
           ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${effectiveOpacity})`;
 
-          let displayColorId = bead.id;
-          if (bead.id.startsWith('80-19') || bead.id.startsWith('80-15')) {
-            const numPart = bead.id.slice(5);
-            displayColorId = 'P' + parseInt(numPart, 10).toString();
-          }
+          // 直接使用原始色号（MARD: H9, A1 等已经够简短）
+          const displayColorId = bead.id;
 
           let displayText = '';
           if (bead.id !== currentColorId || segmentCount >= 99) {
@@ -976,6 +985,7 @@ const MakingPage: React.FC = () => {
               <button style={styles.miniBtn} onClick={() => setScale(Math.max(0.5, scale - 0.5))}>−</button>
               <span style={styles.zoomLabel}>{Math.round(scale * 100)}%</span>
               <button style={styles.miniBtn} onClick={() => setScale(Math.min(6, scale + 0.5))}>+</button>
+              <button style={{...styles.miniBtn, fontSize: '10px', padding: '2px 6px'}} onClick={handleFitScreen} title="适应屏幕">适应</button>
             </div>
 
             {/* 右侧：功能按钮 */}

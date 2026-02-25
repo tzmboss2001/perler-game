@@ -675,8 +675,23 @@ const EditorPage: React.FC = () => {
     }
   };
 
+  // 记录上次成功生成时的参数（用于取消时恢复滑块位置）
+  const lastAppliedParamsRef = useRef({ gridSize, saturationBoost, vibrancyPreference });
+
   // 重新生成（保持滚动位置，不重置初始数据）
   const handleRegenerate = () => {
+    // 如果用户有手动编辑（撤销栈非空），先确认
+    if (canUndo) {
+      if (!window.confirm('调整参数将重新生成图案，手动编辑的内容将丢失，确定继续吗？')) {
+        // 用户取消，恢复滑块到上次生成时的值
+        setGridSize(lastAppliedParamsRef.current.gridSize);
+        setSaturationBoost(lastAppliedParamsRef.current.saturationBoost);
+        setVibrancyPreference(lastAppliedParamsRef.current.vibrancyPreference);
+        return;
+      }
+    }
+    // 记录本次参数
+    lastAppliedParamsRef.current = { gridSize, saturationBoost, vibrancyPreference };
     // 保存当前滚动位置
     if (containerRef.current) {
       savedScrollPosition.current = containerRef.current.scrollTop;
@@ -690,6 +705,27 @@ const EditorPage: React.FC = () => {
 
   // 智能推荐拼豆板配置
   const boardRecommendation = beadData ? recommendBoard(beadData.width, beadData.height) : null;
+
+  // 检测珠子实际品牌（用于采购清单显示）
+  const dominantBrand = React.useMemo(() => {
+    if (!beadData) return 'MARD';
+    const brandCount: Record<string, number> = {};
+    beadData.beads.forEach(b => {
+      const brand = b.brand || 'unknown';
+      brandCount[brand] = (brandCount[brand] || 0) + 1;
+    });
+    let maxBrand = 'MARD';
+    let maxCount = 0;
+    Object.entries(brandCount).forEach(([brand, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        maxBrand = brand;
+      }
+    });
+    // 品牌名美化
+    const brandNames: Record<string, string> = { mard: 'MARD', perler: 'Perler', hama: 'Hama', artkal: 'Artkal' };
+    return brandNames[maxBrand.toLowerCase()] || maxBrand.toUpperCase();
+  }, [beadData]);
 
   return (
     <div ref={containerRef} style={styles.container}>
@@ -909,34 +945,6 @@ const EditorPage: React.FC = () => {
           </div>
 
           {/* 颜色数量选择 - 已在创建页选择，此处隐藏 */}
-
-          {/* 简化度滑块 - 暂时隐藏（功能已整合到鲜艳度中） */}
-          {/* <div style={styles.controlItem}>
-            <div style={styles.controlHeader}>
-              <span style={styles.controlLabel}>简化度</span>
-              <span style={styles.controlValue}>{simplifyLevel}%</span>
-            </div>
-            <div style={styles.mergeSliderRow}>
-              <span style={styles.mergeLabel}>细节</span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={simplifyLevel}
-                onChange={(e) => setSimplifyLevel(Number(e.target.value))}
-                onMouseUp={handleRegenerate}
-                onTouchEnd={handleRegenerate}
-                style={styles.slider}
-              />
-              <span style={styles.mergeLabel}>简化</span>
-            </div>
-            <p style={styles.mergeHint}>
-              {simplifyLevel === 0 ? '保留全部细节' :
-               simplifyLevel <= 25 ? '轻度简化' :
-               simplifyLevel <= 50 ? '适度简化' :
-               simplifyLevel <= 75 ? '较多简化' : '大幅简化'}
-            </p>
-          </div> */}
         </div>
 
         {/* 珠子统计 */}
@@ -960,16 +968,7 @@ const EditorPage: React.FC = () => {
               >
                 <span>合并</span>
               </button>
-              <button
-                style={styles.shoppingListBtn}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowShoppingList(true);
-                }}
-              >
-                <ShoppingCart size={14} weight="fill" />
-                <span>清单</span>
-              </button>
+              {/* 采购清单暂时隐藏 — 拼豆按包/盒购买，按颗数采购清单实用性不高 */}
               <span style={{ ...styles.statsArrow, transform: showStats ? 'rotate(180deg)' : 'rotate(0)' }}>
                 ▼
               </span>
@@ -978,7 +977,7 @@ const EditorPage: React.FC = () => {
 
           {showStats && (
             <div style={styles.statsList}>
-              {statistics.slice(0, 20).map((stat, index) => (
+              {statistics.map((stat, index) => (
                 <div
                   key={stat.color.id}
                   style={{
@@ -1131,7 +1130,7 @@ const EditorPage: React.FC = () => {
             percentage: s.percentage,
           }))}
           gridSize={{ width: beadData.width, height: beadData.height }}
-          brand="Artkal"
+          brand={dominantBrand}
         />
       )}
 
@@ -1796,7 +1795,7 @@ const styles: Record<string, React.CSSProperties> = {
   // 统计列表 - 更紧凑
   statsList: {
     padding: '0 8px 8px',
-    maxHeight: '140px',
+    maxHeight: '200px',
     overflowY: 'auto',
   },
 
