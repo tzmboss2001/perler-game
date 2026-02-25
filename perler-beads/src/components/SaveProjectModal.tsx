@@ -8,6 +8,7 @@ interface SaveProjectModalProps {
   onCancel: () => void;
   loading?: boolean;
   defaultName?: string;
+  isLoggedIn?: boolean;
 }
 
 const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
@@ -16,6 +17,7 @@ const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
   onCancel,
   loading = false,
   defaultName = '',
+  isLoggedIn = false,
 }) => {
   const [name, setName] = useState(defaultName);
 
@@ -62,6 +64,14 @@ const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
         <div style={styles.content}>
           <p style={styles.description}>
             为你的拼豆方案起个名字，方便下次继续制作
+          </p>
+          <p style={{
+            ...styles.description,
+            fontSize: '12px',
+            color: isLoggedIn ? '#7ed6a5' : '#ffb347',
+            margin: '0 0 12px',
+          }}>
+            {isLoggedIn ? '将保存到云端' : '将保存到本地设备'}
           </p>
           <div style={styles.inputGroup}>
             <label style={styles.label}>方案名称</label>

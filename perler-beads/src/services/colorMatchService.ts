@@ -460,6 +460,84 @@ export const calculateBeadStatistics = (beadData: BeadPixelData): BeadStatistics
 };
 
 /**
+ * 智能合并结果
+ */
+export interface SmartMergeResult {
+  /** 合并后的 beadData */
+  mergedData: BeadPixelData;
+  /** 合并报告：被合并的颜色 -> 合并目标 */
+  mergeReport: Array<{
+    fromColor: BeadColor;
+    toColor: BeadColor;
+    count: number;
+  }>;
+  /** 合并前颜色数 */
+  beforeCount: number;
+  /** 合并后颜色数 */
+  afterCount: number;
+}
+
+/**
+ * 智能合并颜色 - 将使用量低于阈值的颜色合并到最相近的颜色
+ * @param beadData 珠子数据
+ * @param threshold 阈值（使用数量 <= threshold 的颜色将被合并）
+ */
+export const smartMergeColors = (
+  beadData: BeadPixelData,
+  threshold: number
+): SmartMergeResult => {
+  const stats = calculateBeadStatistics(beadData);
+  const beforeCount = stats.length;
+
+  // 分为保留颜色和待合并颜色
+  const keepColors: BeadColor[] = [];
+  const mergeColors: { color: BeadColor; count: number }[] = [];
+
+  for (const stat of stats) {
+    if (stat.count <= threshold) {
+      mergeColors.push({ color: stat.color, count: stat.count });
+    } else {
+      keepColors.push(stat.color);
+    }
+  }
+
+  if (mergeColors.length === 0 || keepColors.length === 0) {
+    return {
+      mergedData: beadData,
+      mergeReport: [],
+      beforeCount,
+      afterCount: beforeCount,
+    };
+  }
+
+  // 每个待合并颜色找最近的保留颜色
+  const mergeReport: SmartMergeResult['mergeReport'] = [];
+  const colorMapping = new Map<string, BeadColor>();
+
+  for (const { color: fromColor, count } of mergeColors) {
+    const toColor = findClosestBeadColor(fromColor.rgb, keepColors);
+    colorMapping.set(fromColor.id, toColor);
+    mergeReport.push({ fromColor, toColor, count });
+  }
+
+  // 应用合并
+  const newBeads = beadData.beads.map(bead => {
+    if (bead === null) return null;
+    return colorMapping.get(bead.id) || bead;
+  });
+
+  const mergedData: BeadPixelData = { ...beadData, beads: newBeads };
+  const afterStats = calculateBeadStatistics(mergedData);
+
+  return {
+    mergedData,
+    mergeReport,
+    beforeCount,
+    afterCount: afterStats.length,
+  };
+};
+
+/**
  * 减少颜色数量（合并相似颜色）
  */
 export const reduceColors = (
@@ -654,7 +732,7 @@ export const renderBeadsToCanvas = (
   // 显示颜色代码（横排计数方式）
   if (showColorCode && cellSize >= 15) {
     const fontSize = Math.max(10, Math.round(cellSize * 0.35));
-    ctx.font = `bold ${fontSize}px Arial`;
+    ctx.font = `500 ${fontSize}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -676,9 +754,15 @@ export const renderBeadsToCanvas = (
         const px = x * cellSize;
         const py = y * cellSize;
 
-        ctx.fillStyle = getContrastColor(bead.rgb);
-        ctx.strokeStyle = getContrastColor(bead.rgb) === '#000000' ? '#ffffff' : '#000000';
-        ctx.lineWidth = fontSize > 12 ? 2 : 1;
+        // 计算背景亮度：默认深色字体，只有很暗的背景才用白色
+        const r = parseInt(bead.rgb.slice(1, 3), 16);
+        const g = parseInt(bead.rgb.slice(3, 5), 16);
+        const b = parseInt(bead.rgb.slice(5, 7), 16);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        const isDark = luminance < 0.35; // 只有很暗的颜色才用白字
+        ctx.fillStyle = isDark ? '#ffffff' : '#1a1a1a';
+        ctx.strokeStyle = isDark ? '#000000' : '#ffffff';
+        ctx.lineWidth = fontSize > 12 ? 1.5 : 0.8;
 
         // Perler 色号转换：80-19001 → P01, 80-15265 → P265
         let displayColorId = bead.id;
@@ -894,7 +978,7 @@ export const renderBeadsToCanvasWithList = (
   // 显示颜色代码
   if (showColorCode && cellSize >= 15) {
     const fontSize = Math.max(10, Math.round(cellSize * 0.35));
-    ctx.font = `bold ${fontSize}px Arial`;
+    ctx.font = `500 ${fontSize}px Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -915,9 +999,15 @@ export const renderBeadsToCanvasWithList = (
         const px = x * cellSize;
         const py = y * cellSize;
 
-        ctx.fillStyle = getContrastColor(bead.rgb);
-        ctx.strokeStyle = getContrastColor(bead.rgb) === '#000000' ? '#ffffff' : '#000000';
-        ctx.lineWidth = fontSize > 12 ? 2 : 1;
+        // 计算背景亮度：默认深色字体，只有很暗的背景才用白色
+        const r = parseInt(bead.rgb.slice(1, 3), 16);
+        const g = parseInt(bead.rgb.slice(3, 5), 16);
+        const b = parseInt(bead.rgb.slice(5, 7), 16);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        const isDark = luminance < 0.35;
+        ctx.fillStyle = isDark ? '#ffffff' : '#1a1a1a';
+        ctx.strokeStyle = isDark ? '#000000' : '#ffffff';
+        ctx.lineWidth = fontSize > 12 ? 1.5 : 0.8;
 
         let displayColorId = bead.id;
         if (bead.id.startsWith('80-19') || bead.id.startsWith('80-15')) {
@@ -1131,11 +1221,201 @@ export const generateBeadList = (beadData: BeadPixelData): string => {
   return text;
 };
 
+/**
+ * 按拼豆板分页渲染
+ * @param beadData 完整图案数据
+ * @param cellSize 每格像素大小
+ * @param boardSize 拼豆板尺寸（如 29x29）
+ * @param options 渲染选项
+ * @returns 每页的 canvas 数组
+ */
+export interface PaginatedPage {
+  canvas: HTMLCanvasElement;
+  pageIndex: number;
+  totalPages: number;
+  rowIndex: number;
+  colIndex: number;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
+
+export const renderBeadsPaginated = (
+  beadData: BeadPixelData,
+  cellSize: number,
+  boardSize: number,
+  options: {
+    showGrid?: boolean;
+    showCoords?: boolean;
+    showMajorGrid?: boolean;
+  } = {}
+): PaginatedPage[] => {
+  const { width, height } = beadData;
+  const { showGrid = true, showCoords = true, showMajorGrid = true } = options;
+
+  const cols = Math.ceil(width / boardSize);
+  const rows = Math.ceil(height / boardSize);
+  const totalPages = rows * cols;
+  const pages: PaginatedPage[] = [];
+
+  const headerHeight = cellSize * 2; // 页码标注高度
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const startX = col * boardSize;
+      const startY = row * boardSize;
+      const endX = Math.min(startX + boardSize, width);
+      const endY = Math.min(startY + boardSize, height);
+      const pageW = endX - startX;
+      const pageH = endY - startY;
+
+      const canvas = document.createElement('canvas');
+      const canvasW = pageW * cellSize;
+      const canvasH = pageH * cellSize + headerHeight;
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+
+      // 白色背景
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      // 页码标注
+      const pageNum = row * cols + col + 1;
+      ctx.fillStyle = '#333333';
+      ctx.font = `bold ${Math.max(14, cellSize * 0.6)}px Arial, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(
+        `第 ${pageNum}/${totalPages} 页  行${row + 1} 列${col + 1}  [${startX + 1}-${endX}, ${startY + 1}-${endY}]`,
+        canvasW / 2,
+        headerHeight / 2
+      );
+
+      // 渲染珠子
+      const offsetY = headerHeight;
+      for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+          const bead = beadData.beads[y * width + x];
+          const px = (x - startX) * cellSize;
+          const py = (y - startY) * cellSize + offsetY;
+
+          if (bead) {
+            ctx.fillStyle = bead.hex;
+            ctx.fillRect(px, py, cellSize, cellSize);
+          } else {
+            // 透明格子用浅灰棋盘格
+            ctx.fillStyle = (x + y) % 2 === 0 ? '#f0f0f0' : '#e0e0e0';
+            ctx.fillRect(px, py, cellSize, cellSize);
+          }
+        }
+      }
+
+      // 网格线
+      if (showGrid) {
+        ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+        ctx.lineWidth = 0.5;
+        for (let x = 0; x <= pageW; x++) {
+          ctx.beginPath();
+          ctx.moveTo(x * cellSize, offsetY);
+          ctx.lineTo(x * cellSize, offsetY + pageH * cellSize);
+          ctx.stroke();
+        }
+        for (let y = 0; y <= pageH; y++) {
+          ctx.beginPath();
+          ctx.moveTo(0, y * cellSize + offsetY);
+          ctx.lineTo(pageW * cellSize, y * cellSize + offsetY);
+          ctx.stroke();
+        }
+      }
+
+      // 大网格线
+      if (showMajorGrid) {
+        // 5x5 蓝线
+        ctx.strokeStyle = 'rgba(100,150,255,0.4)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= pageW; x++) {
+          if ((startX + x) % 5 === 0) {
+            ctx.beginPath();
+            ctx.moveTo(x * cellSize, offsetY);
+            ctx.lineTo(x * cellSize, offsetY + pageH * cellSize);
+            ctx.stroke();
+          }
+        }
+        for (let y = 0; y <= pageH; y++) {
+          if ((startY + y) % 5 === 0) {
+            ctx.beginPath();
+            ctx.moveTo(0, y * cellSize + offsetY);
+            ctx.lineTo(pageW * cellSize, y * cellSize + offsetY);
+            ctx.stroke();
+          }
+        }
+
+        // 10x10 黑线
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.lineWidth = 1.5;
+        for (let x = 0; x <= pageW; x++) {
+          if ((startX + x) % 10 === 0) {
+            ctx.beginPath();
+            ctx.moveTo(x * cellSize, offsetY);
+            ctx.lineTo(x * cellSize, offsetY + pageH * cellSize);
+            ctx.stroke();
+          }
+        }
+        for (let y = 0; y <= pageH; y++) {
+          if ((startY + y) % 10 === 0) {
+            ctx.beginPath();
+            ctx.moveTo(0, y * cellSize + offsetY);
+            ctx.lineTo(pageW * cellSize, y * cellSize + offsetY);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // 坐标刻度
+      if (showCoords) {
+        ctx.fillStyle = '#666';
+        ctx.font = `${Math.max(8, cellSize * 0.3)}px Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        // X 轴
+        for (let x = 0; x < pageW; x += 5) {
+          ctx.fillText(`${startX + x + 1}`, x * cellSize + cellSize / 2, offsetY + pageH * cellSize + 2);
+        }
+        // Y 轴
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (let y = 0; y < pageH; y += 5) {
+          ctx.fillText(`${startY + y + 1}`, -2, y * cellSize + cellSize / 2 + offsetY);
+        }
+      }
+
+      pages.push({
+        canvas,
+        pageIndex: pageNum - 1,
+        totalPages,
+        rowIndex: row,
+        colIndex: col,
+        startX,
+        startY,
+        endX,
+        endY,
+      });
+    }
+  }
+
+  return pages;
+};
+
 export default {
   matchPixelsToBead,
   findClosestBeadColor,
   findClosestBeadColorLab,
   calculateBeadStatistics,
+  smartMergeColors,
   reduceColors,
   replaceColor,
   excludeColor,
@@ -1143,6 +1423,7 @@ export default {
   getBeadAt,
   setBeadAt,
   renderBeadsToCanvas,
+  renderBeadsPaginated,
   exportBeadPattern,
   generateBeadList,
 };

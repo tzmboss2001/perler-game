@@ -4,10 +4,10 @@ import { Camera, Image, FolderOpen, ArrowRight, Sparkle } from '@phosphor-icons/
 import { colors, radius, typography, shadows, animation } from '../../styles/designSystem';
 import OnboardingModal from '../../components/OnboardingModal';
 import FeaturedCarousel from '../../components/FeaturedCarousel';
-import TemplateCategoryList from '../../components/TemplateCategoryList';
 import { featuredWorks, FeaturedWork } from '../../data/featuredWorks';
 import { templateApi, FeaturedTemplateResponse } from '../../services/api/templateApi';
 import { useUserStore } from '../../store/userStore';
+import { localStorageService } from '../../services/localStorageService';
 
 // 难度映射：后端字符串 -> 前端类型
 const difficultyMap: Record<string, 'easy' | 'medium' | 'hard'> = {
@@ -27,6 +27,7 @@ const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const { isLoggedIn } = useUserStore();
   const [works, setWorks] = useState<FeaturedWork[]>([]);
+  const [localProjectCount, setLocalProjectCount] = useState(0);
 
   // 加载精选作品 - 优先从API获取，无数据则使用本地生成
   useEffect(() => {
@@ -57,6 +58,10 @@ const HomePage: React.FC = () => {
     };
 
     loadFeaturedWorks();
+
+    // 加载本地方案数量
+    const localResult = localStorageService.getProjectList();
+    setLocalProjectCount(localResult.total);
   }, []);
 
   // 处理精选作品点击 - 跳转到模板详情页
@@ -126,14 +131,14 @@ const HomePage: React.FC = () => {
           </div>
         </div>
 
-        {/* 模板分类 */}
-        <TemplateCategoryList />
-
         {/* 我的方案 */}
         <div style={styles.myProjects}>
           <div style={styles.sectionHeader}>
             <span style={styles.sectionIcon}>📁</span>
             <span style={styles.sectionTitle}>我的方案</span>
+            {localProjectCount > 0 && (
+              <span style={styles.projectCountBadge}>{localProjectCount}</span>
+            )}
           </div>
           <div style={styles.myProjectsCard} onClick={() => navigate('/mobile/profile')}>
             <div style={styles.myProjectsIcon}>
@@ -145,10 +150,15 @@ const HomePage: React.FC = () => {
                   <span style={styles.myProjectsTitle}>查看全部方案</span>
                   <span style={styles.myProjectsDesc}>继续制作未完成的作品</span>
                 </>
+              ) : localProjectCount > 0 ? (
+                <>
+                  <span style={styles.myProjectsTitle}>本地方案 ({localProjectCount})</span>
+                  <span style={styles.myProjectsDesc}>继续制作未完成的作品</span>
+                </>
               ) : (
                 <>
-                  <span style={styles.myProjectsTitle}>登录同步云端</span>
-                  <span style={styles.myProjectsDesc}>登录后可保存方案到云端</span>
+                  <span style={styles.myProjectsTitle}>还没有方案</span>
+                  <span style={styles.myProjectsDesc}>上传图片生成你的第一个拼豆图案</span>
                 </>
               )}
             </div>
@@ -394,6 +404,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
     color: colors.text.muted,
+  },
+
+  projectCountBadge: {
+    marginLeft: '4px',
+    padding: '2px 8px',
+    background: `linear-gradient(135deg, ${colors.bead.cyan}, ${colors.bead.green})`,
+    borderRadius: radius.full,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.bold,
+    color: '#ffffff',
   },
 
   communityPreview: {

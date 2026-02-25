@@ -52,6 +52,7 @@ export interface CreateProjectReq {
   };
   settings: {
     gridSize: number;
+    gridHeight?: number;
     colorCount: number;
     saturationBoost: number;
     vibrancyPreference: number;
@@ -79,6 +80,7 @@ export interface ProjectInfo {
   thumbnail_url: string;
   settings: {
     gridSize: number;
+    gridHeight?: number;
     colorCount: number;
     saturationBoost: number;
     vibrancyPreference: number;

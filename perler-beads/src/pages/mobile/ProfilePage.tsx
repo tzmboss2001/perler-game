@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { User, Gear, Info, Question, Heart, Trash, Play, Spinner, SignOut, SignIn } from '@phosphor-icons/react';
+import { User, Gear, Info, Question, Heart, Trash, Play, Spinner, SignOut, SignIn, Palette } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, pixelIcons } from '../../styles/designSystem';
 import { projectApi, ProjectInfo } from '../../services/api/projectApi';
 import { BeadColor } from '../../data/beadColors';
 import { useUserStore } from '../../store/userStore';
 import Modal, { useModal } from '../../components/Modal';
+import MyColorsModal from '../../components/MyColorsModal';
+import { myColorsService } from '../../services/myColorsService';
+import { localStorageService, LocalProject } from '../../services/localStorageService';
 
 /**
  * 我的页面
@@ -14,6 +17,7 @@ import Modal, { useModal } from '../../components/Modal';
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [localProjects, setLocalProjects] = useState<LocalProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<number | null>(null);
   const { modalProps, showConfirm } = useModal();
@@ -26,9 +30,12 @@ const ProfilePage: React.FC = () => {
     initUser();
   }, [initUser]);
 
-  // 加载方案列表（仅登录用户加载云端数据）
+  // 加载方案列表
   useEffect(() => {
-    // 如果未登录，不加载云端数据
+    // 始终加载本地方案
+    const localResult = localStorageService.getProjectList({ page: 1, pageSize: 50 });
+    setLocalProjects(localResult.list);
+
     if (!isLoggedIn) {
       setLoading(false);
       setProjects([]);
@@ -41,13 +48,7 @@ const ProfilePage: React.FC = () => {
     const loadProjects = async () => {
       try {
         setLoading(true);
-        console.log('[ProfilePage] 开始加载方案列表...');
-        const startTime = Date.now();
-
         const response = await projectApi.getList({ page: 1, pageSize: 20 });
-
-        console.log(`[ProfilePage] 加载完成，耗时: ${Date.now() - startTime}ms`, response);
-
         if (isMounted && response.code === 0) {
           setProjects(response.data.list || []);
         }
@@ -70,7 +71,40 @@ const ProfilePage: React.FC = () => {
     };
   }, [isLoggedIn]);
 
-  // 继续制作
+  // 继续制作（本地方案）
+  const handleContinueLocal = (project: LocalProject) => {
+    const beadData = {
+      width: project.beadData.width,
+      height: project.beadData.height,
+      beads: project.beadData.beads as BeadColor[],
+    };
+    navigate('/mobile/making', {
+      state: {
+        beadData,
+        colorCount: project.settings?.colorCount || 96,
+        localProjectId: project.id,
+        ...(project.progress ? { savedProgress: project.progress } : {}),
+      },
+    });
+  };
+
+  // 删除本地方案
+  const handleDeleteLocal = (projectId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (deleting) return;
+
+    showConfirm('删除后将无法恢复，确定要删除这个方案吗？', {
+      title: '删除方案',
+      type: 'warning',
+      confirmText: '删除',
+      onConfirm: () => {
+        localStorageService.deleteProject(projectId);
+        setLocalProjects(prev => prev.filter(p => p.id !== projectId));
+      },
+    });
+  };
+
+  // 继续制作（云端方案）
   const handleContinue = async (project: ProjectInfo) => {
     try {
       // 获取完整的项目详情
@@ -150,7 +184,11 @@ const ProfilePage: React.FC = () => {
     });
   };
 
+  // 我的色板弹窗
+  const [showMyColorsModal, setShowMyColorsModal] = useState(false);
+
   const menuItems = [
+    { icon: Palette, label: '管理我的色板', color: colors.bead.orange, action: () => setShowMyColorsModal(true) },
     { icon: Gear, label: '设置', color: colors.bead.cyan, path: '/mobile/settings' },
     { icon: Question, label: '帮助', color: colors.bead.green, path: '/mobile/help' },
     { icon: Info, label: '关于', color: colors.bead.purple, path: '/mobile/about' },
@@ -240,19 +278,73 @@ const ProfilePage: React.FC = () => {
         <h2 style={styles.sectionTitle}>
           <span style={styles.sectionIcon}>{pixelIcons.diamond}</span>
           我的方案
-          <span style={styles.projectCount}>({projects.length})</span>
+          <span style={styles.projectCount}>
+            ({isLoggedIn ? projects.length : localProjects.length})
+          </span>
         </h2>
 
         {!isLoggedIn ? (
-          <div style={styles.emptyBox}>
-            <div style={styles.emptyGrid}>
-              {Array.from({ length: 16 }).map((_, i) => (
-                <div key={i} style={styles.emptyCell} />
+          localProjects.length === 0 ? (
+            <div style={styles.emptyBox}>
+              <div style={styles.emptyGrid}>
+                {Array.from({ length: 16 }).map((_, i) => (
+                  <div key={i} style={styles.emptyCell} />
+                ))}
+              </div>
+              <span style={styles.emptyText}>暂无方案</span>
+              <span style={styles.emptyHint}>生成图案后保存即可在此查看</span>
+            </div>
+          ) : (
+            <div style={styles.projectList}>
+              {localProjects.map((project) => (
+                <div
+                  key={project.id}
+                  style={styles.projectCard}
+                  onClick={() => handleContinueLocal(project)}
+                >
+                  <div style={styles.thumbnailBox}>
+                    {project.thumbnail ? (
+                      <img
+                        src={project.thumbnail}
+                        alt={project.name}
+                        style={styles.thumbnail}
+                      />
+                    ) : (
+                      <div style={styles.thumbnailPlaceholder}>
+                        {pixelIcons.bead}
+                      </div>
+                    )}
+                  </div>
+                  <div style={styles.projectInfo}>
+                    <span style={styles.projectName}>{project.name}</span>
+                    <div style={styles.projectMeta}>
+                      <span style={styles.projectSize}>
+                        {project.beadData?.width || 32}×{project.beadData?.height || 32}
+                      </span>
+                      <span style={{ ...styles.projectSize, color: colors.bead.orange }}>本地</span>
+                    </div>
+                    <span style={styles.projectDate}>
+                      {new Date(project.updatedAt).toLocaleDateString('zh-CN')}
+                    </span>
+                  </div>
+                  <div style={styles.projectActions}>
+                    <button
+                      style={styles.continueBtn}
+                      onClick={(e) => { e.stopPropagation(); handleContinueLocal(project); }}
+                    >
+                      <Play size={14} weight="fill" />
+                    </button>
+                    <button
+                      style={styles.deleteBtn}
+                      onClick={(e) => handleDeleteLocal(project.id, e)}
+                    >
+                      <Trash size={14} weight="fill" />
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
-            <span style={styles.emptyText}>登录后查看方案</span>
-            <span style={styles.emptyHint}>登录账号后可以保存和查看云端方案</span>
-          </div>
+          )
         ) : loading ? (
           <div style={styles.loadingBox}>
             <Spinner size={24} style={{ animation: 'spin 1s linear infinite' }} />
@@ -298,7 +390,7 @@ const ProfilePage: React.FC = () => {
                   <span style={styles.projectName}>{project.name}</span>
                   <div style={styles.projectMeta}>
                     <span style={styles.projectSize}>
-                      {project.settings?.gridSize || 32}×{project.settings?.gridSize || 32}
+                      {project.settings?.gridSize || 32}×{project.settings?.gridHeight || project.settings?.gridSize || 32}
                     </span>
                     {project.progress && (
                       <span style={styles.projectProgress}>
@@ -343,7 +435,7 @@ const ProfilePage: React.FC = () => {
           <div
             key={index}
             style={styles.menuItem}
-            onClick={() => navigate(item.path)}
+            onClick={() => item.action ? item.action() : item.path && navigate(item.path)}
           >
             <div style={{
               ...styles.menuIconBox,
@@ -369,6 +461,12 @@ const ProfilePage: React.FC = () => {
 
       {/* 统一弹框 */}
       <Modal {...modalProps} />
+
+      {/* 我的色板弹窗 */}
+      <MyColorsModal
+        visible={showMyColorsModal}
+        onClose={() => setShowMyColorsModal(false)}
+      />
     </div>
   );
 };

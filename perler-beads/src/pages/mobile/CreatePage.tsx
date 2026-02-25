@@ -1,10 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Image, ArrowLeft, Lightbulb, Palette } from '@phosphor-icons/react';
+import { Camera, Image, ArrowLeft, Lightbulb, Palette, Gear } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, mixins } from '../../styles/designSystem';
 import { colorCountOptions, defaultColorCount } from '../../data/beadColors';
 import ImageCropper from '../../components/ImageCropper';
 import { analyzeImage } from '../../services/imageAnalysisService';
+import MyColorsModal from '../../components/MyColorsModal';
+import { myColorsService } from '../../services/myColorsService';
 
 /**
  * 创建页 - 上传图片
@@ -23,6 +25,10 @@ const CreatePage: React.FC = () => {
   // 网格宽度（由系统自动分析决定）
   const [gridWidth, setGridWidth] = useState<number>(52);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // 自定义色板
+  const [useMyColors, setUseMyColors] = useState(false);
+  const [showMyColorsModal, setShowMyColorsModal] = useState(false);
+  const [myColorCount, setMyColorCount] = useState(() => myColorsService.getSelectedIds().length);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -137,27 +143,82 @@ const CreatePage: React.FC = () => {
               <img src={croppedImage} alt="Preview" style={styles.previewImage} />
             </div>
 
-            {/* 颜色数量选择 - 紧凑横向布局 */}
+            {/* 颜色数量选择 - 3×2卡片网格 */}
             <div style={styles.colorCountSection}>
               <div style={styles.colorCountHeader}>
                 <Palette size={16} weight="fill" style={{ color: colors.bead.purple }} />
                 <span style={styles.colorCountTitle}>颜色数量</span>
                 <span style={styles.colorCountHint}>越多越细腻</span>
               </div>
-              <div style={styles.colorCountTabs}>
+              <div style={styles.colorCountGrid}>
                 {colorCountOptions.map((opt) => (
-                  <button
+                  <div
                     key={opt.count}
                     style={{
-                      ...styles.colorCountTab,
-                      ...(colorCount === opt.count ? styles.colorCountTabActive : {}),
+                      ...styles.colorCountCard,
+                      ...(colorCount === opt.count ? styles.colorCountCardActive : {}),
                     }}
                     onClick={() => setColorCount(opt.count)}
                   >
-                    {opt.count}
-                  </button>
+                    {opt.recommended && (
+                      <span style={styles.recommendTag}>推荐</span>
+                    )}
+                    <span style={styles.cardIcon}>{opt.icon}</span>
+                    <span style={{
+                      ...styles.cardCount,
+                      ...(colorCount === opt.count ? { color: colors.bead.cyan } : {}),
+                    }}>{opt.label}</span>
+                    <span style={styles.cardDesc}>{opt.description}</span>
+                    <span style={styles.cardDetail}>{opt.detailDesc}</span>
+                  </div>
                 ))}
               </div>
+            </div>
+
+            {/* 自定义色板开关 */}
+            <div style={styles.myColorsSection}>
+              <div style={styles.myColorsRow}>
+                <div style={styles.myColorsLeft}>
+                  <span style={styles.myColorsLabel}>只用我的颜色</span>
+                  {myColorCount > 0 && useMyColors && (
+                    <span style={styles.myColorsBadge}>{myColorCount}色</span>
+                  )}
+                </div>
+                <div style={styles.myColorsRight}>
+                  <button
+                    style={styles.myColorsManageBtn}
+                    onClick={() => setShowMyColorsModal(true)}
+                  >
+                    <Gear size={14} />
+                    <span>管理</span>
+                  </button>
+                  <label style={styles.switchLabel}>
+                    <input
+                      type="checkbox"
+                      checked={useMyColors}
+                      onChange={(e) => {
+                        if (e.target.checked && myColorCount === 0) {
+                          setShowMyColorsModal(true);
+                          return;
+                        }
+                        setUseMyColors(e.target.checked);
+                      }}
+                      style={{ display: 'none' }}
+                    />
+                    <span style={{
+                      ...styles.switchTrack,
+                      background: useMyColors
+                        ? `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.bead.cyan}cc)`
+                        : colors.bg.tertiary,
+                    }} className="toggle-slider" />
+                  </label>
+                </div>
+              </div>
+              {useMyColors && myColorCount > 0 && (
+                <span style={styles.myColorsHint}>
+                  生成图案时仅使用你拥有的 {myColorCount} 种颜色
+                </span>
+              )}
             </div>
 
             {/* 操作按钮 */}
@@ -167,13 +228,26 @@ const CreatePage: React.FC = () => {
               </button>
               <button
                 style={styles.primaryBtn}
-                onClick={() => navigate('/mobile/editor', {
-                  state: { imageData: croppedImage, colorCount, gridWidth }
-                })}
+                onClick={() => {
+                  const customColorIds = useMyColors ? myColorsService.getSelectedIds() : undefined;
+                  navigate('/mobile/editor', {
+                    state: { imageData: croppedImage, colorCount, gridWidth, customColorIds }
+                  });
+                }}
               >
                 开始生成 →
               </button>
             </div>
+
+            {/* 我的色板管理弹窗 */}
+            <MyColorsModal
+              visible={showMyColorsModal}
+              onClose={() => setShowMyColorsModal(false)}
+              onSave={(ids) => {
+                setMyColorCount(ids.length);
+                if (ids.length > 0) setUseMyColors(true);
+              }}
+            />
           </>
         ) : null}
 
@@ -403,7 +477,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '8px',
   },
 
-  // 颜色数量选择样式 - 紧凑横向布局
+  // 颜色数量选择样式 - 3×2卡片网格
   colorCountSection: {
     marginBottom: '16px',
     padding: '12px',
@@ -434,30 +508,152 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: 'auto',
   },
 
-  colorCountTabs: {
-    display: 'flex',
+  colorCountGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
     gap: '8px',
   },
 
-  colorCountTab: {
-    flex: 1,
-    padding: '10px 4px',
+  colorCountCard: {
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '10px 4px 8px',
     background: colors.bg.tertiary,
-    border: `1px solid ${colors.border.soft}`,
-    borderRadius: radius.button,
+    border: `2px solid ${colors.border.soft}`,
+    borderRadius: radius.card,
     cursor: 'pointer',
+    transition: animation.transition.fast,
+    gap: '2px',
+  } as React.CSSProperties,
+
+  colorCountCardActive: {
+    background: `linear-gradient(145deg, ${colors.bead.cyan}20, ${colors.bead.cyan}08)`,
+    borderColor: colors.bead.cyan,
+    boxShadow: `0 0 12px ${colors.bead.cyan}25`,
+  },
+
+  recommendTag: {
+    position: 'absolute',
+    top: '-1px',
+    right: '-1px',
+    padding: '1px 6px',
+    fontSize: '9px',
+    fontWeight: typography.fontWeight.bold,
+    fontFamily: typography.fontFamilyAlt,
+    color: '#fff',
+    background: `linear-gradient(135deg, ${colors.bead.pink}, ${colors.bead.orange})`,
+    borderRadius: `0 ${radius.card} 0 8px`,
+    lineHeight: '16px',
+  } as React.CSSProperties,
+
+  cardIcon: {
+    fontSize: '20px',
+    lineHeight: '24px',
+  },
+
+  cardCount: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.bold,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.text.primary,
+    lineHeight: '18px',
+  },
+
+  cardDesc: {
+    fontSize: '10px',
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.text.secondary,
+    lineHeight: '14px',
+  },
+
+  cardDetail: {
+    fontSize: '9px',
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.text.muted,
+    lineHeight: '12px',
+  },
+
+  // 自定义色板样式
+  myColorsSection: {
+    marginBottom: '16px',
+    padding: '12px',
+    background: colors.bg.card,
+    borderRadius: radius.card,
+    boxShadow: shadows.sm,
+  },
+
+  myColorsRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  myColorsLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+
+  myColorsLabel: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
+    color: colors.text.primary,
+  },
+
+  myColorsBadge: {
+    padding: '1px 8px',
+    background: `linear-gradient(145deg, ${colors.bead.cyan}30, ${colors.bead.cyan}15)`,
+    borderRadius: radius.full,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.bead.cyan,
+  },
+
+  myColorsRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+
+  myColorsManageBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '4px 10px',
+    background: colors.bg.tertiary,
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: radius.button,
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamilyAlt,
     color: colors.text.secondary,
+    cursor: 'pointer',
     transition: animation.transition.fast,
   },
 
-  colorCountTabActive: {
-    background: `linear-gradient(145deg, ${colors.bead.cyan}30, ${colors.bead.cyan}15)`,
-    borderColor: colors.bead.cyan,
+  switchLabel: {
+    display: 'inline-flex',
+    cursor: 'pointer',
+  },
+
+  switchTrack: {
+    width: '44px',
+    height: '24px',
+    borderRadius: radius.full,
+    position: 'relative',
+    transition: animation.transition.fast,
+    border: `1px solid ${colors.border.soft}`,
+  } as React.CSSProperties,
+
+  myColorsHint: {
+    display: 'block',
+    marginTop: '8px',
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamilyAlt,
     color: colors.bead.cyan,
-    boxShadow: `0 0 8px ${colors.bead.cyan}30`,
   },
 
   };

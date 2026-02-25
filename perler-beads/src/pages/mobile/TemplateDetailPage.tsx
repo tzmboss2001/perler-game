@@ -467,7 +467,7 @@ const TemplateDetailPage: React.FC = () => {
             <div style={styles.infoGrid}>
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>网格尺寸</span>
-                <span style={styles.infoValue}>{template.grid_width} × {template.grid_height}</span>
+                <span style={styles.infoValue}>{beadData?.width || template.grid_width} × {beadData?.height || template.grid_height}</span>
               </div>
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>珠子数量</span>

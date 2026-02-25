@@ -11,6 +11,7 @@ import ColorReplaceModal from '../../components/ColorReplaceModal';
 import CoordinateTooltip from '../../components/CoordinateTooltip';
 import { getContrastColor, speakCoordinate, canSpeak } from '../../utils/colorUtils';
 import BottomNav from '../../components/BottomNav';
+import { recommendBoard } from '../../services/boardService';
 
 // Wake Lock API 类型声明
 declare global {
@@ -57,6 +58,7 @@ const MakingPage: React.FC = () => {
   const lastPinchDistRef = useRef<number | null>(null);
   const dragStartTimeRef = useRef<number>(0);
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTapProcessedRef = useRef<number>(0); // 防止 touch+click 双重触发
 
   // 从编辑器或方案列表传来的数据
   interface LocationState {
@@ -190,9 +192,11 @@ const MakingPage: React.FC = () => {
     return allBeadColors.find(c => c.id === selection.colorId) || null;
   }, [selection.colorId]);
 
-  // 计算合适的缩放
+  // 计算合适的缩放（仅首次加载时执行，颜色替换等不重置）
+  const initialScaleSetRef = useRef(false);
   useEffect(() => {
-    if (beadData) {
+    if (beadData && !initialScaleSetRef.current) {
+      initialScaleSetRef.current = true;
       const timer = setTimeout(() => {
         const viewportHeight = window.innerHeight;
         const availableHeight = viewportHeight - 40 - 64 - 50 - 60 - 24;
@@ -348,16 +352,18 @@ const MakingPage: React.FC = () => {
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!beadData || !canvasRef.current || !wrapperRef.current) return;
 
-    // 检查是否是拖动（只检查移动距离，超过15px才算拖动）
-    if (dragStartPosRef.current) {
-      const dx = e.clientX - dragStartPosRef.current.x;
-      const dy = e.clientY - dragStartPosRef.current.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+    // 防止触摸事件的 click 二次触发（touchEnd 已处理过）
+    if (Date.now() - lastTapProcessedRef.current < 500) return;
 
-      if (distance > 15) {
-        return; // 是拖动，不处理点击
-      }
-    }
+    // 拖拽检测：用 dragStartPosRef 判断是否为拖动
+    const startPos = dragStartPosRef.current;
+    dragStartPosRef.current = null; // 用完即清
+    if (!startPos) return; // 没有 mousedown 记录，跳过
+
+    const dx = e.clientX - startPos.x;
+    const dy = e.clientY - startPos.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance > 10) return; // 是拖动，不处理点击
 
     const canvas = canvasRef.current;
     const wrapper = wrapperRef.current;
@@ -384,7 +390,6 @@ const MakingPage: React.FC = () => {
     if (scale < ZOOM_THRESHOLD) {
       // 缩小状态：选中区块
       if (selection.type === 'block' && selection.blockX === blockX && selection.blockY === blockY) {
-        // 点击同一区块，取消选中
         setSelection({ type: null, blockX: 0, blockY: 0 });
       } else {
         setSelection({
@@ -405,24 +410,18 @@ const MakingPage: React.FC = () => {
 
       setTooltipState({
         visible: true,
-        row: cellY + 1,  // 坐标从1开始
+        row: cellY + 1,
         col: cellX + 1,
         screenX,
         screenY,
       });
 
-      // 语音提示
       if (voiceEnabled) {
         speakCoordinate(cellY + 1, cellX + 1);
       }
 
-      // 如果点击的是同一颜色同一区块，取消选中
-      if (
-        selection.type === 'color' &&
-        selection.blockX === blockX &&
-        selection.blockY === blockY &&
-        selection.colorHex === bead.hex
-      ) {
+      // 点击同一颜色 → 取消选中（不限区块）
+      if (selection.type === 'color' && selection.colorHex === bead.hex) {
         setSelection({ type: null, blockX: 0, blockY: 0 });
       } else {
         setSelection({
@@ -536,12 +535,8 @@ const MakingPage: React.FC = () => {
               speakCoordinate(cellY + 1, cellX + 1);
             }
 
-            if (
-              selection.type === 'color' &&
-              selection.blockX === blockX &&
-              selection.blockY === blockY &&
-              selection.colorHex === bead.hex
-            ) {
+            // 点击同一颜色 → 取消选中（不限区块）
+            if (selection.type === 'color' && selection.colorHex === bead.hex) {
               setSelection({ type: null, blockX: 0, blockY: 0 });
             } else {
               setSelection({
@@ -554,6 +549,9 @@ const MakingPage: React.FC = () => {
             }
           }
         }
+
+        // 标记已处理，防止后续 click 事件重复触发
+        lastTapProcessedRef.current = Date.now();
       }
     }
 
@@ -587,7 +585,7 @@ const MakingPage: React.FC = () => {
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
     lastTouchRef.current = null;
-    dragStartPosRef.current = null;
+    // 注意：不清除 dragStartPosRef，留给 handleCanvasClick 做拖拽距离判断
   }, []);
 
   const handleMouseLeave = useCallback(() => {
@@ -716,11 +714,15 @@ const MakingPage: React.FC = () => {
           }
         }
 
-        // 选中颜色时，非高亮区域半透明（边框稍后绘制，避免被网格线覆盖）
+        // 选中颜色时
         if (selection.type === 'color') {
           if (!highlightedIndices.has(index)) {
             // 非高亮区域半透明
             ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(px, py, drawCellSize, drawCellSize);
+          } else {
+            // 高亮像素：加一层淡白提亮，自然发光
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
             ctx.fillRect(px, py, drawCellSize, drawCellSize);
           }
         }
@@ -798,6 +800,58 @@ const MakingPage: React.FC = () => {
       ctx.stroke();
     }
 
+    // 拼豆板边界线（智能推荐板子尺寸 + 橙色虚线 + 板号标注）
+    const boardRec = recommendBoard(width, height);
+    const BOARD_SIZE = boardRec.boardSize;
+    const boardCols = boardRec.cols;
+    const boardRows = boardRec.rows;
+    if (boardCols > 1 || boardRows > 1) {
+      ctx.save();
+      ctx.setLineDash([drawCellSize * 0.5, drawCellSize * 0.3]);
+      ctx.strokeStyle = 'rgba(255, 160, 0, 0.8)';
+      ctx.lineWidth = Math.max(2, scale * 1.2);
+      // 垂直板线
+      for (let c = 1; c < boardCols; c++) {
+        const px = c * BOARD_SIZE * drawCellSize;
+        ctx.beginPath();
+        ctx.moveTo(px, 0);
+        ctx.lineTo(px, canvasHeight);
+        ctx.stroke();
+      }
+      // 水平板线
+      for (let r = 1; r < boardRows; r++) {
+        const py = r * BOARD_SIZE * drawCellSize;
+        ctx.beginPath();
+        ctx.moveTo(0, py);
+        ctx.lineTo(canvasWidth, py);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      // 板号标注
+      const labelSize = Math.max(10, drawCellSize * 0.8);
+      ctx.font = `bold ${labelSize}px Arial, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      let boardNum = 1;
+      for (let r = 0; r < boardRows; r++) {
+        for (let c = 0; c < boardCols; c++) {
+          const lx = c * BOARD_SIZE * drawCellSize + 3;
+          const ly = r * BOARD_SIZE * drawCellSize + 3;
+          // 背景
+          const text = `板${boardNum}`;
+          const tw = ctx.measureText(text).width + 6;
+          ctx.fillStyle = 'rgba(255, 160, 0, 0.85)';
+          ctx.fillRect(lx - 2, ly - 1, tw, labelSize + 4);
+          // 文字
+          ctx.fillStyle = '#fff';
+          ctx.fillText(text, lx + 1, ly + 1);
+          boardNum++;
+        }
+      }
+      ctx.restore();
+    }
+
     // 选中区块时，绘制高亮边框
     if (selection.type === 'block') {
       ctx.strokeStyle = '#00FFFF';
@@ -815,25 +869,8 @@ const MakingPage: React.FC = () => {
       ctx.shadowBlur = 0;
     }
 
-    // 选中颜色时，绘制高亮边框（在网格线之后绘制，确保可见）
-    if (selection.type === 'color' && highlightedIndices.size > 0) {
-      ctx.strokeStyle = '#00FFFF';
-      ctx.lineWidth = Math.max(4, scale * 1.5);  // 更粗的边框
-      ctx.shadowColor = '#00FFFF';
-      ctx.shadowBlur = 2;  // 添加发光效果
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const index = y * width + x;
-          if (highlightedIndices.has(index)) {
-            const px = x * drawCellSize;
-            const py = y * drawCellSize;
-            const inset = Math.max(2, scale * 0.5);
-            ctx.strokeRect(px + inset, py + inset, drawCellSize - inset * 2, drawCellSize - inset * 2);
-          }
-        }
-      }
-      ctx.shadowBlur = 0;  // 重置阴影
-    }
+    // 选中颜色时，高亮像素的提亮已在珠子绘制阶段完成（白色半透明叠加）
+    // 不再使用粗边框，靠明暗对比自然突出选中像素
 
     // 绘制色号
     const minSizeForColorId = 24;
@@ -857,21 +894,25 @@ const MakingPage: React.FC = () => {
           const px = x * drawCellSize + drawCellSize / 2;
           const py = y * drawCellSize + drawCellSize / 2;
 
-          // 如果被半透明遮罩覆盖，跳过绘制
+          // 判断该像素是否处于"活跃"状态（未被遮罩变暗）
+          let isActive = true;
           if (selection.type === 'block') {
             const inBlock = x >= selectedBlockStartX && x < selectedBlockEndX &&
                             y >= selectedBlockStartY && y < selectedBlockEndY;
-            if (!inBlock) continue;
+            isActive = inBlock;
           }
-          if (selection.type === 'color' && !highlightedIndices.has(index)) {
-            continue;
+          if (selection.type === 'color') {
+            isActive = highlightedIndices.has(index);
           }
+
+          // 活跃像素正常显示，非活跃像素降低透明度（仍可见色号）
+          const effectiveOpacity = isActive ? opacity : opacity * 0.35;
 
           const contrastColor = getContrastColor(bead.hex);
           const r = parseInt(contrastColor.slice(1, 3), 16);
           const g = parseInt(contrastColor.slice(3, 5), 16);
           const b = parseInt(contrastColor.slice(5, 7), 16);
-          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${effectiveOpacity})`;
 
           let displayColorId = bead.id;
           if (bead.id.startsWith('80-19') || bead.id.startsWith('80-15')) {

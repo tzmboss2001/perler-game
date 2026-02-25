@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, Image, FileImage, Check } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation, mixins } from '../styles/designSystem';
-import { BeadPixelData, renderBeadsToCanvas, renderBeadsToCanvasWithList } from '../services/colorMatchService';
+import { BeadPixelData, renderBeadsToCanvas, renderBeadsToCanvasWithList, renderBeadsPaginated } from '../services/colorMatchService';
+import { recommendBoard, getAllBoardOptions, BOARD_SPECS } from '../services/boardService';
 
 interface ExportModalProps {
   visible: boolean;
@@ -35,6 +36,10 @@ const ExportModal: React.FC<ExportModalProps> = ({
   const [showCoords, setShowCoords] = useState(true);
   const [showMajorGrid, setShowMajorGrid] = useState(true); // 显示大网格线（5×5 + 10×10）
   const [showBeadList, setShowBeadList] = useState(true); // 显示珠子清单
+  const [paginateMode, setPaginateMode] = useState(false); // 按板分页
+  // 智能推荐板子尺寸
+  const smartBoard = recommendBoard(beadData.width, beadData.height);
+  const [boardSize, setBoardSize] = useState(smartBoard.boardSize);
 
   // 计算图案尺寸
   const patternWidth = beadData.width;
@@ -102,29 +107,50 @@ const ExportModal: React.FC<ExportModalProps> = ({
     }
   };
 
+  // 计算分页数
+  const paginatedPageCount = paginateMode
+    ? Math.ceil(patternWidth / boardSize) * Math.ceil(patternHeight / boardSize)
+    : 0;
+
   // 执行导出
   const handleExport = async () => {
     setIsExporting(true);
 
     try {
-      // 创建画布并渲染
-      const canvas = document.createElement('canvas');
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
-      // 根据是否显示清单选择渲染函数
-      if (showBeadList) {
-        renderBeadsToCanvasWithList(beadData, canvas, currentOption.cellSize, showGrid, showCoords, showMajorGrid, true);
+      if (paginateMode) {
+        // 分页模式
+        const pages = renderBeadsPaginated(beadData, currentOption.cellSize, boardSize, {
+          showGrid,
+          showCoords,
+          showMajorGrid,
+        });
+
+        // 逐页下载
+        for (const page of pages) {
+          const link = document.createElement('a');
+          link.download = `perler-${patternWidth}x${patternHeight}-p${page.pageIndex + 1}of${page.totalPages}-${timestamp}.png`;
+          link.href = page.canvas.toDataURL('image/png');
+          link.click();
+          // 小延迟避免浏览器拦截多次下载
+          await new Promise(r => setTimeout(r, 200));
+        }
       } else {
-        renderBeadsToCanvas(beadData, canvas, currentOption.cellSize, showGrid, showCoords, showMajorGrid);
+        // 单张模式
+        const canvas = document.createElement('canvas');
+        if (showBeadList) {
+          renderBeadsToCanvasWithList(beadData, canvas, currentOption.cellSize, showGrid, showCoords, showMajorGrid, true);
+        } else {
+          renderBeadsToCanvas(beadData, canvas, currentOption.cellSize, showGrid, showCoords, showMajorGrid);
+        }
+
+        const link = document.createElement('a');
+        link.download = `perler-${patternWidth}x${patternHeight}-${currentOption.id}-${timestamp}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
       }
 
-      // 生成下载链接
-      const link = document.createElement('a');
-      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      link.download = `perler-${patternWidth}x${patternHeight}-${currentOption.id}-${timestamp}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-
-      // 短暂延迟后关闭
       setTimeout(() => {
         setIsExporting(false);
         onClose();
@@ -267,6 +293,51 @@ const ExportModal: React.FC<ExportModalProps> = ({
                     : colors.bg.tertiary,
                 }} />
               </label>
+              <label style={styles.toggleItem}>
+                <div style={styles.toggleLabelGroup}>
+                  <span style={styles.toggleLabel}>按拼豆板分页</span>
+                  <span style={styles.toggleHint}>大图案分割成多页打印</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={paginateMode}
+                  onChange={(e) => setPaginateMode(e.target.checked)}
+                  style={styles.checkbox}
+                />
+                <span style={{
+                  ...styles.toggleSlider,
+                  background: paginateMode
+                    ? `linear-gradient(145deg, ${colors.bead.pink}, ${colors.bead.pink}cc)`
+                    : colors.bg.tertiary,
+                }} />
+              </label>
+              {paginateMode && (
+                <div style={styles.boardSizeSelector}>
+                  <span style={styles.boardSizeLabel}>板子尺寸</span>
+                  <div style={styles.boardSizeOptions}>
+                    {BOARD_SPECS.map(spec => {
+                      const isRecommended = spec.size === smartBoard.boardSize;
+                      return (
+                        <button
+                          key={spec.size}
+                          style={{
+                            ...styles.boardSizeBtn,
+                            ...(boardSize === spec.size ? styles.boardSizeBtnActive : {}),
+                          }}
+                          onClick={() => setBoardSize(spec.size)}
+                        >
+                          {spec.size}×{spec.size}
+                          {isRecommended && <span style={styles.recommendedDot}> *</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <span style={styles.boardSizeHint}>
+                    将生成 {paginatedPageCount} 页
+                    {boardSize === smartBoard.boardSize && ' (推荐)'}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -554,6 +625,59 @@ const styles: Record<string, React.CSSProperties> = {
   exportBtnDisabled: {
     opacity: 0.6,
     cursor: 'not-allowed',
+  },
+
+  boardSizeSelector: {
+    padding: '10px 16px',
+    background: colors.bg.card,
+    borderRadius: radius.bead,
+  },
+
+  boardSizeLabel: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.text.primary,
+    marginBottom: '8px',
+    display: 'block',
+  },
+
+  boardSizeOptions: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '6px',
+  },
+
+  boardSizeBtn: {
+    flex: 1,
+    padding: '8px',
+    background: colors.bg.tertiary,
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: radius.button,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamilyAlt,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.text.secondary,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
+    textAlign: 'center' as const,
+  },
+
+  boardSizeBtnActive: {
+    background: `linear-gradient(145deg, ${colors.bead.pink}20, ${colors.bead.pink}08)`,
+    borderColor: colors.bead.pink,
+    color: colors.bead.pink,
+    fontWeight: typography.fontWeight.semibold,
+  },
+
+  boardSizeHint: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.bead.pink,
+  },
+
+  recommendedDot: {
+    color: colors.bead.yellow,
+    fontWeight: typography.fontWeight.bold,
   },
 };
 

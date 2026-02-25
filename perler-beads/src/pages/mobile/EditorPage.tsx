@@ -3,7 +3,8 @@ import { ArrowLeft, GridFour, Palette, ListBullets, ArrowClockwise, ArrowCounter
 import { useNavigate, useLocation } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, mixins } from '../../styles/designSystem';
 import { pixelizeImage, PixelData } from '../../services/pixelizeService';
-import { matchPixelsToBead, calculateBeadStatistics, renderBeadsToCanvas, BeadPixelData, BeadStatistics, replaceColor, findNextSimilarColor, reduceColors } from '../../services/colorMatchService';
+import { matchPixelsToBead, calculateBeadStatistics, renderBeadsToCanvas, BeadPixelData, BeadStatistics, replaceColor, findNextSimilarColor, reduceColors, smartMergeColors } from '../../services/colorMatchService';
+import SmartMergeModal from '../../components/SmartMergeModal';
 import { colorCountOptions, defaultColorCount, allBeadColors, BeadColor } from '../../data/beadColors';
 import { useEditorStore, EditorTool } from '../../store/editorStore';
 import EditorToolbar from '../../components/EditorToolbar';
@@ -18,6 +19,8 @@ import { projectApi } from '../../services/api/projectApi';
 import { uploadApi } from '../../services/api/uploadApi';
 import { useToast } from '../../components/Toast';
 import BottomNav from '../../components/BottomNav';
+import { localStorageService } from '../../services/localStorageService';
+import { recommendBoard } from '../../services/boardService';
 
 /**
  * 编辑器页面 - 核心功能
@@ -37,6 +40,7 @@ const EditorPage: React.FC = () => {
     imageData?: string;
     colorCount?: number;
     gridWidth?: number; // 智能推荐的网格宽度
+    customColorIds?: string[]; // 自定义色板选中的颜色ID
   }
   const stateData: EditorStateData = (location.state as EditorStateData) || {};
   const sessionData = React.useMemo<EditorStateData>(() => {
@@ -49,7 +53,8 @@ const EditorPage: React.FC = () => {
     } catch (e) {}
     return {};
   }, []);
-  const { imageData, colorCount: initialColorCount, gridWidth: initialGridWidth } = stateData.imageData ? stateData : sessionData;
+  const mergedStateData = stateData.imageData ? stateData : sessionData;
+  const { imageData, colorCount: initialColorCount, gridWidth: initialGridWidth, customColorIds } = mergedStateData;
 
   // 状态
   const [gridSize, setGridSize] = useState(initialGridWidth || 52);
@@ -74,6 +79,7 @@ const EditorPage: React.FC = () => {
   const [showShoppingList, setShowShoppingList] = useState(false); // 采购清单弹窗
   const [excludedColorIds, setExcludedColorIds] = useState<Set<string>>(new Set()); // 排除的颜色ID
   const [showLoginModal, setShowLoginModal] = useState(false); // 登录弹窗
+  const [showSmartMerge, setShowSmartMerge] = useState(false); // 智能合并弹窗
 
   // 背景处理模式状态
   const [isBackgroundMode, setIsBackgroundMode] = useState(false); // 是否处于背景处理模式
@@ -124,12 +130,24 @@ const EditorPage: React.FC = () => {
       });
 
       // 2. 颜色匹配（使用 colorCount + Lab色彩空间 + 饱和度增强）
+      // 合并排除颜色：用户手动排除 + 自定义色板外的颜色
+      const excludeList = Array.from(excludedColorIds);
+      if (customColorIds && customColorIds.length > 0) {
+        // 自定义色板模式：排除不在列表中的所有 MARD 颜色
+        const customSet = new Set(customColorIds);
+        const { mardColors: allMard } = await import('../../data/beadColors');
+        allMard.forEach(c => {
+          if (!customSet.has(c.id) && !excludeList.includes(c.id)) {
+            excludeList.push(c.id);
+          }
+        });
+      }
       let beads = matchPixelsToBead(pixels, {
         colorCount,
         useLabSpace: true,           // 使用 Lab 色彩空间，更符合人眼感知
         saturationBoost,             // 饱和度增强
         vibrancyPreference,          // 鲜艳度偏好
-        excludeColors: Array.from(excludedColorIds), // 排除的颜色
+        excludeColors: excludeList,  // 排除的颜色
       });
 
       // 3. 简化度（如果 simplifyLevel > 0）
@@ -511,11 +529,7 @@ const EditorPage: React.FC = () => {
       });
       return;
     }
-    // 检查是否已登录
-    if (!isLoggedIn) {
-      setShowLoginModal(true);
-      return;
-    }
+    // 直接弹保存弹窗（不再要求登录）
     setShowSaveModal(true);
   };
 
@@ -545,83 +559,119 @@ const EditorPage: React.FC = () => {
     try {
       // 生成缩略图
       const thumbnail = generateThumbnail();
-
-      // 如果原图数据丢失（页面刷新等），使用缩略图作为原图
       const originalImage = imageData || thumbnail;
 
-      // 先上传图片到腾讯云 COS
-      let thumbnailUrl = '';
-      let originalImageUrl = '';
-      try {
-        // 并行上传缩略图和原图
-        const [thumbUrl, origUrl] = await Promise.all([
-          uploadApi.uploadImage(thumbnail, 'thumbnails'),
-          uploadApi.uploadImage(originalImage, 'originals'),
-        ]);
-        thumbnailUrl = thumbUrl;
-        originalImageUrl = origUrl;
-      } catch (uploadError) {
-        console.error('图片上传失败:', uploadError);
-        toast.error('图片上传失败，请检查网络后重试');
-        setIsSaving(false);
-        return;
-      }
+      if (isLoggedIn) {
+        // 已登录：保存到云端
+        let thumbnailUrl = '';
+        let originalImageUrl = '';
+        try {
+          const [thumbUrl, origUrl] = await Promise.all([
+            uploadApi.uploadImage(thumbnail, 'thumbnails'),
+            uploadApi.uploadImage(originalImage, 'originals'),
+          ]);
+          thumbnailUrl = thumbUrl;
+          originalImageUrl = origUrl;
+        } catch (uploadError) {
+          console.error('图片上传失败:', uploadError);
+          toast.error('图片上传失败，请检查网络后重试');
+          setIsSaving(false);
+          return;
+        }
 
-      // 调用 API 保存方案（使用 COS URL）
-      const response = await projectApi.create({
-        name,
-        thumbnail_url: thumbnailUrl,
-        original_image: originalImageUrl,
-        bead_data: {
-          width: beadData.width,
-          height: beadData.height,
-          beads: beadData.beads.map(b => ({
-            id: b.id,
-            name: b.name,
-            nameCN: b.nameCN,
-            rgb: b.rgb,
-            hex: b.hex,
-            brand: b.brand,
-          })),
-        },
-        settings: {
-          gridSize,
-          colorCount,
-          saturationBoost,
-          vibrancyPreference,
-        },
-      });
-
-      if (response.code === 0) {
-        // 保存成功，关闭弹窗并跳转到制作页
-        toast.success('方案保存成功！');
-        setShowSaveModal(false);
-        navigate('/mobile/making', {
-          state: {
-            beadData,
+        const response = await projectApi.create({
+          name,
+          thumbnail_url: thumbnailUrl,
+          original_image: originalImageUrl,
+          bead_data: {
+            width: beadData.width,
+            height: beadData.height,
+            beads: beadData.beads.map(b => ({
+              id: b.id,
+              name: b.name,
+              nameCN: b.nameCN,
+              rgb: b.rgb,
+              hex: b.hex,
+              brand: b.brand,
+            })),
+          },
+          settings: {
+            gridSize,
+            gridHeight: beadData.height,
             colorCount,
-            projectId: response.data.id,
+            saturationBoost,
+            vibrancyPreference,
           },
         });
+
+        if (response.code === 0) {
+          toast.success('方案已保存到云端！');
+          setShowSaveModal(false);
+          navigate('/mobile/making', {
+            state: { beadData, colorCount, projectId: response.data.id },
+          });
+        } else {
+          console.error('保存失败:', response.msg);
+          toast.warning('云端保存失败，已保存到本地');
+          // 回退到本地保存
+          saveToLocal(name, thumbnail, originalImage);
+        }
       } else {
-        console.error('保存失败:', response.msg);
-        toast.warning('保存失败，但您可以继续制作');
-        // 即使保存失败也允许继续制作（无需保存）
-        setShowSaveModal(false);
-        navigate('/mobile/making', {
-          state: { beadData, colorCount },
-        });
+        // 未登录：保存到本地
+        saveToLocal(name, thumbnail, originalImage);
       }
     } catch (error) {
       console.error('保存方案失败:', error);
-      toast.warning('网络异常，但您可以继续制作');
-      // 保存失败时也允许继续制作
+      toast.warning('保存异常，但您可以继续制作');
       setShowSaveModal(false);
       navigate('/mobile/making', {
         state: { beadData, colorCount },
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // 保存到本地 localStorage
+  const saveToLocal = (name: string, thumbnail: string, originalImage: string) => {
+    if (!beadData) return;
+    try {
+      const result = localStorageService.createProject({
+        name,
+        thumbnail,
+        originalImage,
+        beadData: {
+          width: beadData.width,
+          height: beadData.height,
+          beads: beadData.beads.map(b => b ? {
+            id: b.id,
+            name: b.name,
+            nameCN: b.nameCN,
+            rgb: b.rgb,
+            hex: b.hex,
+            brand: b.brand,
+          } : { id: '', name: '', nameCN: '', rgb: [0, 0, 0] as [number, number, number], hex: '#000', brand: 'mard' }),
+        },
+        settings: {
+          gridSize,
+          gridHeight: beadData.height,
+          colorCount,
+          saturationBoost,
+          vibrancyPreference,
+        },
+      });
+      toast.success('方案已保存到本地！');
+      setShowSaveModal(false);
+      navigate('/mobile/making', {
+        state: { beadData, colorCount, localProjectId: result.id },
+      });
+    } catch (e) {
+      console.error('本地保存失败:', e);
+      toast.warning('保存失败，但您可以继续制作');
+      setShowSaveModal(false);
+      navigate('/mobile/making', {
+        state: { beadData, colorCount },
+      });
     }
   };
 
@@ -638,41 +688,8 @@ const EditorPage: React.FC = () => {
   const currentColorOption = colorCountOptions.find(opt => opt.count === colorCount);
   const totalBeads = beadData?.beads.length || 0;
 
-  // 计算推荐的拼豆板规格
-  const getBoardRecommendation = useCallback((width: number, height: number): {
-    boardSize: number;
-    boardCount: string;
-    fits: boolean;
-    description: string;
-  } => {
-    const maxDim = Math.max(width, height);
-    const BOARD_SIZES = [52, 104, 156, 208]; // 标准板子规格
-
-    for (const size of BOARD_SIZES) {
-      if (maxDim <= size) {
-        const boardCount = size === 52 ? '1块小板' :
-                          size === 104 ? '1块大板' :
-                          size === 156 ? '3块拼接' : '4块拼接';
-        return {
-          boardSize: size,
-          boardCount,
-          fits: true,
-          description: `适合${size}钉${boardCount}`
-        };
-      }
-    }
-
-    // 超过208，需要更多板子
-    const boardsNeeded = Math.ceil(maxDim / 52);
-    return {
-      boardSize: maxDim,
-      boardCount: `${boardsNeeded}块拼接`,
-      fits: false,
-      description: `需要${boardsNeeded}块52钉板拼接`
-    };
-  }, []);
-
-  const boardRecommendation = beadData ? getBoardRecommendation(beadData.width, beadData.height) : null;
+  // 智能推荐拼豆板配置
+  const boardRecommendation = beadData ? recommendBoard(beadData.width, beadData.height) : null;
 
   return (
     <div ref={containerRef} style={styles.container}>
@@ -824,7 +841,7 @@ const EditorPage: React.FC = () => {
                       {boardRecommendation.boardSize}钉
                     </span>
                     <span style={styles.boardText}>
-                      {boardRecommendation.boardCount}
+                      {boardRecommendation.summary}
                     </span>
                   </div>
                 )}
@@ -934,6 +951,15 @@ const EditorPage: React.FC = () => {
               <span style={styles.statsCount}>{statistics.length} 种</span>
             </div>
             <div style={styles.statsHeaderRight}>
+              <button
+                style={styles.smartMergeBtn}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowSmartMerge(true);
+                }}
+              >
+                <span>合并</span>
+              </button>
               <button
                 style={styles.shoppingListBtn}
                 onClick={(e) => {
@@ -1068,6 +1094,7 @@ const EditorPage: React.FC = () => {
         onSave={handleSaveProject}
         onCancel={() => setShowSaveModal(false)}
         loading={isSaving}
+        isLoggedIn={isLoggedIn}
       />
 
       {/* 分享弹窗 */}
@@ -1105,6 +1132,20 @@ const EditorPage: React.FC = () => {
           }))}
           gridSize={{ width: beadData.width, height: beadData.height }}
           brand="Artkal"
+        />
+      )}
+
+      {/* 智能合并弹窗 */}
+      {beadData && (
+        <SmartMergeModal
+          visible={showSmartMerge}
+          onClose={() => setShowSmartMerge(false)}
+          beadData={beadData}
+          onConfirm={(mergedData) => {
+            saveToHistory(beadData.beads);
+            setBeadData(mergedData);
+            setStatistics(calculateBeadStatistics(mergedData));
+          }}
         />
       )}
 
@@ -1696,6 +1737,22 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
+  },
+
+  smartMergeBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '4px 8px',
+    background: `linear-gradient(145deg, ${colors.bead.purple}20, ${colors.bead.purple}10)`,
+    border: `1px solid ${colors.bead.purple}50`,
+    borderRadius: radius.button,
+    cursor: 'pointer',
+    fontSize: '11px',
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.bead.purple,
+    transition: animation.transition.fast,
   },
 
   shoppingListBtn: {

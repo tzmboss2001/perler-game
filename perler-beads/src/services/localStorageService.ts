@@ -27,6 +27,7 @@ export interface LocalProject {
   };
   settings: {
     gridSize: number;
+    gridHeight?: number;  // 实际高度（按比例计算，可能 !== gridSize）
     colorCount: number;
     saturationBoost: number;
     vibrancyPreference: number;
