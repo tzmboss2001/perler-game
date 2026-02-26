@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Heart, Eye, Hammer, Palette, GridFour, Star } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../../styles/designSystem';
 import { communityApi, CommunityPostDetail } from '../../services/api/communityApi';
+import { allBeadColors, BeadColor } from '../../data/beadColors';
+import { BeadPixelData } from '../../services/colorMatchService';
 
 const CommunityDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -33,12 +35,45 @@ const CommunityDetailPage: React.FC = () => {
     loadDetail();
   }, [id]);
 
+  // 将社区 bead_data 转换为 MakingPage 需要的 BeadPixelData
+  const convertToBeadPixelData = (beadDataRaw: any): BeadPixelData | null => {
+    if (!beadDataRaw || !beadDataRaw.width || !beadDataRaw.height || !beadDataRaw.beads) {
+      return null;
+    }
+    const { width, height, beads: rawBeads } = beadDataRaw;
+
+    // 构建 colorId → BeadColor 的查找表
+    const colorMap = new Map<string, BeadColor>();
+    for (const c of allBeadColors) {
+      colorMap.set(c.id, c);
+    }
+
+    // 初始化平铺数组
+    const flatBeads: (BeadColor | null)[] = new Array(width * height).fill(null);
+
+    // 填充数据
+    for (const b of rawBeads) {
+      if (b.x >= 0 && b.x < width && b.y >= 0 && b.y < height && b.colorId) {
+        const color = colorMap.get(b.colorId);
+        if (color) {
+          flatBeads[b.y * width + b.x] = color;
+        }
+      }
+    }
+
+    return { width, height, beads: flatBeads };
+  };
+
   // 一键开始制作
   const handleStartMaking = () => {
     if (!post) return;
+    const beadPixelData = convertToBeadPixelData(post.bead_data);
+    if (!beadPixelData) {
+      return;
+    }
     navigate('/mobile/making', {
       state: {
-        beadData: post.bead_data,
+        beadData: beadPixelData,
       },
     });
     // 后台增加制作数

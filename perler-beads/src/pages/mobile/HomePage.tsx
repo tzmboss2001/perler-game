@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Image, FolderOpen, ArrowRight, Sparkle } from '@phosphor-icons/react';
+import { Camera, Image, FolderOpen, ArrowRight, Sparkle, Heart, Eye } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../../styles/designSystem';
 import OnboardingModal from '../../components/OnboardingModal';
 import FeaturedCarousel from '../../components/FeaturedCarousel';
 import { featuredWorks, FeaturedWork } from '../../data/featuredWorks';
 import { templateApi, FeaturedTemplateResponse } from '../../services/api/templateApi';
+import { communityApi, CommunityPostListItem } from '../../services/api/communityApi';
 import { useUserStore } from '../../store/userStore';
 import { localStorageService } from '../../services/localStorageService';
 
@@ -28,6 +29,33 @@ const HomePage: React.FC = () => {
   const { isLoggedIn } = useUserStore();
   const [works, setWorks] = useState<FeaturedWork[]>([]);
   const [localProjectCount, setLocalProjectCount] = useState(0);
+
+  // 社区作品数据
+  const [communityPosts, setCommunityPosts] = useState<CommunityPostListItem[]>([]);
+  const [communityPage, setCommunityPage] = useState(1);
+  const [communityHasMore, setCommunityHasMore] = useState(true);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const communityLoadingRef = useRef(false);
+
+  // 加载社区作品
+  const loadCommunityPosts = useCallback(async (pageNum: number, append = false) => {
+    if (communityLoadingRef.current) return;
+    communityLoadingRef.current = true;
+    setCommunityLoading(true);
+    try {
+      const res = await communityApi.getPosts({ page: pageNum, pageSize: 20 });
+      if (res.code === 0 && res.data) {
+        const newList = res.data.list || [];
+        setCommunityPosts(prev => append ? [...prev, ...newList] : newList);
+        setCommunityHasMore(newList.length >= 20);
+      }
+    } catch (err) {
+      console.error('加载社区作品失败:', err);
+    } finally {
+      setCommunityLoading(false);
+      communityLoadingRef.current = false;
+    }
+  }, []);
 
   // 加载精选作品 - 优先从API获取，无数据则使用本地生成
   useEffect(() => {
@@ -62,7 +90,41 @@ const HomePage: React.FC = () => {
     // 加载本地方案数量
     const localResult = localStorageService.getProjectList();
     setLocalProjectCount(localResult.total);
-  }, []);
+
+    // 加载社区作品
+    loadCommunityPosts(1);
+  }, [loadCommunityPosts]);
+
+  // 滚动加载更多社区作品
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!communityHasMore || communityLoadingRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+      if (scrollHeight - scrollTop - clientHeight < 200) {
+        const nextPage = communityPage + 1;
+        setCommunityPage(nextPage);
+        loadCommunityPosts(nextPage, true);
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [communityPage, communityHasMore, loadCommunityPosts]);
+
+  // 难度工具
+  const getDifficultyColor = (d: string) => {
+    switch (d) {
+      case 'easy': return colors.bead.green;
+      case 'hard': return colors.bead.red;
+      default: return colors.bead.orange;
+    }
+  };
+  const getDifficultyLabel = (d: string) => {
+    switch (d) {
+      case 'easy': return '简单';
+      case 'hard': return '困难';
+      default: return '中等';
+    }
+  };
 
   // 处理精选作品点击 - 跳转到模板详情页
   const handleFeaturedWorkClick = (work: FeaturedWork) => {
@@ -166,24 +228,117 @@ const HomePage: React.FC = () => {
           </div>
         </div>
 
-        {/* 社区入口 */}
-        <div style={styles.communityPreview}>
+        {/* 社区作品瀑布流 */}
+        <div style={styles.communitySection}>
           <div style={styles.sectionHeader}>
             <span style={styles.sectionIcon}>🌟</span>
             <span style={styles.sectionTitle}>社区作品</span>
-            <span style={styles.viewAllBtn} onClick={() => navigate('/mobile/community')}>查看全部 →</span>
           </div>
-          <div style={styles.communityCard} onClick={() => navigate('/mobile/community')}>
-            <div style={styles.communityContent}>
-              <span style={styles.communityText}>发现更多精彩作品</span>
-              <span style={styles.communitySubtext}>浏览社区创作，一键开始制作</span>
+
+          {communityPosts.length > 0 ? (
+            <div style={styles.waterfall}>
+              <div style={styles.waterfallCol}>
+                {communityPosts.filter((_, i) => i % 2 === 0).map(post => (
+                  <div key={post.id} style={styles.postCard} onClick={() => navigate(`/mobile/community/${post.id}`)}>
+                    <div style={styles.postImageWrap}>
+                      {post.thumbnail_url ? (
+                        <img src={post.thumbnail_url} alt={post.title} style={styles.postImage} loading="lazy" />
+                      ) : (
+                        <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>🧩</span></div>
+                      )}
+                      <div style={{ ...styles.postDiffBadge, background: `${getDifficultyColor(post.difficulty)}cc` }}>
+                        {getDifficultyLabel(post.difficulty)}
+                      </div>
+                    </div>
+                    <div style={styles.postInfo}>
+                      <div style={styles.postTitle}>{post.title}</div>
+                      <div style={styles.postMeta}>
+                        <span style={{ color: colors.bead.cyan }}>{post.grid_width}×{post.grid_height}</span>
+                        <span style={{ color: colors.text.muted }}>·</span>
+                        <span style={{ color: colors.bead.orange }}>{post.color_count}色</span>
+                      </div>
+                      <div style={styles.postFooter}>
+                        <div style={styles.postStat}>
+                          <Heart size={12} weight="fill" color={colors.bead.red} />
+                          <span>{post.like_count}</span>
+                        </div>
+                        <div style={styles.postStat}>
+                          <Eye size={12} color={colors.text.muted} />
+                          <span>{post.view_count}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={styles.waterfallCol}>
+                {communityPosts.filter((_, i) => i % 2 === 1).map(post => (
+                  <div key={post.id} style={styles.postCard} onClick={() => navigate(`/mobile/community/${post.id}`)}>
+                    <div style={styles.postImageWrap}>
+                      {post.thumbnail_url ? (
+                        <img src={post.thumbnail_url} alt={post.title} style={styles.postImage} loading="lazy" />
+                      ) : (
+                        <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>🧩</span></div>
+                      )}
+                      <div style={{ ...styles.postDiffBadge, background: `${getDifficultyColor(post.difficulty)}cc` }}>
+                        {getDifficultyLabel(post.difficulty)}
+                      </div>
+                    </div>
+                    <div style={styles.postInfo}>
+                      <div style={styles.postTitle}>{post.title}</div>
+                      <div style={styles.postMeta}>
+                        <span style={{ color: colors.bead.cyan }}>{post.grid_width}×{post.grid_height}</span>
+                        <span style={{ color: colors.text.muted }}>·</span>
+                        <span style={{ color: colors.bead.orange }}>{post.color_count}色</span>
+                      </div>
+                      <div style={styles.postFooter}>
+                        <div style={styles.postStat}>
+                          <Heart size={12} weight="fill" color={colors.bead.red} />
+                          <span>{post.like_count}</span>
+                        </div>
+                        <div style={styles.postStat}>
+                          <Eye size={12} color={colors.text.muted} />
+                          <span>{post.view_count}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : !communityLoading ? (
+            <div style={styles.communityEmpty}>
+              <span style={{ fontSize: '36px' }}>🎨</span>
+              <span style={{ fontSize: typography.fontSize.sm, color: colors.text.muted }}>暂无社区作品</span>
+            </div>
+          ) : null}
+
+          {/* 加载中 */}
+          {communityLoading && (
+            <div style={styles.communityLoading}>
+              <div style={styles.communitySpinner} />
+              <span style={{ fontSize: typography.fontSize.sm, color: colors.text.muted }}>加载中...</span>
+            </div>
+          )}
+
+          {/* 已到底 */}
+          {!communityHasMore && communityPosts.length > 0 && (
+            <div style={styles.communityEnd}>
+              <span style={{ fontSize: typography.fontSize.xs, color: colors.text.muted }}>— 已经到底了 —</span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* 底部渐变装饰 */}
       <div style={styles.rainbowBar} />
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
@@ -416,50 +571,133 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#ffffff',
   },
 
-  communityPreview: {
+  communitySection: {
     marginBottom: '24px',
   },
 
-  viewAllBtn: {
-    marginLeft: 'auto',
-    padding: '4px 10px',
-    background: `${colors.bead.cyan}20`,
-    borderRadius: radius.full,
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.bead.cyan,
-    cursor: 'pointer',
+  waterfall: {
+    display: 'flex',
+    gap: '10px',
   },
 
-  communityCard: {
-    padding: '24px 16px',
+  waterfallCol: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+
+  postCard: {
     background: colors.bg.card,
+    borderRadius: radius.lg,
     border: `1px solid ${colors.border.soft}`,
-    borderRadius: radius.card,
-    boxShadow: shadows.sm,
+    overflow: 'hidden',
     cursor: 'pointer',
     transition: animation.transition.fast,
   },
 
-  communityContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    textAlign: 'center',
+  postImageWrap: {
+    position: 'relative',
+    width: '100%',
+    aspectRatio: '1',
+    background: colors.bg.elevated,
+    overflow: 'hidden',
   },
 
-  communityText: {
-    fontSize: typography.fontSize.md,
+  postImage: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+
+  postPlaceholder: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: `linear-gradient(135deg, ${colors.bg.card}, ${colors.bg.elevated})`,
+  },
+
+  postDiffBadge: {
+    position: 'absolute',
+    top: '6px',
+    right: '6px',
+    padding: '2px 6px',
+    borderRadius: radius.sm,
+    fontSize: '10px',
+    fontWeight: typography.fontWeight.semibold,
+    color: '#ffffff',
+    fontFamily: typography.fontFamilyAlt,
+  },
+
+  postInfo: {
+    padding: '8px 10px 10px',
+  },
+
+  postTitle: {
+    fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
+    color: colors.text.primary,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
     marginBottom: '4px',
   },
 
-  communitySubtext: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamilyAlt,
+  postMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '11px',
     color: colors.text.muted,
+    fontFamily: typography.fontFamilyAlt,
+    marginBottom: '6px',
+  },
+
+  postFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+
+  postStat: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '3px',
+    fontSize: '11px',
+    color: colors.text.muted,
+  },
+
+  communityEmpty: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '40px 20px',
+  },
+
+  communityLoading: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    padding: '20px 0',
+  },
+
+  communitySpinner: {
+    width: '18px',
+    height: '18px',
+    border: `2px solid ${colors.border.soft}`,
+    borderTopColor: colors.bead.cyan,
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+  },
+
+  communityEnd: {
+    textAlign: 'center',
+    padding: '20px 0',
   },
 
   rainbowBar: {

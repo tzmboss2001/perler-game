@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { House, Plus, User, UsersThree } from '@phosphor-icons/react';
+import { House, Plus, User } from '@phosphor-icons/react';
 import { colors, shadows, animation, radius, typography } from '../styles/designSystem';
 
 // 路径到导航项的映射
@@ -9,7 +9,6 @@ const pathToNav: Record<string, string> = {
   '/mobile/create': '/mobile/create',
   '/mobile/editor': '/mobile/create',       // 编辑器属于"创作"
   '/mobile/making': '/mobile/create',       // 制作模式属于"创作"
-  '/mobile/community': '/mobile/community', // 社区
   '/mobile/profile': '/mobile/profile',
   '/mobile/settings': '/mobile/profile',     // 设置属于"我的"
   '/mobile/help': '/mobile/profile',         // 帮助属于"我的"
@@ -22,7 +21,6 @@ const pathToNav: Record<string, string> = {
 const navItems = [
   { path: '/mobile/home', label: '首页', icon: House, color: colors.bead.cyan, isCenter: false },
   { path: '/mobile/create', label: '创作', icon: Plus, color: colors.bead.green, isCenter: true },
-  { path: '/mobile/community', label: '社区', icon: UsersThree, color: colors.bead.orange, isCenter: false },
   { path: '/mobile/profile', label: '我的', icon: User, color: colors.bead.purple, isCenter: false },
 ];
 
@@ -147,7 +145,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'space-around',
     alignItems: 'center', // 改为居中对齐
-    maxWidth: '400px',
+    maxWidth: '320px',
     margin: '0 auto',
     height: '48px',
   },
