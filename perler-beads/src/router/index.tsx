@@ -16,6 +16,8 @@ const PrivacyPolicyPage = lazy(() => import('../pages/mobile/PrivacyPolicyPage')
 const UserAgreementPage = lazy(() => import('../pages/mobile/UserAgreementPage'));
 const FeedbackPage = lazy(() => import('../pages/mobile/FeedbackPage'));
 const TemplateDetailPage = lazy(() => import('../pages/mobile/TemplateDetailPage'));
+const CommunityPage = lazy(() => import('../pages/mobile/CommunityPage'));
+const CommunityDetailPage = lazy(() => import('../pages/mobile/CommunityDetailPage'));
 
 // 3D功能页面
 const Home3DPage = lazy(() => import('../pages/mobile/3d/Home3DPage'));
@@ -71,6 +73,7 @@ const AppRouter: React.FC = () => {
             <Route index element={<Navigate to="/mobile/home" replace />} />
             <Route path="home" element={<HomePage />} />
             <Route path="create" element={<CreatePage />} />
+            <Route path="community" element={<CommunityPage />} />
             <Route path="profile" element={<ProfilePage />} />
           </Route>
 
@@ -103,6 +106,9 @@ const AppRouter: React.FC = () => {
 
           {/* Template detail page (模板详情页) */}
           <Route path="/mobile/template/:id" element={<TemplateDetailPage />} />
+
+          {/* Community detail page (社区详情页，独立页面) */}
+          <Route path="/mobile/community/:id" element={<CommunityDetailPage />} />
 
           {/* 3D功能页面 */}
           <Route path="/mobile/3d" element={<Home3DPage />} />

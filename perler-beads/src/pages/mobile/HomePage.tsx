@@ -166,17 +166,17 @@ const HomePage: React.FC = () => {
           </div>
         </div>
 
-        {/* 社区入口预留 - 灰色卡片 */}
+        {/* 社区入口 */}
         <div style={styles.communityPreview}>
           <div style={styles.sectionHeader}>
             <span style={styles.sectionIcon}>🌟</span>
             <span style={styles.sectionTitle}>社区作品</span>
-            <span style={styles.comingSoonBadge}>即将上线</span>
+            <span style={styles.viewAllBtn} onClick={() => navigate('/mobile/community')}>查看全部 →</span>
           </div>
-          <div style={styles.communityCard}>
+          <div style={styles.communityCard} onClick={() => navigate('/mobile/community')}>
             <div style={styles.communityContent}>
               <span style={styles.communityText}>发现更多精彩作品</span>
-              <span style={styles.communitySubtext}>与其他创作者分享你的作品</span>
+              <span style={styles.communitySubtext}>浏览社区创作，一键开始制作</span>
             </div>
           </div>
         </div>
@@ -420,14 +420,15 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '24px',
   },
 
-  comingSoonBadge: {
+  viewAllBtn: {
     marginLeft: 'auto',
     padding: '4px 10px',
-    background: colors.bg.tertiary,
+    background: `${colors.bead.cyan}20`,
     borderRadius: radius.full,
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: colors.bead.cyan,
+    cursor: 'pointer',
   },
 
   communityCard: {
@@ -436,8 +437,8 @@ const styles: Record<string, React.CSSProperties> = {
     border: `1px solid ${colors.border.soft}`,
     borderRadius: radius.card,
     boxShadow: shadows.sm,
-    opacity: 0.7,
-    pointerEvents: 'none' as const,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
   },
 
   communityContent: {

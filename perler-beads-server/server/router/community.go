@@ -11,8 +11,9 @@ func InitCommunityPublicRouter(Router *gin.RouterGroup) {
 	communityRouter := Router.Group("community")
 	communityApi := v1.CommunityApi{}
 	{
-		communityRouter.GET("posts", communityApi.GetPosts)    // 作品列表
-		communityRouter.GET("posts/:id", communityApi.GetPost) // 作品详情
+		communityRouter.GET("posts", communityApi.GetPosts)          // 作品列表
+		communityRouter.GET("posts/:id", communityApi.GetPost)       // 作品详情
+		communityRouter.POST("posts/:id/make", communityApi.MakePost) // 增加制作次数
 	}
 }
 
