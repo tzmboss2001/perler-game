@@ -61,6 +61,7 @@ func Gorm() *gorm.DB {
 		&entity.TemplateCategory{},
 		&entity.Feedback{},
 		&entity.CommunityPost{},
+		&entity.CommunityLike{},
 	); err != nil {
 		global.GVA_LOG.Error("AutoMigrate failed: " + err.Error())
 	} else {

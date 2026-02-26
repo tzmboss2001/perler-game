@@ -41,6 +41,13 @@ type CommunityPostDetail struct {
 	LikeCount    int                    `json:"like_count"`
 	ViewCount    int                    `json:"view_count"`
 	MakeCount    int                    `json:"make_count"`
+	Liked        bool                   `json:"liked"`
 	User         CommunityPostAuthor    `json:"user"`
 	CreatedAt    time.Time              `json:"created_at"`
+}
+
+// LikeResponse 点赞响应
+type LikeResponse struct {
+	Liked     bool `json:"liked"`
+	LikeCount int  `json:"like_count"`
 }

@@ -32,3 +32,16 @@ type CommunityPost struct {
 func (CommunityPost) TableName() string {
 	return "community_posts"
 }
+
+// CommunityLike 社区点赞
+type CommunityLike struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	CreatedAt time.Time `json:"created_at"`
+	UserID    uint      `json:"user_id" gorm:"uniqueIndex:idx_user_post;not null"`
+	PostID    uint      `json:"post_id" gorm:"uniqueIndex:idx_user_post;not null;index"`
+}
+
+// TableName 指定表名
+func (CommunityLike) TableName() string {
+	return "community_likes"
+}

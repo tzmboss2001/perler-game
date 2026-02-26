@@ -50,8 +50,29 @@ export interface CommunityPostDetail {
   like_count: number;
   view_count: number;
   make_count: number;
+  liked?: boolean;
   user: CommunityPostAuthor;
   created_at: string;
+}
+
+// 发布作品请求
+export interface CreatePostData {
+  title: string;
+  description?: string;
+  bead_data: Record<string, unknown>;
+  grid_width: number;
+  grid_height: number;
+  bead_count: number;
+  color_count: number;
+  difficulty: string;
+  thumbnail_base64?: string;
+  project_id?: number;
+}
+
+// 点赞响应
+export interface LikeResponse {
+  liked: boolean;
+  like_count: number;
 }
 
 // 分页结果
@@ -125,6 +146,23 @@ export const communityApi = {
     } catch {
       // 静默失败，不阻塞用户操作
     }
+  },
+
+  /**
+   * 发布作品到社区
+   */
+  createPost: async (data: CreatePostData): Promise<ApiResponse<CommunityPostDetail>> => {
+    return request('/api/v1/community/posts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * 点赞/取消点赞（toggle）
+   */
+  likePost: async (id: number): Promise<ApiResponse<LikeResponse>> => {
+    return request(`/api/v1/community/posts/${id}/like`, { method: 'POST' });
   },
 };
 

@@ -5,6 +5,7 @@ import { colors, radius, typography, shadows, animation } from '../../styles/des
 import { communityApi, CommunityPostDetail } from '../../services/api/communityApi';
 import { allBeadColors, BeadColor } from '../../data/beadColors';
 import { BeadPixelData } from '../../services/colorMatchService';
+import { getToken } from '../../services/api/authApi';
 
 const CommunityDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -12,6 +13,9 @@ const CommunityDetailPage: React.FC = () => {
   const [post, setPost] = useState<CommunityPostDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [liking, setLiking] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -22,6 +26,8 @@ const CommunityDetailPage: React.FC = () => {
         const res = await communityApi.getPostById(Number(id));
         if (res.code === 0 && res.data) {
           setPost(res.data);
+          setLiked(!!res.data.liked);
+          setLikeCount(res.data.like_count);
         } else {
           setError(res.msg || '加载失败');
         }
@@ -86,6 +92,28 @@ const CommunityDetailPage: React.FC = () => {
       case 'easy': return { label: '简单', color: colors.bead.green };
       case 'hard': return { label: '困难', color: colors.bead.red };
       default: return { label: '中等', color: colors.bead.orange };
+    }
+  };
+
+  // 点赞处理
+  const handleLike = async () => {
+    if (liking) return;
+    const token = getToken();
+    if (!token) {
+      navigate('/mobile/login', { state: { from: `/mobile/community/${id}` } });
+      return;
+    }
+    setLiking(true);
+    try {
+      const res = await communityApi.likePost(Number(id));
+      if (res.code === 0 && res.data) {
+        setLiked(res.data.liked);
+        setLikeCount(res.data.like_count);
+      }
+    } catch (err) {
+      console.error('点赞失败:', err);
+    } finally {
+      setLiking(false);
     }
   };
 
@@ -206,12 +234,6 @@ const CommunityDetailPage: React.FC = () => {
         {/* 互动数据 */}
         <div style={styles.statsRow}>
           <div style={styles.statItem}>
-            <Heart size={18} weight="fill" color={colors.bead.red} />
-            <span style={styles.statNum}>{post.like_count}</span>
-            <span style={styles.statLabel}>点赞</span>
-          </div>
-          <div style={styles.statDivider} />
-          <div style={styles.statItem}>
             <Eye size={18} color={colors.bead.cyan} />
             <span style={styles.statNum}>{post.view_count}</span>
             <span style={styles.statLabel}>浏览</span>
@@ -225,8 +247,29 @@ const CommunityDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 底部CTA按钮 */}
+      {/* 底部操作栏 */}
       <div style={styles.bottomBar}>
+        <button
+          style={{
+            ...styles.likeBtn,
+            background: liked ? `${colors.bead.red}20` : colors.bg.card,
+            borderColor: liked ? colors.bead.red : colors.border.soft,
+          }}
+          onClick={handleLike}
+          disabled={liking}
+        >
+          <Heart
+            size={20}
+            weight={liked ? 'fill' : 'regular'}
+            color={liked ? colors.bead.red : colors.text.secondary}
+          />
+          <span style={{
+            ...styles.likeBtnText,
+            color: liked ? colors.bead.red : colors.text.secondary,
+          }}>
+            {likeCount > 0 ? likeCount : '点赞'}
+          </span>
+        </button>
         <button style={styles.ctaBtn} onClick={handleStartMaking}>
           <span style={styles.ctaIcon}>✨</span>
           <span style={styles.ctaText}>一键开始制作</span>
@@ -482,9 +525,30 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: 'blur(20px)',
     borderTop: `1px solid ${colors.border.soft}`,
     zIndex: 10,
+    display: 'flex',
+    gap: '10px',
+    alignItems: 'center',
+  },
+  likeBtn: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '2px',
+    padding: '10px 16px',
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: radius.lg,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
+    flexShrink: 0,
+  },
+  likeBtnText: {
+    fontSize: '11px',
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
   },
   ctaBtn: {
-    width: '100%',
+    flex: 1,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

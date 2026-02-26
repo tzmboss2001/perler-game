@@ -1,11 +1,16 @@
 package service
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"perler-beads-server/global"
 	"perler-beads-server/model/entity"
 	"perler-beads-server/model/request"
 	"perler-beads-server/model/response"
+	"strings"
 )
 
 type CommunityService struct{}
@@ -111,6 +116,121 @@ func (s *CommunityService) GetPostByID(id uint) (*response.CommunityPostDetail, 
 		User:         userMap[post.UserID],
 		CreatedAt:    post.CreatedAt,
 	}, nil
+}
+
+// CreatePost 发布社区作品
+func (s *CommunityService) CreatePost(req *request.CreateCommunityPostRequest, userID uint) (*entity.CommunityPost, error) {
+	// 构建 beadData 为 entity.JSON
+	beadData := entity.JSON(req.BeadData)
+
+	// 难度默认值
+	difficulty := req.Difficulty
+	if difficulty == "" {
+		difficulty = "medium"
+	}
+
+	post := entity.CommunityPost{
+		UserID:      userID,
+		ProjectID:   req.ProjectID,
+		Title:       req.Title,
+		Description: req.Description,
+		BeadData:    beadData,
+		GridWidth:   req.GridWidth,
+		GridHeight:  req.GridHeight,
+		BeadCount:   req.BeadCount,
+		ColorCount:  req.ColorCount,
+		Difficulty:  difficulty,
+		Status:      1, // 直接上线
+	}
+
+	// 先创建记录，获得 ID
+	if err := global.GVA_DB.Create(&post).Error; err != nil {
+		return nil, err
+	}
+
+	// 处理缩略图 base64
+	if req.ThumbnailBase64 != "" {
+		thumbnailURL, err := s.saveThumbnail(post.ID, req.ThumbnailBase64)
+		if err != nil {
+			global.GVA_LOG.Error("保存缩略图失败: " + err.Error())
+		} else {
+			post.ThumbnailURL = thumbnailURL
+			global.GVA_DB.Model(&post).UpdateColumn("thumbnail_url", thumbnailURL)
+		}
+	}
+
+	return &post, nil
+}
+
+// saveThumbnail 保存缩略图 base64 为 PNG 文件
+func (s *CommunityService) saveThumbnail(postID uint, base64Str string) (string, error) {
+	// 去掉 data:image/png;base64, 前缀
+	if idx := strings.Index(base64Str, ","); idx != -1 {
+		base64Str = base64Str[idx+1:]
+	}
+
+	// 解码
+	data, err := base64.StdEncoding.DecodeString(base64Str)
+	if err != nil {
+		return "", fmt.Errorf("base64 decode failed: %w", err)
+	}
+
+	// 确保目录存在
+	dir := "/www/wwwroot/perler-beads/thumbnails"
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("mkdir failed: %w", err)
+	}
+
+	// 写入文件
+	filename := fmt.Sprintf("post_%d.png", postID)
+	filePath := filepath.Join(dir, filename)
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		return "", fmt.Errorf("write file failed: %w", err)
+	}
+
+	return "/thumbnails/" + filename, nil
+}
+
+// ToggleLike 切换点赞状态
+func (s *CommunityService) ToggleLike(userID, postID uint) (*response.LikeResponse, error) {
+	var like entity.CommunityLike
+	result := global.GVA_DB.Where("user_id = ? AND post_id = ?", userID, postID).First(&like)
+
+	if result.Error == nil {
+		// 已点赞 → 取消
+		global.GVA_DB.Delete(&like)
+		global.GVA_DB.Model(&entity.CommunityPost{}).Where("id = ? AND like_count > 0", postID).
+			UpdateColumn("like_count", global.GVA_DB.Raw("like_count - 1"))
+
+		// 查询最新点赞数
+		var post entity.CommunityPost
+		global.GVA_DB.Select("like_count").First(&post, postID)
+
+		return &response.LikeResponse{Liked: false, LikeCount: post.LikeCount}, nil
+	}
+
+	// 未点赞 → 添加
+	like = entity.CommunityLike{UserID: userID, PostID: postID}
+	if err := global.GVA_DB.Create(&like).Error; err != nil {
+		return nil, err
+	}
+	global.GVA_DB.Model(&entity.CommunityPost{}).Where("id = ?", postID).
+		UpdateColumn("like_count", global.GVA_DB.Raw("like_count + 1"))
+
+	// 查询最新点赞数
+	var post entity.CommunityPost
+	global.GVA_DB.Select("like_count").First(&post, postID)
+
+	return &response.LikeResponse{Liked: true, LikeCount: post.LikeCount}, nil
+}
+
+// IsLiked 查询用户是否已点赞
+func (s *CommunityService) IsLiked(userID, postID uint) bool {
+	var count int64
+	global.GVA_DB.Model(&entity.CommunityLike{}).
+		Where("user_id = ? AND post_id = ?", userID, postID).
+		Count(&count)
+	return count > 0
 }
 
 // IncrementMakeCount 增加制作次数

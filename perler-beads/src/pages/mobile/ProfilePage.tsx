@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { User, Gear, Info, Question, Heart, Trash, Play, Spinner, SignOut, SignIn, Palette } from '@phosphor-icons/react';
+import { User, Gear, Info, Question, Heart, Trash, Play, Spinner, SignOut, SignIn, Palette, ShareNetwork } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, pixelIcons } from '../../styles/designSystem';
 import { projectApi, ProjectInfo } from '../../services/api/projectApi';
@@ -9,6 +9,10 @@ import Modal, { useModal } from '../../components/Modal';
 import MyColorsModal from '../../components/MyColorsModal';
 import { myColorsService } from '../../services/myColorsService';
 import { localStorageService, LocalProject } from '../../services/localStorageService';
+import PublishModal from '../../components/PublishModal';
+import { communityApi, CreatePostData } from '../../services/api/communityApi';
+import { BeadPixelData } from '../../services/colorMatchService';
+import { convertBeadPixelDataToCommunityFormat, generateThumbnailFromBeadData, countBeadStats } from '../../services/thumbnailService';
 
 /**
  * 我的页面
@@ -187,6 +191,107 @@ const ProfilePage: React.FC = () => {
   // 我的色板弹窗
   const [showMyColorsModal, setShowMyColorsModal] = useState(false);
 
+  // 发布到社区相关状态
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishBeadData, setPublishBeadData] = useState<BeadPixelData | null>(null);
+  const [publishDefaultTitle, setPublishDefaultTitle] = useState('');
+  const [publishGridSize, setPublishGridSize] = useState('');
+  const [publishProjectId, setPublishProjectId] = useState<number | undefined>(undefined);
+
+  // 分享到社区（本地方案）
+  const handleShareLocal = (project: LocalProject, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isLoggedIn) {
+      showConfirm('登录后才能分享作品到社区', {
+        title: '请先登录',
+        type: 'info',
+        confirmText: '去登录',
+        onConfirm: () => navigate('/mobile/login', { state: { from: '/mobile/profile' } }),
+      });
+      return;
+    }
+    const beadData: BeadPixelData = {
+      width: project.beadData.width,
+      height: project.beadData.height,
+      beads: project.beadData.beads as (BeadColor | null)[],
+    };
+    setPublishBeadData(beadData);
+    setPublishDefaultTitle(project.name);
+    setPublishGridSize(`${project.beadData.width}×${project.beadData.height}`);
+    setPublishProjectId(undefined);
+    setShowPublishModal(true);
+  };
+
+  // 分享到社区（云端方案）
+  const handleShare = async (project: ProjectInfo, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isLoggedIn) return;
+    try {
+      const response = await projectApi.getById(project.id);
+      if (response.code === 0 && response.data) {
+        const detail = response.data;
+        const beadData: BeadPixelData = {
+          width: detail.bead_data.width,
+          height: detail.bead_data.height,
+          beads: detail.bead_data.beads as (BeadColor | null)[],
+        };
+        setPublishBeadData(beadData);
+        setPublishDefaultTitle(project.name);
+        const w = detail.bead_data.width || project.settings?.gridSize || 32;
+        const h = detail.bead_data.height || project.settings?.gridHeight || project.settings?.gridSize || 32;
+        setPublishGridSize(`${w}×${h}`);
+        setPublishProjectId(project.id);
+        setShowPublishModal(true);
+      }
+    } catch (error) {
+      console.error('获取方案详情失败:', error);
+    }
+  };
+
+  // 执行发布
+  const handlePublish = async (data: { title: string; description: string; difficulty: string }) => {
+    if (!publishBeadData) return;
+    setPublishing(true);
+    try {
+      const communityFormat = convertBeadPixelDataToCommunityFormat(publishBeadData);
+      const thumbnail = generateThumbnailFromBeadData(publishBeadData);
+      const stats = countBeadStats(publishBeadData);
+
+      const postData: CreatePostData = {
+        title: data.title,
+        description: data.description,
+        bead_data: communityFormat as unknown as Record<string, unknown>,
+        grid_width: publishBeadData.width,
+        grid_height: publishBeadData.height,
+        bead_count: stats.beadCount,
+        color_count: stats.colorCount,
+        difficulty: data.difficulty,
+        thumbnail_base64: thumbnail,
+        project_id: publishProjectId,
+      };
+
+      const res = await communityApi.createPost(postData);
+      if (res.code === 0) {
+        setShowPublishModal(false);
+        showConfirm('作品已成功分享到社区！', {
+          title: '发布成功',
+          type: 'info',
+          confirmText: '去社区看看',
+          cancelText: '留在这里',
+          onConfirm: () => navigate('/mobile/community'),
+        });
+      } else {
+        showConfirm(res.msg || '发布失败，请重试', { title: '发布失败', type: 'warning', confirmText: '知道了' });
+      }
+    } catch (error) {
+      console.error('发布失败:', error);
+      showConfirm('网络错误，请稍后重试', { title: '发布失败', type: 'warning', confirmText: '知道了' });
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   const menuItems = [
     { icon: Palette, label: '管理我的色板', color: colors.bead.orange, action: () => setShowMyColorsModal(true) },
     { icon: Gear, label: '设置', color: colors.bead.cyan, path: '/mobile/settings' },
@@ -328,6 +433,15 @@ const ProfilePage: React.FC = () => {
                     </span>
                   </div>
                   <div style={styles.projectActions}>
+                    {isLoggedIn && (
+                      <button
+                        style={styles.shareBtn}
+                        onClick={(e) => handleShareLocal(project, e)}
+                        title="分享到社区"
+                      >
+                        <ShareNetwork size={14} weight="fill" />
+                      </button>
+                    )}
                     <button
                       style={styles.continueBtn}
                       onClick={(e) => { e.stopPropagation(); handleContinueLocal(project); }}
@@ -406,6 +520,13 @@ const ProfilePage: React.FC = () => {
                 {/* 操作按钮 */}
                 <div style={styles.projectActions}>
                   <button
+                    style={styles.shareBtn}
+                    onClick={(e) => handleShare(project, e)}
+                    title="分享到社区"
+                  >
+                    <ShareNetwork size={14} weight="fill" />
+                  </button>
+                  <button
                     style={styles.continueBtn}
                     onClick={(e) => { e.stopPropagation(); handleContinue(project); }}
                   >
@@ -466,6 +587,16 @@ const ProfilePage: React.FC = () => {
       <MyColorsModal
         visible={showMyColorsModal}
         onClose={() => setShowMyColorsModal(false)}
+      />
+
+      {/* 发布到社区弹窗 */}
+      <PublishModal
+        visible={showPublishModal}
+        onPublish={handlePublish}
+        onCancel={() => setShowPublishModal(false)}
+        loading={publishing}
+        defaultTitle={publishDefaultTitle}
+        gridSize={publishGridSize}
       />
     </div>
   );
@@ -814,6 +945,21 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#ffffff',
     cursor: 'pointer',
     boxShadow: `0 2px 8px ${colors.bead.green}40`,
+    transition: animation.transition.fast,
+  },
+
+  shareBtn: {
+    width: '32px',
+    height: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: `linear-gradient(145deg, ${colors.bead.purple}, ${colors.bead.purple}cc)`,
+    border: 'none',
+    borderRadius: radius.bead,
+    color: '#ffffff',
+    cursor: 'pointer',
+    boxShadow: `0 2px 8px ${colors.bead.purple}40`,
     transition: animation.transition.fast,
   },
 
