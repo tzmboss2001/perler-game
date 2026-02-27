@@ -1,8 +1,18 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Eye } from '@phosphor-icons/react';
+import { Heart, Eye, SortAscending, Fire, Hammer } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../../styles/designSystem';
 import { communityApi, CommunityPostListItem } from '../../services/api/communityApi';
+
+// 预设标签
+const TAG_OPTIONS = ['全部', '动漫', '游戏', '动物', '风景', '节日', '人物', '食物', '其他'];
+
+// 排序选项
+const SORT_OPTIONS = [
+  { key: 'newest', label: '最新', icon: SortAscending },
+  { key: 'popular', label: '最热', icon: Fire },
+  { key: 'most_made', label: '最多制作', icon: Hammer },
+] as const;
 
 const CommunityPage: React.FC = () => {
   const navigate = useNavigate();
@@ -11,17 +21,24 @@ const CommunityPage: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [selectedTag, setSelectedTag] = useState('全部');
+  const [sortBy, setSortBy] = useState('newest');
   const loadingRef = useRef(false);
   const pageSize = 20;
 
   // 加载数据
-  const loadPosts = useCallback(async (pageNum: number, append = false) => {
+  const loadPosts = useCallback(async (pageNum: number, append = false, tag?: string, sort?: string) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
 
     try {
-      const res = await communityApi.getPosts({ page: pageNum, pageSize });
+      const res = await communityApi.getPosts({
+        page: pageNum,
+        pageSize,
+        tag: tag === '全部' ? undefined : tag,
+        sort: sort === 'newest' ? undefined : sort,
+      });
       if (res.code === 0 && res.data) {
         const newList = res.data.list || [];
         setPosts(prev => append ? [...prev, ...newList] : newList);
@@ -38,8 +55,26 @@ const CommunityPage: React.FC = () => {
 
   // 首次加载
   useEffect(() => {
-    loadPosts(1);
-  }, [loadPosts]);
+    loadPosts(1, false, selectedTag, sortBy);
+  }, [loadPosts, selectedTag, sortBy]);
+
+  // 切换标签
+  const handleTagChange = (tag: string) => {
+    if (tag === selectedTag) return;
+    setSelectedTag(tag);
+    setPage(1);
+    setPosts([]);
+    setHasMore(true);
+  };
+
+  // 切换排序
+  const handleSortChange = (sort: string) => {
+    if (sort === sortBy) return;
+    setSortBy(sort);
+    setPage(1);
+    setPosts([]);
+    setHasMore(true);
+  };
 
   // 滚动加载更多（监听 window scroll）
   useEffect(() => {
@@ -49,12 +84,12 @@ const CommunityPage: React.FC = () => {
       if (scrollHeight - scrollTop - clientHeight < 200) {
         const nextPage = page + 1;
         setPage(nextPage);
-        loadPosts(nextPage, true);
+        loadPosts(nextPage, true, selectedTag, sortBy);
       }
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [page, hasMore, loadPosts]);
+  }, [page, hasMore, loadPosts, selectedTag, sortBy]);
 
   // 难度标签颜色
   const getDifficultyColor = (difficulty: string) => {
@@ -82,12 +117,46 @@ const CommunityPage: React.FC = () => {
 
       {/* 内容区 */}
       <div style={styles.scrollArea}>
-        {/* 统计信息 */}
-        {total > 0 && (
-          <div style={styles.statsBar}>
-            <span style={styles.statsText}>共 {total} 个作品</span>
+        {/* 标签筛选栏 */}
+        <div style={styles.tagBar}>
+          <div style={styles.tagScroll}>
+            {TAG_OPTIONS.map(tag => (
+              <button
+                key={tag}
+                style={{
+                  ...styles.tagButton,
+                  ...(selectedTag === tag ? styles.tagButtonActive : {}),
+                }}
+                onClick={() => handleTagChange(tag)}
+              >
+                {tag}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
+
+        {/* 排序栏 + 统计 */}
+        <div style={styles.sortBar}>
+          <span style={styles.statsText}>共 {total} 个作品</span>
+          <div style={styles.sortOptions}>
+            {SORT_OPTIONS.map(opt => {
+              const Icon = opt.icon;
+              return (
+                <button
+                  key={opt.key}
+                  style={{
+                    ...styles.sortButton,
+                    ...(sortBy === opt.key ? styles.sortButtonActive : {}),
+                  }}
+                  onClick={() => handleSortChange(opt.key)}
+                >
+                  <Icon size={13} weight={sortBy === opt.key ? 'bold' : 'regular'} />
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* 瀑布流双列 */}
         <div style={styles.waterfall}>
@@ -230,8 +299,68 @@ const styles: Record<string, React.CSSProperties> = {
   scrollArea: {
     padding: '12px',
   },
-  statsBar: {
+  tagBar: {
+    marginBottom: '8px',
+    overflow: 'hidden',
+  },
+  tagScroll: {
+    display: 'flex',
+    gap: '8px',
+    overflowX: 'auto',
+    paddingBottom: '4px',
+    WebkitOverflowScrolling: 'touch',
+    scrollbarWidth: 'none',
+    msOverflowStyle: 'none',
+  } as React.CSSProperties,
+  tagButton: {
+    flexShrink: 0,
+    padding: '5px 14px',
+    borderRadius: radius.full,
+    border: `1px solid ${colors.border.soft}`,
+    background: colors.bg.card,
+    color: colors.text.secondary,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
+    whiteSpace: 'nowrap',
+  } as React.CSSProperties,
+  tagButtonActive: {
+    background: `${colors.bead.cyan}20`,
+    border: `1px solid ${colors.bead.cyan}`,
+    color: colors.bead.cyan,
+    fontWeight: typography.fontWeight.bold,
+  },
+  sortBar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: '0 4px 8px',
+  },
+  sortOptions: {
+    display: 'flex',
+    gap: '4px',
+  },
+  sortButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '3px',
+    padding: '3px 8px',
+    borderRadius: radius.sm,
+    border: 'none',
+    background: 'transparent',
+    color: colors.text.muted,
+    fontSize: '11px',
+    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
+  },
+  sortButtonActive: {
+    background: `${colors.bead.purple}20`,
+    color: colors.bead.purple,
+    fontWeight: typography.fontWeight.bold,
   },
   statsText: {
     fontSize: typography.fontSize.xs,

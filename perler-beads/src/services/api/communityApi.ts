@@ -22,6 +22,7 @@ export interface CommunityPostAuthor {
 export interface CommunityPostListItem {
   id: number;
   title: string;
+  tags?: string;
   thumbnail_url: string;
   grid_width: number;
   grid_height: number;
@@ -38,6 +39,7 @@ export interface CommunityPostListItem {
 export interface CommunityPostDetail {
   id: number;
   title: string;
+  tags?: string;
   description: string;
   thumbnail_url: string;
   image_urls: string[];
@@ -59,6 +61,7 @@ export interface CommunityPostDetail {
 export interface CreatePostData {
   title: string;
   description?: string;
+  tags?: string;
   bead_data: Record<string, unknown>;
   grid_width: number;
   grid_height: number;
@@ -87,6 +90,8 @@ export interface PageResult<T> {
 export interface CommunityListParams {
   page?: number;
   pageSize?: number;
+  tag?: string;
+  sort?: string;
 }
 
 /**
@@ -125,6 +130,8 @@ export const communityApi = {
     const searchParams = new URLSearchParams();
     if (params.page) searchParams.set('page', params.page.toString());
     if (params.pageSize) searchParams.set('pageSize', params.pageSize.toString());
+    if (params.tag) searchParams.set('tag', params.tag);
+    if (params.sort) searchParams.set('sort', params.sort);
 
     const url = `/api/v1/community/posts?${searchParams.toString()}`;
     return request(url, { method: 'GET' });

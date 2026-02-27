@@ -13,6 +13,7 @@ type CommunityPostAuthor struct {
 type CommunityPostListItem struct {
 	ID           uint                `json:"id"`
 	Title        string              `json:"title"`
+	Tags         string              `json:"tags"`
 	ThumbnailURL string              `json:"thumbnail_url"`
 	GridWidth    int                 `json:"grid_width"`
 	GridHeight   int                 `json:"grid_height"`
@@ -29,6 +30,7 @@ type CommunityPostListItem struct {
 type CommunityPostDetail struct {
 	ID           uint                   `json:"id"`
 	Title        string                 `json:"title"`
+	Tags         string                 `json:"tags"`
 	Description  string                 `json:"description"`
 	ThumbnailURL string                 `json:"thumbnail_url"`
 	ImageURLs    []string               `json:"image_urls"`

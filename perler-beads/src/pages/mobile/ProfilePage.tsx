@@ -250,7 +250,7 @@ const ProfilePage: React.FC = () => {
   };
 
   // 执行发布
-  const handlePublish = async (data: { title: string; description: string; difficulty: string }) => {
+  const handlePublish = async (data: { title: string; description: string; difficulty: string; tags: string }) => {
     if (!publishBeadData) return;
     setPublishing(true);
     try {
@@ -261,6 +261,7 @@ const ProfilePage: React.FC = () => {
       const postData: CreatePostData = {
         title: data.title,
         description: data.description,
+        tags: data.tags || undefined,
         bead_data: communityFormat as unknown as Record<string, unknown>,
         grid_width: publishBeadData.width,
         grid_height: publishBeadData.height,

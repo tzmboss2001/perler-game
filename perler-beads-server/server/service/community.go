@@ -19,6 +19,11 @@ type CommunityService struct{}
 func (s *CommunityService) GetPosts(req *request.CommunityPostListRequest) ([]response.CommunityPostListItem, int64, error) {
 	db := global.GVA_DB.Model(&entity.CommunityPost{}).Where("community_posts.status = ?", 1)
 
+	// 标签筛选
+	if req.Tag != "" {
+		db = db.Where("community_posts.tags LIKE ?", "%"+req.Tag+"%")
+	}
+
 	// 总数
 	var total int64
 	db.Count(&total)
@@ -31,9 +36,18 @@ func (s *CommunityService) GetPosts(req *request.CommunityPostListRequest) ([]re
 		req.PageSize = 20
 	}
 
+	// 排序
+	orderClause := "community_posts.created_at DESC"
+	switch req.Sort {
+	case "popular":
+		orderClause = "community_posts.like_count DESC, community_posts.created_at DESC"
+	case "most_made":
+		orderClause = "community_posts.make_count DESC, community_posts.created_at DESC"
+	}
+
 	var posts []entity.CommunityPost
 	offset := (req.Page - 1) * req.PageSize
-	if err := db.Order("community_posts.created_at DESC").Offset(offset).Limit(req.PageSize).Find(&posts).Error; err != nil {
+	if err := db.Order(orderClause).Offset(offset).Limit(req.PageSize).Find(&posts).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -50,6 +64,7 @@ func (s *CommunityService) GetPosts(req *request.CommunityPostListRequest) ([]re
 		result[i] = response.CommunityPostListItem{
 			ID:           p.ID,
 			Title:        p.Title,
+			Tags:         p.Tags,
 			ThumbnailURL: p.ThumbnailURL,
 			GridWidth:    p.GridWidth,
 			GridHeight:   p.GridHeight,
@@ -101,6 +116,7 @@ func (s *CommunityService) GetPostByID(id uint) (*response.CommunityPostDetail, 
 	return &response.CommunityPostDetail{
 		ID:           post.ID,
 		Title:        post.Title,
+		Tags:         post.Tags,
 		Description:  post.Description,
 		ThumbnailURL: post.ThumbnailURL,
 		ImageURLs:    imageURLs,
@@ -134,6 +150,7 @@ func (s *CommunityService) CreatePost(req *request.CreateCommunityPostRequest, u
 		ProjectID:   req.ProjectID,
 		Title:       req.Title,
 		Description: req.Description,
+		Tags:        req.Tags,
 		BeadData:    beadData,
 		GridWidth:   req.GridWidth,
 		GridHeight:  req.GridHeight,

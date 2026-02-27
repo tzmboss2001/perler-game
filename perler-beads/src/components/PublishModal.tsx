@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { X, CircleNotch } from '@phosphor-icons/react';
 import { colors, spacing, radius, typography, shadows, animation, mixins } from '../styles/designSystem';
 
+// 预设标签（与 CommunityPage 一致，去掉"全部"）
+const TAG_PRESETS = ['动漫', '游戏', '动物', '风景', '节日', '人物', '食物', '其他'];
+
 interface PublishModalProps {
   visible: boolean;
-  onPublish: (data: { title: string; description: string; difficulty: string }) => void;
+  onPublish: (data: { title: string; description: string; difficulty: string; tags: string }) => void;
   onCancel: () => void;
   loading?: boolean;
   defaultTitle?: string;
@@ -22,19 +25,27 @@ const PublishModal: React.FC<PublishModalProps> = ({
   const [title, setTitle] = useState(defaultTitle);
   const [description, setDescription] = useState('');
   const [difficulty, setDifficulty] = useState('medium');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   useEffect(() => {
     if (visible) {
       setTitle(defaultTitle || '');
       setDescription('');
       setDifficulty('medium');
+      setSelectedTags([]);
     }
   }, [visible, defaultTitle]);
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags(prev =>
+      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    );
+  };
 
   const handlePublish = () => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return;
-    onPublish({ title: trimmedTitle, description: description.trim(), difficulty });
+    onPublish({ title: trimmedTitle, description: description.trim(), difficulty, tags: selectedTags.join(',') });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -121,6 +132,25 @@ const PublishModal: React.FC<PublishModalProps> = ({
                   onClick={() => setDifficulty(opt.value)}
                 >
                   {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 标签选择 */}
+          <div style={{ ...styles.inputGroup, marginTop: '12px' }}>
+            <label style={styles.label}>标签（可多选）</label>
+            <div style={styles.tagRow}>
+              {TAG_PRESETS.map((tag) => (
+                <button
+                  key={tag}
+                  style={{
+                    ...styles.tagBtn,
+                    ...(selectedTags.includes(tag) ? styles.tagBtnActive : {}),
+                  }}
+                  onClick={() => toggleTag(tag)}
+                >
+                  {tag}
                 </button>
               ))}
             </div>
@@ -244,6 +274,29 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: typography.fontFamilyAlt,
     cursor: 'pointer',
     transition: animation.transition.fast,
+  },
+  tagRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+  } as React.CSSProperties,
+  tagBtn: {
+    padding: '5px 12px',
+    background: colors.bg.tertiary,
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: radius.full,
+    color: colors.text.secondary,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
+  },
+  tagBtnActive: {
+    background: `${colors.bead.cyan}20`,
+    border: `1px solid ${colors.bead.cyan}`,
+    color: colors.bead.cyan,
+    fontWeight: typography.fontWeight.bold,
   },
   footer: {
     display: 'flex',
