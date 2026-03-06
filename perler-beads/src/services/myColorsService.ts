@@ -1,20 +1,19 @@
-/**
+﻿/**
  * 我的色板服务 - 管理用户拥有的拼豆颜色
- * 数据存储在 localStorage
+ * 默认存储到 localStorage；登录后支持云同步。
  */
 
 import { mardColors, BeadColor } from '../data/beadColors';
+import { getToken } from './api/authApi';
+import { userApi } from './api/userApi';
 
-// localStorage 键
 const MY_COLORS_KEY = 'perler_beads_my_colors';
 
-// 存储数据结构
 export interface MyColorsData {
   selectedIds: string[];
   updatedAt: string;
 }
 
-// MARD 系列分组定义
 export interface ColorSeries {
   key: string;
   name: string;
@@ -22,7 +21,6 @@ export interface ColorSeries {
   colors: BeadColor[];
 }
 
-// 获取 MARD 系列分组
 export const getMardSeries = (): ColorSeries[] => {
   const seriesMap: Record<string, { name: string; description: string }> = {
     A: { name: 'A系列', description: '黄橙色系' },
@@ -58,9 +56,7 @@ export const getMardSeries = (): ColorSeries[] => {
     }));
 };
 
-// 我的色板服务
 export const myColorsService = {
-  /** 获取已选的颜色ID列表 */
   getSelectedIds: (): string[] => {
     try {
       const data = localStorage.getItem(MY_COLORS_KEY);
@@ -74,7 +70,6 @@ export const myColorsService = {
     return [];
   },
 
-  /** 保存选中的颜色ID列表 */
   saveSelectedIds: (ids: string[]): void => {
     const data: MyColorsData = {
       selectedIds: ids,
@@ -83,13 +78,11 @@ export const myColorsService = {
     localStorage.setItem(MY_COLORS_KEY, JSON.stringify(data));
   },
 
-  /** 是否已配置过自定义色板 */
   hasCustomPalette: (): boolean => {
     const ids = myColorsService.getSelectedIds();
     return ids.length > 0;
   },
 
-  /** 获取不在自定义列表中的颜色ID（用于 excludeColors） */
   getExcludeColorIds: (): string[] => {
     const selectedIds = new Set(myColorsService.getSelectedIds());
     if (selectedIds.size === 0) return [];
@@ -98,9 +91,38 @@ export const myColorsService = {
       .map(c => c.id);
   },
 
-  /** 清除自定义色板 */
   clear: (): void => {
     localStorage.removeItem(MY_COLORS_KEY);
+  },
+
+  syncFromCloud: async (): Promise<string[]> => {
+    const token = getToken();
+    if (!token) return myColorsService.getSelectedIds();
+
+    try {
+      const res = await userApi.getPreferences();
+      if (res.code === 0 && Array.isArray(res.data?.my_color_ids)) {
+        myColorsService.saveSelectedIds(res.data.my_color_ids);
+        return res.data.my_color_ids;
+      }
+    } catch (e) {
+      console.warn('[myColorsService] 从云端同步失败:', e);
+    }
+
+    return myColorsService.getSelectedIds();
+  },
+
+  syncToCloud: async (ids: string[]): Promise<boolean> => {
+    const token = getToken();
+    if (!token) return false;
+
+    try {
+      const res = await userApi.updatePreferences(ids);
+      return res.code === 0;
+    } catch (e) {
+      console.warn('[myColorsService] 同步到云端失败:', e);
+      return false;
+    }
   },
 };
 

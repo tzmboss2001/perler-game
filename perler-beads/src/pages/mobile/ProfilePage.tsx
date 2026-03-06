@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { User, Gear, Info, Question, Heart, Trash, Play, Spinner, SignOut, SignIn, Palette, ShareNetwork } from '@phosphor-icons/react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { User, Gear, Info, Question, Heart, Trash, Play, Spinner, SignOut, SignIn, Palette, ShareNetwork, ShieldCheck } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, pixelIcons } from '../../styles/designSystem';
 import { projectApi, ProjectInfo } from '../../services/api/projectApi';
@@ -10,9 +10,10 @@ import MyColorsModal from '../../components/MyColorsModal';
 import { myColorsService } from '../../services/myColorsService';
 import { localStorageService, LocalProject } from '../../services/localStorageService';
 import PublishModal from '../../components/PublishModal';
-import { communityApi, CreatePostData } from '../../services/api/communityApi';
+import { communityApi, CommunityPostListItem, CreatePostData } from '../../services/api/communityApi';
+import { finishedWorkApi, FinishedWorkItem } from '../../services/api/finishedWorkApi';
 import { BeadPixelData } from '../../services/colorMatchService';
-import { convertBeadPixelDataToCommunityFormat, generateThumbnailFromBeadData, countBeadStats } from '../../services/thumbnailService';
+import { convertBeadPixelDataToCommunityFormat, generateThumbnailFromBeadData, countBeadStats, inferPaletteMetaFromBeadData } from '../../services/thumbnailService';
 
 /**
  * 我的页面
@@ -128,7 +129,7 @@ const ProfilePage: React.FC = () => {
             beadData,
             colorCount: detail.settings?.colorCount || 96,
             projectId: project.id,
-            // 如果有保存的进度，恢复进度状态
+            // 如果有保存进度，则恢复进度状态
             ...(detail.progress ? {
               savedProgress: detail.progress,
             } : {}),
@@ -172,13 +173,13 @@ const ProfilePage: React.FC = () => {
     return Math.round((progress.completedItems.length / total) * 100);
   };
 
-  // 登录/登出处理
+  // 登录/退出处理
   const handleLogin = () => {
     navigate('/mobile/login', { state: { from: '/mobile/profile' } });
   };
 
   const handleLogout = () => {
-    showConfirm('退出登录后，本地方案数据将保留，云端数据需重新登录查看。', {
+    showConfirm('退出登录后，本地方案数据会保留，云端数据需重新登录查看。', {
       title: '确定要退出登录吗？',
       type: 'info',
       confirmText: '退出',
@@ -197,7 +198,162 @@ const ProfilePage: React.FC = () => {
   const [publishBeadData, setPublishBeadData] = useState<BeadPixelData | null>(null);
   const [publishDefaultTitle, setPublishDefaultTitle] = useState('');
   const [publishGridSize, setPublishGridSize] = useState('');
+  const [publishDifficulty, setPublishDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [publishProjectId, setPublishProjectId] = useState<number | undefined>(undefined);
+  const [myCommunityPosts, setMyCommunityPosts] = useState<CommunityPostListItem[]>([]);
+  const [myCommunityLoading, setMyCommunityLoading] = useState(false);
+  const [finishedWorks, setFinishedWorks] = useState<FinishedWorkItem[]>([]);
+  const [finishedWorksLoading, setFinishedWorksLoading] = useState(false);
+  const [finishedUploading, setFinishedUploading] = useState(false);
+  const finishedInputRef = useRef<HTMLInputElement | null>(null);
+
+  const reviewStatusText = (status?: number) => {
+    switch (status) {
+      case 0:
+        return '待审核';
+      case 1:
+        return '已通过';
+      case 2:
+        return '已驳回';
+      case 3:
+        return '已下架';
+      default:
+        return '未知';
+    }
+  };
+
+  const reviewStatusColor = (status?: number) => {
+    switch (status) {
+      case 0:
+        return colors.bead.yellow;
+      case 1:
+        return colors.bead.green;
+      case 2:
+        return colors.bead.red;
+      case 3:
+        return colors.bead.orange;
+      default:
+        return colors.text.muted;
+    }
+  };
+
+  const inferDifficulty = (data: BeadPixelData): 'easy' | 'medium' | 'hard' => {
+    const stats = countBeadStats(data);
+    let score = 0;
+    const maxSide = Math.max(data.width, data.height);
+
+    if (stats.beadCount >= 6000) score += 2;
+    else if (stats.beadCount >= 2500) score += 1;
+
+    if (stats.colorCount >= 60) score += 2;
+    else if (stats.colorCount >= 30) score += 1;
+
+    if (maxSide >= 96) score += 1;
+
+    if (score <= 1) return 'easy';
+    if (score <= 3) return 'medium';
+    return 'hard';
+  };
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('file read failed'));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const loadFinishedWorks = useCallback(async () => {
+    if (!isLoggedIn) {
+      setFinishedWorks([]);
+      return;
+    }
+    try {
+      setFinishedWorksLoading(true);
+      const res = await finishedWorkApi.listMy(1, 12);
+      if (res.code === 0) {
+        setFinishedWorks(res.data.list || []);
+      }
+    } catch (error) {
+      console.error('[ProfilePage] load finished works failed:', error);
+    } finally {
+      setFinishedWorksLoading(false);
+    }
+  }, [isLoggedIn]);
+
+  const handleUploadFinishedClick = () => {
+    if (finishedUploading) return;
+    finishedInputRef.current?.click();
+  };
+
+  const handleFinishedFilesChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+    if (!isLoggedIn) {
+      showConfirm('请先登录后再上传成品', {
+        title: '请先登录',
+        type: 'info',
+        confirmText: '去登录',
+        onConfirm: () => navigate('/mobile/login', { state: { from: '/mobile/profile' } }),
+      });
+      return;
+    }
+
+    const title = (window.prompt('请输入成品标题', files[0]?.name?.replace(/\.[^/.]+$/, '') || '我的成品') || '').trim();
+    if (!title) return;
+    const description = (window.prompt('请输入成品描述（可选）', '') || '').trim();
+
+    try {
+      setFinishedUploading(true);
+      const base64List = await Promise.all(files.slice(0, 9).map(fileToBase64));
+      const res = await finishedWorkApi.create({
+        title,
+        description: description || undefined,
+        images_base64: base64List,
+        is_public: true,
+      });
+      if (res.code === 0) {
+        await loadFinishedWorks();
+        showConfirm('成品已上传到你的相册。', {
+          title: '上传成功',
+          type: 'success',
+          confirmText: '知道了',
+        });
+      } else {
+        showConfirm(res.msg || '上传失败，请稍后重试', { title: '上传失败', type: 'warning', confirmText: '知道了' });
+      }
+    } catch (error) {
+      console.error('[ProfilePage] upload finished work failed:', error);
+      showConfirm('上传失败，请稍后重试', { title: '上传失败', type: 'warning', confirmText: '知道了' });
+    } finally {
+      setFinishedUploading(false);
+    }
+  };
+
+  const handleDeleteFinishedWork = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (finishedUploading) return;
+    showConfirm('删除后将无法恢复，确定删除这个成品吗？', {
+      title: '删除成品',
+      type: 'warning',
+      confirmText: '删除',
+      onConfirm: async () => {
+        try {
+          const res = await finishedWorkApi.delete(id);
+          if (res.code === 0) {
+            setFinishedWorks(prev => prev.filter(item => item.id !== id));
+          } else {
+            showConfirm(res.msg || '删除失败，请稍后重试', { title: '删除失败', type: 'warning', confirmText: '知道了' });
+          }
+        } catch (error) {
+          console.error('[ProfilePage] delete finished work failed:', error);
+          showConfirm('删除失败，请稍后重试', { title: '删除失败', type: 'warning', confirmText: '知道了' });
+        }
+      },
+    });
+  };
 
   // 分享到社区（本地方案）
   const handleShareLocal = (project: LocalProject, e: React.MouseEvent) => {
@@ -219,6 +375,7 @@ const ProfilePage: React.FC = () => {
     setPublishBeadData(beadData);
     setPublishDefaultTitle(project.name);
     setPublishGridSize(`${project.beadData.width}×${project.beadData.height}`);
+    setPublishDifficulty(inferDifficulty(beadData));
     setPublishProjectId(undefined);
     setShowPublishModal(true);
   };
@@ -226,7 +383,15 @@ const ProfilePage: React.FC = () => {
   // 分享到社区（云端方案）
   const handleShare = async (project: ProjectInfo, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isLoggedIn) return;
+    if (!isLoggedIn) {
+      showConfirm('登录后才能分享作品到社区', {
+        title: '请先登录',
+        type: 'info',
+        confirmText: '去登录',
+        onConfirm: () => navigate('/mobile/login', { state: { from: '/mobile/profile' } }),
+      });
+      return;
+    }
     try {
       const response = await projectApi.getById(project.id);
       if (response.code === 0 && response.data) {
@@ -241,6 +406,7 @@ const ProfilePage: React.FC = () => {
         const w = detail.bead_data.width || project.settings?.gridSize || 32;
         const h = detail.bead_data.height || project.settings?.gridHeight || project.settings?.gridSize || 32;
         setPublishGridSize(`${w}×${h}`);
+        setPublishDifficulty(inferDifficulty(beadData));
         setPublishProjectId(project.id);
         setShowPublishModal(true);
       }
@@ -257,6 +423,7 @@ const ProfilePage: React.FC = () => {
       const communityFormat = convertBeadPixelDataToCommunityFormat(publishBeadData);
       const thumbnail = generateThumbnailFromBeadData(publishBeadData);
       const stats = countBeadStats(publishBeadData);
+      const paletteMeta = inferPaletteMetaFromBeadData(publishBeadData);
 
       const postData: CreatePostData = {
         title: data.title,
@@ -270,12 +437,15 @@ const ProfilePage: React.FC = () => {
         difficulty: data.difficulty,
         thumbnail_base64: thumbnail,
         project_id: publishProjectId,
+        palette_brand: paletteMeta.palette_brand,
+        palette_version: paletteMeta.palette_version,
+        palette_name: paletteMeta.palette_name,
       };
 
       const res = await communityApi.createPost(postData);
       if (res.code === 0) {
         setShowPublishModal(false);
-        showConfirm('作品已成功分享到社区！', {
+        showConfirm('作品已成功分享到社区。', {
           title: '发布成功',
           type: 'info',
           confirmText: '去社区看看',
@@ -299,6 +469,53 @@ const ProfilePage: React.FC = () => {
     { icon: Question, label: '帮助', color: colors.bead.green, path: '/mobile/help' },
     { icon: Info, label: '关于', color: colors.bead.purple, path: '/mobile/about' },
   ];
+
+  const adminIDs = (import.meta.env.VITE_COMMUNITY_ADMIN_IDS || '2,4')
+    .split(',')
+    .map(v => Number(v.trim()))
+    .filter(v => Number.isFinite(v) && v > 0);
+  const isCommunityAdmin = !!userInfo?.id && adminIDs.includes(userInfo.id);
+  if (isCommunityAdmin) {
+    menuItems.unshift({
+      icon: ShieldCheck,
+      label: '运营后台',
+      color: colors.bead.red,
+      path: '/admin',
+    });
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setMyCommunityPosts([]);
+      return;
+    }
+    let mounted = true;
+    const loadMyCommunityPosts = async () => {
+      try {
+        setMyCommunityLoading(true);
+        const res = await communityApi.getMyPosts({ page: 1, pageSize: 6, review_status: -1 });
+        if (mounted && res.code === 0) {
+          setMyCommunityPosts(res.data.list || []);
+        }
+      } catch (error) {
+        if (mounted) {
+          console.error('[ProfilePage] load my community posts failed:', error);
+        }
+      } finally {
+        if (mounted) {
+          setMyCommunityLoading(false);
+        }
+      }
+    };
+    loadMyCommunityPosts();
+    return () => {
+      mounted = false;
+    };
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    loadFinishedWorks();
+  }, [loadFinishedWorks]);
 
   return (
     <div style={styles.container}>
@@ -337,7 +554,7 @@ const ProfilePage: React.FC = () => {
               <User size={28} weight="fill" />
             )}
           </div>
-          {/* 等级徽章 */}
+          {/* 绛夌骇寰界珷 */}
           <div style={{
             ...styles.levelBadge,
             background: isLoggedIn && userInfo?.member_level
@@ -385,7 +602,7 @@ const ProfilePage: React.FC = () => {
           <span style={styles.sectionIcon}>{pixelIcons.diamond}</span>
           我的方案
           <span style={styles.projectCount}>
-            ({isLoggedIn ? projects.length : localProjects.length})
+            ({isLoggedIn ? projects.length + localProjects.length : localProjects.length})
           </span>
         </h2>
 
@@ -466,7 +683,7 @@ const ProfilePage: React.FC = () => {
             <span>正在加载方案...</span>
             <span style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>首次加载可能需要较长时间</span>
           </div>
-        ) : projects.length === 0 ? (
+        ) : projects.length === 0 && localProjects.length === 0 ? (
           <div style={styles.emptyBox}>
             {/* 珠子网格装饰 */}
             <div style={styles.emptyGrid}>
@@ -475,81 +692,255 @@ const ProfilePage: React.FC = () => {
               ))}
             </div>
             <span style={styles.emptyText}>暂无方案</span>
-            <span style={styles.emptyHint}>在编辑器中点击"开始制作"保存方案</span>
+            <span style={styles.emptyHint}>在编辑器中点击“开始制作”保存方案</span>
           </div>
         ) : (
-          <div style={styles.projectList}>
-            {projects.map((project) => (
-              <div
-                key={project.id}
-                style={styles.projectCard}
-                onClick={() => handleContinue(project)}
-              >
-                {/* 缩略图 */}
-                <div style={styles.thumbnailBox}>
-                  {project.thumbnail_url ? (
-                    <img
-                      src={project.thumbnail_url}
-                      alt={project.name}
-                      style={styles.thumbnail}
-                    />
-                  ) : (
-                    <div style={styles.thumbnailPlaceholder}>
-                      {pixelIcons.bead}
+          <>
+            {projects.length > 0 ? (
+              <div style={styles.projectList}>
+                {projects.map((project) => (
+                  <div
+                    key={project.id}
+                    style={styles.projectCard}
+                    onClick={() => handleContinue(project)}
+                  >
+                    {/* 缩略图 */}
+                    <div style={styles.thumbnailBox}>
+                      {project.thumbnail_url ? (
+                        <img
+                          src={project.thumbnail_url}
+                          alt={project.name}
+                          style={styles.thumbnail}
+                        />
+                      ) : (
+                        <div style={styles.thumbnailPlaceholder}>
+                          {pixelIcons.bead}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                {/* 信息 */}
-                <div style={styles.projectInfo}>
-                  <span style={styles.projectName}>{project.name}</span>
-                  <div style={styles.projectMeta}>
-                    <span style={styles.projectSize}>
-                      {project.settings?.gridSize || 32}×{project.settings?.gridHeight || project.settings?.gridSize || 32}
-                    </span>
-                    {project.progress && (
-                      <span style={styles.projectProgress}>
-                        进度: {getProgressPercent(project.progress)}%
+                    {/* 信息 */}
+                    <div style={styles.projectInfo}>
+                      <span style={styles.projectName}>{project.name}</span>
+                      <div style={styles.projectMeta}>
+                        <span style={styles.projectSize}>
+                          {project.settings?.gridSize || 32}×{project.settings?.gridHeight || project.settings?.gridSize || 32}
+                        </span>
+                        {project.progress && (
+                          <span style={styles.projectProgress}>
+                            进度: {getProgressPercent(project.progress)}%
+                          </span>
+                        )}
+                      </div>
+                      <span style={styles.projectDate}>
+                        {new Date(project.updated_at).toLocaleDateString('zh-CN')}
                       </span>
-                    )}
-                  </div>
-                  <span style={styles.projectDate}>
-                    {new Date(project.updated_at).toLocaleDateString('zh-CN')}
-                  </span>
-                </div>
+                    </div>
 
-                {/* 操作按钮 */}
-                <div style={styles.projectActions}>
-                  <button
-                    style={styles.shareBtn}
-                    onClick={(e) => handleShare(project, e)}
-                    title="分享到社区"
-                  >
-                    <ShareNetwork size={14} weight="fill" />
-                  </button>
-                  <button
-                    style={styles.continueBtn}
-                    onClick={(e) => { e.stopPropagation(); handleContinue(project); }}
-                  >
-                    <Play size={14} weight="fill" />
-                  </button>
-                  <button
-                    style={styles.deleteBtn}
-                    onClick={(e) => handleDelete(project.id, e)}
-                    disabled={deleting === project.id}
-                  >
-                    {deleting === project.id ? (
-                      <Spinner size={14} />
-                    ) : (
-                      <Trash size={14} weight="fill" />
-                    )}
-                  </button>
-                </div>
+                    {/* 操作按钮 */}
+                    <div style={styles.projectActions}>
+                      <button
+                        style={styles.shareBtn}
+                        onClick={(e) => handleShare(project, e)}
+                        title="分享到社区"
+                      >
+                        <ShareNetwork size={14} weight="fill" />
+                      </button>
+                      <button
+                        style={styles.continueBtn}
+                        onClick={(e) => { e.stopPropagation(); handleContinue(project); }}
+                      >
+                        <Play size={14} weight="fill" />
+                      </button>
+                      <button
+                        style={styles.deleteBtn}
+                        onClick={(e) => handleDelete(project.id, e)}
+                        disabled={deleting === project.id}
+                      >
+                        {deleting === project.id ? (
+                          <Spinner size={14} />
+                        ) : (
+                          <Trash size={14} weight="fill" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            ) : null}
+
+            {localProjects.length > 0 ? (
+              <>
+                <div style={{ ...styles.sectionTitle, fontSize: '13px', marginTop: projects.length > 0 ? 10 : 0 }}>
+                  本地方案（云端同步失败时的保底）
+                </div>
+                <div style={styles.projectList}>
+                  {localProjects.map((project) => (
+                    <div
+                      key={`local_${project.id}`}
+                      style={styles.projectCard}
+                      onClick={() => handleContinueLocal(project)}
+                    >
+                      <div style={styles.thumbnailBox}>
+                        {project.thumbnail ? (
+                          <img
+                            src={project.thumbnail}
+                            alt={project.name}
+                            style={styles.thumbnail}
+                          />
+                        ) : (
+                          <div style={styles.thumbnailPlaceholder}>
+                            {pixelIcons.bead}
+                          </div>
+                        )}
+                      </div>
+                      <div style={styles.projectInfo}>
+                        <span style={styles.projectName}>{project.name}</span>
+                        <div style={styles.projectMeta}>
+                          <span style={styles.projectSize}>
+                            {project.beadData?.width || 32}×{project.beadData?.height || 32}
+                          </span>
+                          <span style={{ ...styles.projectSize, color: colors.bead.orange }}>本地</span>
+                        </div>
+                        <span style={styles.projectDate}>
+                          {new Date(project.updatedAt).toLocaleDateString('zh-CN')}
+                        </span>
+                      </div>
+                      <div style={styles.projectActions}>
+                        <button
+                          style={styles.shareBtn}
+                          onClick={(e) => handleShareLocal(project, e)}
+                          title="分享到社区"
+                        >
+                          <ShareNetwork size={14} weight="fill" />
+                        </button>
+                        <button
+                          style={styles.continueBtn}
+                          onClick={(e) => { e.stopPropagation(); handleContinueLocal(project); }}
+                        >
+                          <Play size={14} weight="fill" />
+                        </button>
+                        <button
+                          style={styles.deleteBtn}
+                          onClick={(e) => handleDeleteLocal(project.id, e)}
+                        >
+                          <Trash size={14} weight="fill" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </>
         )}
       </div>
+
+      {isLoggedIn && (
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>
+            <span style={styles.sectionIcon}>{pixelIcons.star}</span>
+            我的社区发布
+            <span style={styles.projectCount}>({myCommunityPosts.length})</span>
+          </h2>
+          {myCommunityLoading ? (
+            <div style={styles.loadingBox}>
+              <Spinner size={20} style={{ animation: 'spin 1s linear infinite' }} />
+              <span>正在加载发布状态...</span>
+            </div>
+          ) : myCommunityPosts.length === 0 ? (
+            <div style={styles.emptyBox}>
+              <span style={styles.emptyText}>暂无社区发布</span>
+              <span style={styles.emptyHint}>发布后可在这里查看审核结果</span>
+            </div>
+          ) : (
+            <div style={styles.publishList}>
+              {myCommunityPosts.map((post) => (
+                <div
+                  key={post.id}
+                  style={styles.publishCard}
+                  onClick={() => navigate(`/mobile/community/${post.id}`)}
+                >
+                  <div style={styles.publishMain}>
+                    <div style={styles.publishTitle}>{post.title}</div>
+                    <div style={styles.publishMeta}>
+                      <span style={{ ...styles.publishStatus, color: reviewStatusColor(post.review_status) }}>
+                        {reviewStatusText(post.review_status)}
+                      </span>
+                      <span style={styles.publishDate}>
+                        {new Date(post.created_at).toLocaleString('zh-CN')}
+                      </span>
+                    </div>
+                    {post.review_status === 2 && post.review_reason ? (
+                      <div style={styles.publishReason}>驳回原因：{post.review_reason}</div>
+                    ) : null}
+                  </div>
+                  <span style={styles.menuArrow}>→</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isLoggedIn && (
+        <div style={styles.section}>
+          <div style={styles.albumHeader}>
+            <h2 style={styles.sectionTitle}>
+              <span style={styles.sectionIcon}>{pixelIcons.star}</span>
+              我的成品相册
+              <span style={styles.projectCount}>({finishedWorks.length})</span>
+            </h2>
+            <button style={styles.uploadFinishedBtn} onClick={handleUploadFinishedClick} disabled={finishedUploading}>
+              {finishedUploading ? '上传中...' : '上传成品'}
+            </button>
+          </div>
+          {finishedWorksLoading ? (
+            <div style={styles.loadingBox}>
+              <Spinner size={20} style={{ animation: 'spin 1s linear infinite' }} />
+              <span>正在加载成品...</span>
+            </div>
+          ) : finishedWorks.length === 0 ? (
+            <div style={styles.emptyBox}>
+              <span style={styles.emptyText}>暂无成品</span>
+              <span style={styles.emptyHint}>上传你的实拍成品，沉淀个人作品集</span>
+            </div>
+          ) : (
+            <div style={styles.albumList}>
+              {finishedWorks.map((item) => (
+                <div key={item.id} style={styles.albumCard}>
+                  <div style={styles.albumThumbWrap}>
+                    {item.cover_url ? (
+                      <img src={item.cover_url} alt={item.title} style={styles.albumThumb} />
+                    ) : (
+                      <div style={styles.thumbnailPlaceholder}>{pixelIcons.bead}</div>
+                    )}
+                  </div>
+                  <div style={styles.albumMain}>
+                    <div style={styles.publishTitle}>{item.title}</div>
+                    <div style={styles.publishMeta}>
+                      <span style={styles.publishDate}>{new Date(item.created_at).toLocaleString('zh-CN')}</span>
+                      <span style={styles.publishStatus}>共 {item.image_count} 张</span>
+                    </div>
+                    {item.description ? <div style={styles.albumDesc}>{item.description}</div> : null}
+                  </div>
+                  <button style={styles.deleteBtn} onClick={(e) => handleDeleteFinishedWork(item.id, e)}>
+                    <Trash size={14} weight="fill" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input
+            ref={finishedInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={handleFinishedFilesChange}
+          />
+        </div>
+      )}
 
       {/* 菜单 */}
       <div style={styles.menu}>
@@ -567,7 +958,7 @@ const ProfilePage: React.FC = () => {
               <item.icon size={18} weight="fill" style={{ color: item.color }} />
             </div>
             <span style={styles.menuLabel}>{item.label}</span>
-            <span style={styles.menuArrow}>→</span>
+              <span style={styles.menuArrow}>→</span>
           </div>
         ))}
       </div>
@@ -598,6 +989,7 @@ const ProfilePage: React.FC = () => {
         loading={publishing}
         defaultTitle={publishDefaultTitle}
         gridSize={publishGridSize}
+        autoDifficulty={publishDifficulty}
       />
     </div>
   );
@@ -934,6 +1326,135 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: '8px',
   },
 
+  publishList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+
+  publishCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px',
+    background: colors.bg.card,
+    borderRadius: radius.card,
+    border: `1px solid ${colors.border.soft}`,
+    boxShadow: shadows.sm,
+    cursor: 'pointer',
+  },
+
+  publishMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  publishTitle: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.text.primary,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    marginBottom: '4px',
+  },
+
+  publishMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '4px',
+  },
+
+  publishStatus: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
+  },
+
+  publishDate: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.text.muted,
+  },
+
+  publishReason: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.bead.red,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  albumHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    marginBottom: '10px',
+  },
+
+  uploadFinishedBtn: {
+    border: 'none',
+    borderRadius: radius.button,
+    background: `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.bead.cyan}cc)`,
+    color: '#fff',
+    padding: '8px 12px',
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+
+  albumList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+
+  albumCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '10px',
+    borderRadius: radius.card,
+    border: `1px solid ${colors.border.soft}`,
+    background: colors.bg.card,
+    boxShadow: shadows.sm,
+  },
+
+  albumThumbWrap: {
+    width: '56px',
+    height: '56px',
+    borderRadius: radius.bead,
+    overflow: 'hidden',
+    flexShrink: 0,
+    background: colors.bg.tertiary,
+  },
+
+  albumThumb: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+
+  albumMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  albumDesc: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.text.muted,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
   continueBtn: {
     width: '32px',
     height: '32px',
@@ -1052,7 +1573,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-// CSS动画
+// CSS鍔ㄧ敾
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
   @keyframes spin {
@@ -1065,3 +1586,6 @@ if (!document.querySelector('#profile-styles')) {
 }
 
 export default ProfilePage;
+
+
+

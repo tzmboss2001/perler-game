@@ -106,6 +106,9 @@ const styles: Record<string, React.CSSProperties> = {
     background: colors.bg.primary,
     color: colors.text.primary,
     position: 'relative',
+    width: '100%',
+    overflowX: 'hidden',
+    boxSizing: 'border-box',
   },
 
   bgGlow1: {
@@ -135,6 +138,10 @@ const styles: Record<string, React.CSSProperties> = {
     paddingBottom: '65px',
     position: 'relative',
     zIndex: 1,
+    width: '100%',
+    minWidth: 0,
+    overflowX: 'hidden',
+    boxSizing: 'border-box',
   },
 
   nav: {

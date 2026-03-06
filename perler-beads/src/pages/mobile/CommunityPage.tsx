@@ -1,11 +1,22 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Heart, Eye, SortAscending, Fire, Hammer } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../../styles/designSystem';
 import { communityApi, CommunityPostListItem } from '../../services/api/communityApi';
+import { sanitizeDisplayTitle } from '../../utils/textUtils';
 
-// 预设标签
-const TAG_OPTIONS = ['全部', '动漫', '游戏', '动物', '风景', '节日', '人物', '食物', '其他'];
+// 预设分类
+const CATEGORY_OPTIONS = [
+  { label: '全部', value: 'all' },
+  { label: '动漫', value: 'anime' },
+  { label: '游戏', value: 'game' },
+  { label: '动物', value: 'animal' },
+  { label: '风景', value: 'scenery' },
+  { label: '节日', value: 'holiday' },
+  { label: '人物', value: 'character' },
+  { label: '美食', value: 'food' },
+  { label: '其他', value: 'other' },
+];
 
 // 排序选项
 const SORT_OPTIONS = [
@@ -21,13 +32,13 @@ const CommunityPage: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [selectedTag, setSelectedTag] = useState('全部');
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
   const loadingRef = useRef(false);
   const pageSize = 20;
 
   // 加载数据
-  const loadPosts = useCallback(async (pageNum: number, append = false, tag?: string, sort?: string) => {
+  const loadPosts = useCallback(async (pageNum: number, append = false, category?: string, sort?: string) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
@@ -36,7 +47,7 @@ const CommunityPage: React.FC = () => {
       const res = await communityApi.getPosts({
         page: pageNum,
         pageSize,
-        tag: tag === '全部' ? undefined : tag,
+        category: category === 'all' ? undefined : category,
         sort: sort === 'newest' ? undefined : sort,
       });
       if (res.code === 0 && res.data) {
@@ -55,13 +66,13 @@ const CommunityPage: React.FC = () => {
 
   // 首次加载
   useEffect(() => {
-    loadPosts(1, false, selectedTag, sortBy);
-  }, [loadPosts, selectedTag, sortBy]);
+    loadPosts(1, false, selectedCategory, sortBy);
+  }, [loadPosts, selectedCategory, sortBy]);
 
-  // 切换标签
-  const handleTagChange = (tag: string) => {
-    if (tag === selectedTag) return;
-    setSelectedTag(tag);
+  // 切换分类
+  const handleCategoryChange = (category: string) => {
+    if (category === selectedCategory) return;
+    setSelectedCategory(category);
     setPage(1);
     setPosts([]);
     setHasMore(true);
@@ -84,12 +95,12 @@ const CommunityPage: React.FC = () => {
       if (scrollHeight - scrollTop - clientHeight < 200) {
         const nextPage = page + 1;
         setPage(nextPage);
-        loadPosts(nextPage, true, selectedTag, sortBy);
+        loadPosts(nextPage, true, selectedCategory, sortBy);
       }
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [page, hasMore, loadPosts, selectedTag, sortBy]);
+  }, [page, hasMore, loadPosts, selectedCategory, sortBy]);
 
   // 难度标签颜色
   const getDifficultyColor = (difficulty: string) => {
@@ -117,19 +128,19 @@ const CommunityPage: React.FC = () => {
 
       {/* 内容区 */}
       <div style={styles.scrollArea}>
-        {/* 标签筛选栏 */}
+        {/* 分类筛选栏 */}
         <div style={styles.tagBar}>
           <div style={styles.tagScroll}>
-            {TAG_OPTIONS.map(tag => (
+            {CATEGORY_OPTIONS.map(option => (
               <button
-                key={tag}
+                key={option.value}
                 style={{
                   ...styles.tagButton,
-                  ...(selectedTag === tag ? styles.tagButtonActive : {}),
+                  ...(selectedCategory === option.value ? styles.tagButtonActive : {}),
                 }}
-                onClick={() => handleTagChange(tag)}
+                onClick={() => handleCategoryChange(option.value)}
               >
-                {tag}
+                {option.label}
               </button>
             ))}
           </div>
@@ -158,7 +169,7 @@ const CommunityPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 瀑布流双列 */}
+        {/* 双列瀑布流 */}
         <div style={styles.waterfall}>
           <div style={styles.column}>
             {posts.filter((_, i) => i % 2 === 0).map(post => (
@@ -195,14 +206,14 @@ const CommunityPage: React.FC = () => {
         {/* 没有更多 */}
         {!hasMore && posts.length > 0 && (
           <div style={styles.noMore}>
-            <span style={styles.noMoreText}>— 已经到底了 —</span>
+            <span style={styles.noMoreText}>- 已经到底了 -</span>
           </div>
         )}
 
         {/* 空状态 */}
         {!loading && posts.length === 0 && (
           <div style={styles.empty}>
-            <span style={{ fontSize: '48px' }}>🎨</span>
+            <span style={{ fontSize: '48px' }}>🧩</span>
             <span style={styles.emptyTitle}>暂无作品</span>
             <span style={styles.emptyText}>快去创作第一个作品吧</span>
           </div>
@@ -228,6 +239,7 @@ interface PostCardProps {
 }
 
 const PostCard: React.FC<PostCardProps> = ({ post, getDifficultyColor, getDifficultyLabel, onClick }) => {
+  const safeTitle = sanitizeDisplayTitle(post.title);
   return (
     <div style={cardStyles.card} onClick={onClick}>
       {/* 缩略图 */}
@@ -235,13 +247,13 @@ const PostCard: React.FC<PostCardProps> = ({ post, getDifficultyColor, getDiffic
         {post.thumbnail_url ? (
           <img
             src={post.thumbnail_url}
-            alt={post.title}
+            alt={safeTitle}
             style={cardStyles.image}
             loading="lazy"
           />
         ) : (
           <div style={cardStyles.placeholder}>
-            <span style={{ fontSize: '32px' }}>🧩</span>
+            <span style={{ fontSize: '32px' }}>🖼️</span>
           </div>
         )}
         {/* 难度标签 */}
@@ -255,7 +267,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, getDifficultyColor, getDiffic
 
       {/* 信息 */}
       <div style={cardStyles.info}>
-        <div style={cardStyles.title}>{post.title}</div>
+        <div style={cardStyles.title}>{safeTitle}</div>
         <div style={cardStyles.meta}>
           <span style={cardStyles.size}>{post.grid_width}×{post.grid_height}</span>
           <span style={cardStyles.dot}>·</span>
@@ -283,6 +295,9 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     minHeight: '100%',
     color: colors.text.primary,
+    width: '100%',
+    overflowX: 'hidden',
+    boxSizing: 'border-box',
   },
   header: {
     display: 'flex',
@@ -298,6 +313,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   scrollArea: {
     padding: '12px',
+    width: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
   tagBar: {
     marginBottom: '8px',
@@ -337,10 +355,16 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '0 4px 8px',
+    gap: '8px',
+    flexWrap: 'wrap',
+    minWidth: 0,
   },
   sortOptions: {
     display: 'flex',
     gap: '4px',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    minWidth: 0,
   },
   sortButton: {
     display: 'flex',
@@ -366,16 +390,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.xs,
     color: colors.text.muted,
     fontFamily: typography.fontFamilyAlt,
+    flexShrink: 0,
   },
   waterfall: {
     display: 'flex',
     gap: '10px',
+    width: '100%',
+    minWidth: 0,
   },
   column: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
+    minWidth: 0,
   },
   loadingBar: {
     display: 'flex',
@@ -433,6 +461,9 @@ const cardStyles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     cursor: 'pointer',
     transition: animation.transition.fast,
+    width: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
   imageWrap: {
     position: 'relative',
@@ -511,3 +542,5 @@ const cardStyles: Record<string, React.CSSProperties> = {
 };
 
 export default CommunityPage;
+
+

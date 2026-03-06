@@ -7,7 +7,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "quality:gate": "powershell -ExecutionPolicy Bypass -File ..\\SCRIPT\\frontend_quality_gate.ps1 -Root ..",
+    "quality:gate:update-baseline": "powershell -ExecutionPolicy Bypass -File ..\\SCRIPT\\frontend_quality_gate.ps1 -Root .. -UpdateBaseline",
+    "e2e:main-flow": "powershell -ExecutionPolicy Bypass -File ..\\TEST\\mobile_main_flow_e2e.ps1 -BaseUrl http://127.0.0.1:3005 -Headless"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
@@ -22,6 +25,7 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "playwright-core": "^1.58.2",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

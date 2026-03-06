@@ -1,24 +1,22 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Image, FolderOpen, ArrowRight, Sparkle, Heart, Eye } from '@phosphor-icons/react';
+import { Camera, Image, FolderOpen, Sparkle, Heart, Eye, SortAscending, Fire, Hammer, Images } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../../styles/designSystem';
 import OnboardingModal from '../../components/OnboardingModal';
-import FeaturedCarousel from '../../components/FeaturedCarousel';
-import { featuredWorks, FeaturedWork } from '../../data/featuredWorks';
-import { templateApi, FeaturedTemplateResponse } from '../../services/api/templateApi';
 import { communityApi, CommunityPostListItem } from '../../services/api/communityApi';
 import { useUserStore } from '../../store/userStore';
 import { localStorageService } from '../../services/localStorageService';
+import { sanitizeDisplayTitle } from '../../utils/textUtils';
 
-// 难度映射：后端字符串 -> 前端类型
-const difficultyMap: Record<string, 'easy' | 'medium' | 'hard'> = {
-  'easy': 'easy',
-  'medium': 'medium',
-  'hard': 'hard',
-  '简单': 'easy',
-  '中等': 'medium',
-  '困难': 'hard',
-};
+// 预设标签
+const TAG_OPTIONS = ['全部', '动漫', '游戏', '动物', '风景', '节日', '人物', '食物', '其他'];
+
+// 排序选项
+const SORT_OPTIONS = [
+  { key: 'newest', label: '最新', icon: SortAscending },
+  { key: 'popular', label: '最热', icon: Fire },
+  { key: 'most_made', label: '最多制作', icon: Hammer },
+] as const;
 
 /**
  * 首页 - 拼豆工坊
@@ -27,7 +25,6 @@ const difficultyMap: Record<string, 'easy' | 'medium' | 'hard'> = {
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const { isLoggedIn } = useUserStore();
-  const [works, setWorks] = useState<FeaturedWork[]>([]);
   const [localProjectCount, setLocalProjectCount] = useState(0);
 
   // 社区作品数据
@@ -35,65 +32,72 @@ const HomePage: React.FC = () => {
   const [communityPage, setCommunityPage] = useState(1);
   const [communityHasMore, setCommunityHasMore] = useState(true);
   const [communityLoading, setCommunityLoading] = useState(false);
+  const [communityTotal, setCommunityTotal] = useState(0);
+  const [communityErrorText, setCommunityErrorText] = useState('');
+  const [selectedTag, setSelectedTag] = useState('全部');
+  const [sortBy, setSortBy] = useState('newest');
   const communityLoadingRef = useRef(false);
 
   // 加载社区作品
-  const loadCommunityPosts = useCallback(async (pageNum: number, append = false) => {
+  const loadCommunityPosts = useCallback(async (pageNum: number, append = false, tag?: string, sort?: string) => {
     if (communityLoadingRef.current) return;
     communityLoadingRef.current = true;
     setCommunityLoading(true);
     try {
-      const res = await communityApi.getPosts({ page: pageNum, pageSize: 20 });
+      const res = await communityApi.getPosts({
+        page: pageNum,
+        pageSize: 20,
+        tag: tag === '全部' ? undefined : tag,
+        sort: sort === 'newest' ? undefined : sort,
+      });
       if (res.code === 0 && res.data) {
         const newList = res.data.list || [];
         setCommunityPosts(prev => append ? [...prev, ...newList] : newList);
         setCommunityHasMore(newList.length >= 20);
+        setCommunityTotal(res.data.total);
+        setCommunityErrorText('');
       }
     } catch (err) {
       console.error('加载社区作品失败:', err);
+      setCommunityErrorText('社区服务暂时不可用，请稍后重试');
+      if (!append) {
+        setCommunityPosts([]);
+        setCommunityTotal(0);
+      }
+      setCommunityHasMore(false);
     } finally {
       setCommunityLoading(false);
       communityLoadingRef.current = false;
     }
   }, []);
 
-  // 加载精选作品 - 优先从API获取，无数据则使用本地生成
+  // 切换标签
+  const handleTagChange = (tag: string) => {
+    if (tag === selectedTag) return;
+    setSelectedTag(tag);
+    setCommunityPage(1);
+    setCommunityPosts([]);
+    setCommunityHasMore(true);
+  };
+
+  // 切换排序
+  const handleSortChange = (sort: string) => {
+    if (sort === sortBy) return;
+    setSortBy(sort);
+    setCommunityPage(1);
+    setCommunityPosts([]);
+    setCommunityHasMore(true);
+  };
+
+  // 加载数据
   useEffect(() => {
-    const loadFeaturedWorks = async () => {
-      try {
-        const response = await templateApi.getFeatured(5);
-        if (response.code === 0 && response.data && response.data.length > 0) {
-          // API有数据，转换为前端格式（API返回驼峰格式）
-          const apiWorks: FeaturedWork[] = response.data.map((item: FeaturedTemplateResponse) => ({
-            id: String(item.id),
-            title: item.title,
-            imageUrl: item.imageUrl,
-            beadCount: item.beadCount,
-            gridSize: item.gridSize,
-            difficulty: difficultyMap[item.difficulty] || 'medium',
-            isOfficial: item.isOfficial,
-            category: item.category,
-          }));
-          setWorks(apiWorks);
-        } else {
-          // API无数据，使用本地生成的数据
-          setWorks(featuredWorks());
-        }
-      } catch (error) {
-        console.error('加载精选作品失败，使用本地数据:', error);
-        setWorks(featuredWorks());
-      }
-    };
-
-    loadFeaturedWorks();
-
     // 加载本地方案数量
     const localResult = localStorageService.getProjectList();
     setLocalProjectCount(localResult.total);
 
     // 加载社区作品
-    loadCommunityPosts(1);
-  }, [loadCommunityPosts]);
+    loadCommunityPosts(1, false, selectedTag, sortBy);
+  }, [loadCommunityPosts, selectedTag, sortBy]);
 
   // 滚动加载更多社区作品
   useEffect(() => {
@@ -103,12 +107,12 @@ const HomePage: React.FC = () => {
       if (scrollHeight - scrollTop - clientHeight < 200) {
         const nextPage = communityPage + 1;
         setCommunityPage(nextPage);
-        loadCommunityPosts(nextPage, true);
+        loadCommunityPosts(nextPage, true, selectedTag, sortBy);
       }
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [communityPage, communityHasMore, loadCommunityPosts]);
+  }, [communityPage, communityHasMore, loadCommunityPosts, selectedTag, sortBy]);
 
   // 难度工具
   const getDifficultyColor = (d: string) => {
@@ -126,106 +130,51 @@ const HomePage: React.FC = () => {
     }
   };
 
-  // 处理精选作品点击 - 跳转到模板详情页
-  const handleFeaturedWorkClick = (work: FeaturedWork) => {
-    navigate(`/mobile/template/${work.id}`);
-  };
-
   return (
     <div style={styles.container}>
+      <div style={styles.bgGlowTop} />
+      <div style={styles.bgGlowBottom} />
+
       {/* 新手引导弹窗 */}
       <OnboardingModal />
 
       {/* 顶部 Header */}
       <div style={styles.header}>
-        <div style={styles.logoWrapper}>
-          {/* 装饰珠子 */}
-          <div style={styles.beadDecor}>
-            {[colors.bead.pink, colors.bead.orange, colors.bead.yellow, colors.bead.green, colors.bead.cyan].map((c, i) => (
-              <span key={i} style={{ ...styles.beadDot, background: `linear-gradient(145deg, ${c}, ${c}cc)`, boxShadow: `0 2px 6px ${c}50` }} />
-            ))}
-          </div>
+        <div style={styles.logoRow}>
           <h1 style={styles.logo}>拼豆工坊</h1>
-          <p style={styles.subtitle}>
-            <Sparkle size={12} weight="fill" style={{ color: colors.bead.yellow }} />
-            {' '}像素艺术创造器{' '}
-            <Sparkle size={12} weight="fill" style={{ color: colors.bead.yellow }} />
-          </p>
+          <span style={styles.betaBadge}>PIXEL CRAFT</span>
+        </div>
+        <p style={styles.subtitle}>
+          <Sparkle size={10} weight="fill" style={{ color: colors.bead.yellow }} />
+          {' '}把图片快速变成可制作的拼豆图纸{' '}
+          <Sparkle size={10} weight="fill" style={{ color: colors.bead.yellow }} />
+        </p>
+        <div style={styles.headerMeta}>
+          <span style={styles.metaPill}>{isLoggedIn ? '已登录' : '游客模式'}</span>
+          <span style={styles.metaPill}>本地方案 {localProjectCount}</span>
         </div>
       </div>
 
       {/* 主内容区域 */}
       <div style={styles.content}>
-        {/* 精选作品轮播 */}
-        {works.length > 0 && (
-          <FeaturedCarousel
-            works={works}
-            onWorkClick={handleFeaturedWorkClick}
-          />
-        )}
-
-        {/* 快速开始区域 */}
-        <div style={styles.quickStart}>
-          <div style={styles.sectionHeader}>
-            <span style={styles.sectionIcon}>⚡</span>
-            <span style={styles.sectionTitle}>快速开始</span>
-          </div>
-          <div style={styles.actionButtons}>
-            <button style={styles.primaryBtn} onClick={() => navigate('/mobile/create', { state: { source: 'camera' } })}>
-              <div style={styles.btnIconBox}>
-                <Camera size={28} weight="fill" />
-              </div>
-              <div style={styles.btnContent}>
-                <span style={styles.btnText}>拍照创作</span>
-                <span style={styles.btnDesc}>拍摄照片生成图案</span>
-              </div>
-            </button>
-
-            <button style={styles.secondaryBtn} onClick={() => navigate('/mobile/create', { state: { source: 'album' } })}>
-              <div style={styles.btnIconBox2}>
-                <Image size={28} weight="duotone" />
-              </div>
-              <div style={styles.btnContent}>
-                <span style={styles.btnText2}>相册选择</span>
-                <span style={styles.btnDesc2}>从相册选择图片</span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* 我的方案 */}
-        <div style={styles.myProjects}>
-          <div style={styles.sectionHeader}>
-            <span style={styles.sectionIcon}>📁</span>
-            <span style={styles.sectionTitle}>我的方案</span>
-            {localProjectCount > 0 && (
-              <span style={styles.projectCountBadge}>{localProjectCount}</span>
-            )}
-          </div>
-          <div style={styles.myProjectsCard} onClick={() => navigate('/mobile/profile')}>
-            <div style={styles.myProjectsIcon}>
-              <FolderOpen size={24} weight="duotone" style={{ color: colors.bead.purple }} />
-            </div>
-            <div style={styles.myProjectsContent}>
-              {isLoggedIn ? (
-                <>
-                  <span style={styles.myProjectsTitle}>查看全部方案</span>
-                  <span style={styles.myProjectsDesc}>继续制作未完成的作品</span>
-                </>
-              ) : localProjectCount > 0 ? (
-                <>
-                  <span style={styles.myProjectsTitle}>本地方案 ({localProjectCount})</span>
-                  <span style={styles.myProjectsDesc}>继续制作未完成的作品</span>
-                </>
-              ) : (
-                <>
-                  <span style={styles.myProjectsTitle}>还没有方案</span>
-                  <span style={styles.myProjectsDesc}>上传图片生成你的第一个拼豆图案</span>
-                </>
-              )}
-            </div>
-            <ArrowRight size={20} style={{ color: colors.text.muted }} />
-          </div>
+        {/* 快捷操作栏 - 紧凑横向 */}
+        <div style={styles.quickBar}>
+          <button style={styles.quickBtn} onClick={() => navigate('/mobile/create', { state: { source: 'camera' } })}>
+            <Camera size={18} weight="fill" style={{ color: '#fff' }} />
+            <span style={styles.quickBtnText}>拍照创作</span>
+          </button>
+          <button style={styles.quickBtn2} onClick={() => navigate('/mobile/create', { state: { source: 'album' } })}>
+            <Image size={18} weight="duotone" style={{ color: colors.bead.pink }} />
+            <span style={styles.quickBtnText2}>相册选择</span>
+          </button>
+          <button style={styles.quickBtn3} onClick={() => navigate('/mobile/profile')}>
+            <FolderOpen size={18} weight="duotone" style={{ color: colors.bead.purple }} />
+            <span style={styles.quickBtnText2}>我的方案{localProjectCount > 0 ? ` (${localProjectCount})` : ''}</span>
+          </button>
+          <button style={styles.quickBtn4} onClick={() => navigate('/mobile/finished')}>
+            <Images size={18} weight="duotone" style={{ color: colors.bead.orange }} />
+            <span style={styles.quickBtnText2}>成品社区</span>
+          </button>
         </div>
 
         {/* 社区作品瀑布流 */}
@@ -235,6 +184,52 @@ const HomePage: React.FC = () => {
             <span style={styles.sectionTitle}>社区作品</span>
           </div>
 
+          {/* 标签筛选栏 */}
+          <div style={styles.tagBar}>
+            <div style={styles.tagScroll}>
+              {TAG_OPTIONS.map(tag => (
+                <button
+                  key={tag}
+                  style={{
+                    ...styles.tagButton,
+                    ...(selectedTag === tag ? styles.tagButtonActive : {}),
+                  }}
+                  onClick={() => handleTagChange(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 排序栏 + 统计 */}
+          <div style={styles.sortBar}>
+            <span style={styles.sortStatsText}>共 {communityTotal} 个作品</span>
+            <div style={styles.sortOptions}>
+              {SORT_OPTIONS.map(opt => {
+                const Icon = opt.icon;
+                return (
+                  <button
+                    key={opt.key}
+                    style={{
+                      ...styles.sortButton,
+                      ...(sortBy === opt.key ? styles.sortButtonActive : {}),
+                    }}
+                    onClick={() => handleSortChange(opt.key)}
+                  >
+                    <Icon size={13} weight={sortBy === opt.key ? 'bold' : 'regular'} />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {communityErrorText ? (
+            <div style={styles.communityError}>
+              <span style={styles.communityErrorText}>{communityErrorText}</span>
+            </div>
+          ) : null}
           {communityPosts.length > 0 ? (
             <div style={styles.waterfall}>
               <div style={styles.waterfallCol}>
@@ -242,7 +237,7 @@ const HomePage: React.FC = () => {
                   <div key={post.id} style={styles.postCard} onClick={() => navigate(`/mobile/community/${post.id}`)}>
                     <div style={styles.postImageWrap}>
                       {post.thumbnail_url ? (
-                        <img src={post.thumbnail_url} alt={post.title} style={styles.postImage} loading="lazy" />
+                        <img src={post.thumbnail_url} alt={sanitizeDisplayTitle(post.title)} style={styles.postImage} loading="lazy" />
                       ) : (
                         <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>🧩</span></div>
                       )}
@@ -251,7 +246,7 @@ const HomePage: React.FC = () => {
                       </div>
                     </div>
                     <div style={styles.postInfo}>
-                      <div style={styles.postTitle}>{post.title}</div>
+                      <div style={styles.postTitle}>{sanitizeDisplayTitle(post.title)}</div>
                       <div style={styles.postMeta}>
                         <span style={{ color: colors.bead.cyan }}>{post.grid_width}×{post.grid_height}</span>
                         <span style={{ color: colors.text.muted }}>·</span>
@@ -276,7 +271,7 @@ const HomePage: React.FC = () => {
                   <div key={post.id} style={styles.postCard} onClick={() => navigate(`/mobile/community/${post.id}`)}>
                     <div style={styles.postImageWrap}>
                       {post.thumbnail_url ? (
-                        <img src={post.thumbnail_url} alt={post.title} style={styles.postImage} loading="lazy" />
+                        <img src={post.thumbnail_url} alt={sanitizeDisplayTitle(post.title)} style={styles.postImage} loading="lazy" />
                       ) : (
                         <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>🧩</span></div>
                       )}
@@ -285,7 +280,7 @@ const HomePage: React.FC = () => {
                       </div>
                     </div>
                     <div style={styles.postInfo}>
-                      <div style={styles.postTitle}>{post.title}</div>
+                      <div style={styles.postTitle}>{sanitizeDisplayTitle(post.title)}</div>
                       <div style={styles.postMeta}>
                         <span style={{ color: colors.bead.cyan }}>{post.grid_width}×{post.grid_height}</span>
                         <span style={{ color: colors.text.muted }}>·</span>
@@ -346,73 +341,125 @@ const HomePage: React.FC = () => {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100%',
-    background: colors.bg.primary,
-    paddingBottom: '100px',
+    background: `
+      radial-gradient(circle at 15% -10%, rgba(65, 202, 255, 0.22), transparent 45%),
+      radial-gradient(circle at 110% 15%, rgba(255, 179, 71, 0.2), transparent 38%),
+      ${colors.bg.primary}
+    `,
+    paddingBottom: '80px',
+    width: '100%',
+    overflowX: 'hidden',
+    boxSizing: 'border-box',
+    position: 'relative',
+  },
+
+  bgGlowTop: {
+    position: 'absolute',
+    top: '-60px',
+    left: '-30px',
+    width: '180px',
+    height: '180px',
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(110, 231, 255, 0.26) 0%, rgba(110, 231, 255, 0) 70%)',
+    pointerEvents: 'none',
+  },
+
+  bgGlowBottom: {
+    position: 'absolute',
+    right: '-40px',
+    bottom: '140px',
+    width: '170px',
+    height: '170px',
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(255, 160, 122, 0.2) 0%, rgba(255, 160, 122, 0) 70%)',
+    pointerEvents: 'none',
   },
 
   header: {
     display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    padding: '16px 16px 12px',
-    background: colors.bg.primary,
-  },
-
-  logoWrapper: {
-    flex: 1,
-  },
-
-  beadDecor: {
-    display: 'flex',
+    flexDirection: 'column',
     gap: '6px',
-    marginBottom: '8px',
+    padding: '14px 16px 10px',
+    position: 'relative',
+    zIndex: 1,
   },
 
-  beadDot: {
-    width: '10px',
-    height: '10px',
+  logoRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+
+  betaBadge: {
+    fontSize: '9px',
+    letterSpacing: '0.08em',
+    color: colors.bead.cyan,
+    border: `1px solid ${colors.bead.cyan}80`,
     borderRadius: radius.full,
+    padding: '2px 8px',
+    fontFamily: typography.fontFamilyAlt,
+    background: `${colors.bead.cyan}14`,
   },
 
   logo: {
-    fontSize: typography.fontSize.xxl,
+    fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.heavy,
     fontFamily: typography.fontFamilyAlt,
     background: `linear-gradient(135deg, ${colors.soft.lemon} 0%, ${colors.soft.peach} 50%, ${colors.soft.pink} 100%)`,
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
     backgroundClip: 'text',
-    margin: '0 0 4px',
+    margin: 0,
     letterSpacing: typography.letterSpacing.wide,
   },
 
   subtitle: {
-    fontSize: typography.fontSize.xs,
+    fontSize: '10px',
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
+    color: colors.text.muted,
     margin: 0,
     display: 'flex',
     alignItems: 'center',
-    gap: '4px',
+    gap: '3px',
+  },
+
+  headerMeta: {
+    display: 'flex',
+    gap: '8px',
+  },
+
+  metaPill: {
+    fontSize: '11px',
+    color: colors.text.secondary,
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: radius.full,
+    padding: '3px 10px',
+    background: 'rgba(255,255,255,0.02)',
+    fontFamily: typography.fontFamilyAlt,
   },
 
   content: {
-    padding: '0 16px',
+    padding: '0 12px',
+    width: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box',
+    position: 'relative',
+    zIndex: 1,
   },
 
   sectionHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    marginBottom: '12px',
+    gap: '6px',
+    marginBottom: '8px',
   },
 
   sectionIcon: {
-    fontSize: '18px',
+    fontSize: '14px',
   },
 
   sectionTitle: {
-    fontSize: typography.fontSize.lg,
+    fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
     background: colors.gradients.primary,
@@ -421,163 +468,198 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundClip: 'text',
   },
 
-  quickStart: {
-    marginBottom: '24px',
-  },
-
-  actionButtons: {
+  // 快捷操作栏 - 紧凑横向
+  quickBar: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '12px',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '8px',
+    marginBottom: '14px',
+    width: '100%',
+    minWidth: 0,
   },
 
-  primaryBtn: {
+  quickBtn: {
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
-    padding: '20px 16px',
-    background: `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.pixel.blue})`,
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 8px',
+    background: `linear-gradient(135deg, ${colors.bead.cyan} 0%, ${colors.pixel.blue} 100%)`,
     border: 'none',
-    borderRadius: radius.card,
+    borderRadius: radius.button,
     cursor: 'pointer',
-    boxShadow: `${shadows.md}, ${shadows.glow.cyan}`,
-    transition: animation.transition.fast,
+    boxShadow: `0 8px 18px ${colors.bead.cyan}26`,
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
 
-  secondaryBtn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '20px 16px',
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
-    borderRadius: radius.card,
-    cursor: 'pointer',
-    boxShadow: shadows.sm,
-    transition: animation.transition.fast,
-  },
-
-  btnIconBox: {
-    width: '52px',
-    height: '52px',
-    background: 'rgba(255,255,255,0.2)',
-    borderRadius: radius.bead,
+  quickBtn2: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#ffffff',
-    marginBottom: '12px',
+    gap: '6px',
+    padding: '10px 8px',
+    background: `linear-gradient(180deg, ${colors.bg.card} 0%, rgba(255,255,255,0.02) 100%)`,
+    border: `1px solid ${colors.bead.pink}40`,
+    borderRadius: radius.button,
+    cursor: 'pointer',
+    boxShadow: '0 6px 14px rgba(0,0,0,0.12)',
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
 
-  btnIconBox2: {
-    width: '52px',
-    height: '52px',
-    background: `linear-gradient(145deg, ${colors.bead.pink}30, ${colors.bead.pink}15)`,
-    borderRadius: radius.bead,
+  quickBtn3: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: colors.bead.pink,
-    marginBottom: '12px',
+    gap: '6px',
+    padding: '10px 8px',
+    background: `linear-gradient(180deg, ${colors.bg.card} 0%, rgba(255,255,255,0.02) 100%)`,
+    border: `1px solid ${colors.bead.purple}40`,
+    borderRadius: radius.button,
+    cursor: 'pointer',
+    boxShadow: '0 6px 14px rgba(0,0,0,0.12)',
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
 
-  btnContent: {
+  quickBtn4: {
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 8px',
+    background: `linear-gradient(180deg, ${colors.bg.card} 0%, rgba(255,255,255,0.02) 100%)`,
+    border: `1px solid ${colors.bead.orange}40`,
+    borderRadius: radius.button,
+    cursor: 'pointer',
+    boxShadow: '0 6px 14px rgba(0,0,0,0.12)',
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
 
-  btnText: {
-    fontSize: typography.fontSize.md,
+  quickBtnText: {
+    fontSize: '12px',
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
     color: '#ffffff',
-    marginBottom: '4px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    minWidth: 0,
   },
 
-  btnText2: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.bold,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
-    marginBottom: '4px',
-  },
-
-  btnDesc: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamilyAlt,
-    color: 'rgba(255,255,255,0.8)',
-  },
-
-  btnDesc2: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
-  },
-
-  myProjects: {
-    marginBottom: '24px',
-  },
-
-  myProjectsCard: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '14px 16px',
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
-    borderRadius: radius.card,
-    cursor: 'pointer',
-    boxShadow: shadows.sm,
-    gap: '12px',
-  },
-
-  myProjectsIcon: {
-    width: '44px',
-    height: '44px',
-    background: `linear-gradient(145deg, ${colors.bead.purple}20, ${colors.bead.purple}10)`,
-    borderRadius: radius.bead,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  myProjectsContent: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-  },
-
-  myProjectsTitle: {
-    fontSize: typography.fontSize.md,
+  quickBtnText2: {
+    fontSize: '12px',
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
     color: colors.text.primary,
-    marginBottom: '2px',
-  },
-
-  myProjectsDesc: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
-  },
-
-  projectCountBadge: {
-    marginLeft: '4px',
-    padding: '2px 8px',
-    background: `linear-gradient(135deg, ${colors.bead.cyan}, ${colors.bead.green})`,
-    borderRadius: radius.full,
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.bold,
-    color: '#ffffff',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    minWidth: 0,
   },
 
   communitySection: {
-    marginBottom: '24px',
+    marginBottom: '16px',
+    width: '100%',
+    minWidth: 0,
+    padding: '10px 10px 12px',
+    borderRadius: radius.lg,
+    border: `1px solid ${colors.border.soft}`,
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
+    boxShadow: '0 10px 24px rgba(0,0,0,0.14)',
+  },
+
+  tagBar: {
+    marginBottom: '8px',
+    overflow: 'hidden',
+  },
+
+  tagScroll: {
+    display: 'flex',
+    gap: '8px',
+    overflowX: 'auto',
+    paddingBottom: '4px',
+    WebkitOverflowScrolling: 'touch',
+    scrollbarWidth: 'none',
+    msOverflowStyle: 'none',
+  } as React.CSSProperties,
+
+  tagButton: {
+    flexShrink: 0,
+    padding: '5px 14px',
+    borderRadius: radius.full,
+    border: `1px solid ${colors.border.soft}`,
+    background: colors.bg.card,
+    color: colors.text.secondary,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
+    whiteSpace: 'nowrap',
+  } as React.CSSProperties,
+
+  tagButtonActive: {
+    background: `${colors.bead.cyan}20`,
+    border: `1px solid ${colors.bead.cyan}`,
+    color: colors.bead.cyan,
+    fontWeight: typography.fontWeight.bold,
+  },
+
+  sortBar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '10px',
+    gap: '8px',
+    minWidth: 0,
+    flexWrap: 'wrap',
+  },
+
+  sortStatsText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.text.muted,
+    fontFamily: typography.fontFamilyAlt,
+    flexShrink: 0,
+  },
+
+  sortOptions: {
+    display: 'flex',
+    gap: '4px',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    minWidth: 0,
+  },
+
+  sortButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '3px',
+    padding: '3px 8px',
+    borderRadius: radius.sm,
+    border: 'none',
+    background: 'transparent',
+    color: colors.text.muted,
+    fontSize: '11px',
+    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
+  },
+
+  sortButtonActive: {
+    background: `${colors.bead.purple}20`,
+    color: colors.bead.purple,
+    fontWeight: typography.fontWeight.bold,
   },
 
   waterfall: {
     display: 'flex',
     gap: '10px',
+    width: '100%',
+    minWidth: 0,
   },
 
   waterfallCol: {
@@ -585,6 +667,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
+    minWidth: 0,
   },
 
   postCard: {
@@ -594,6 +677,9 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     cursor: 'pointer',
     transition: animation.transition.fast,
+    width: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box',
   },
 
   postImageWrap: {
@@ -695,9 +781,19 @@ const styles: Record<string, React.CSSProperties> = {
     animation: 'spin 0.8s linear infinite',
   },
 
-  communityEnd: {
-    textAlign: 'center',
-    padding: '20px 0',
+  
+  communityError: {
+    padding: '8px 10px',
+    borderRadius: radius.sm,
+    border: `1px solid ${colors.bead.red}40`,
+    background: `${colors.bead.red}10`,
+    marginBottom: '10px',
+  },
+
+  communityErrorText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.bead.red,
+    fontFamily: typography.fontFamilyAlt,
   },
 
   rainbowBar: {
@@ -710,3 +806,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default HomePage;
+

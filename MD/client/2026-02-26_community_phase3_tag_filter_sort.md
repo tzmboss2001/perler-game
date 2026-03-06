@@ -30,18 +30,23 @@
 - `CreatePostData` 新增 `tags` 字段
 - `getPosts` 方法将 `tag`/`sort` 加入 URLSearchParams
 
-### 2. `perler-beads/src/pages/mobile/CommunityPage.tsx`
+### 2. `perler-beads/src/pages/mobile/HomePage.tsx`（重点修改）
+- 将标签筛选+排序功能集成到首页的"社区作品"区域（而非独立 CommunityPage）
 - 新增标签筛选栏（水平滚动）：全部/动漫/游戏/动物/风景/节日/人物/食物/其他
 - 新增排序切换按钮：最新/最热/最多制作
 - 切换标签或排序时重置页码并重新加载
 - 滚动加载时保持当前筛选参数
+- 首页原有功能（精选作品、快速开始、我的方案、底部导航）全部保留
 
-### 3. `perler-beads/src/components/PublishModal.tsx`
+### 3. `perler-beads/src/pages/mobile/CommunityPage.tsx`
+- 同步添加了标签筛选+排序功能（作为独立社区页面备用）
+
+### 4. `perler-beads/src/components/PublishModal.tsx`
 - 新增标签多选区域
 - 选中标签以逗号拼接传给 API
 - 打开弹窗时重置标签选择
 
-### 4. `perler-beads/src/pages/mobile/ProfilePage.tsx`
+### 5. `perler-beads/src/pages/mobile/ProfilePage.tsx`
 - 更新 `handlePublish` 签名以接收 `tags` 参数
 - `postData` 中传递 `tags` 字段
 
@@ -50,3 +55,10 @@
 - `go build .` 后端编译通过
 - `npm run build` 前端构建通过
 - API 支持 `?tag=动漫&sort=popular` 查询参数
+- Chrome MCP 端到端测试通过：
+  - 首页原有功能（精选作品、快速开始、我的方案）完整保留
+  - 底部导航正常显示
+  - 标签筛选栏可水平滚动，点击切换正常
+  - 排序切换正常，高亮状态正确
+  - API 请求参数传递正确（tag/sort）
+  - 无控制台报错

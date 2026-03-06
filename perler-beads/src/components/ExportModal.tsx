@@ -1,18 +1,25 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, Image, FileImage, Check } from '@phosphor-icons/react';
-import { colors, radius, typography, shadows, animation, mixins } from '../styles/designSystem';
-import { BeadPixelData, renderBeadsToCanvas, renderBeadsToCanvasWithList, renderBeadsPaginated } from '../services/colorMatchService';
-import { recommendBoard, getAllBoardOptions, BOARD_SPECS } from '../services/boardService';
+import { Check, Download, FileImage, Image, X } from '@phosphor-icons/react';
+import { colors, radius, shadows, typography } from '../styles/designSystem';
+import {
+  BeadPixelData,
+  renderBeadsPaginated,
+  renderBeadsToCanvas,
+  renderBeadsToCanvasWithList,
+} from '../services/colorMatchService';
+import { getAllBoardOptions, recommendBoard } from '../services/boardService';
+import { adService } from '../services/adService';
 
 interface ExportModalProps {
   visible: boolean;
   onClose: () => void;
   beadData: BeadPixelData;
+  onNeedRewardUnlock?: (reason: 'premium_export') => void;
 }
 
 interface ExportOption {
-  id: string;
+  id: 'small' | 'standard' | 'hd' | 'ultra' | 'max';
   label: string;
   description: string;
   cellSize: number;
@@ -21,36 +28,34 @@ interface ExportOption {
   recommended?: boolean;
 }
 
-/**
- * 导出选项弹窗
- * 让用户选择导出分辨率
- */
 const ExportModal: React.FC<ExportModalProps> = ({
   visible,
   onClose,
   beadData,
+  onNeedRewardUnlock,
 }) => {
-  const [selectedOption, setSelectedOption] = useState<string>('hd');
+  const [selectedOption, setSelectedOption] = useState<ExportOption['id']>('hd');
   const [isExporting, setIsExporting] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [showCoords, setShowCoords] = useState(true);
-  const [showMajorGrid, setShowMajorGrid] = useState(true); // 显示大网格线（5×5 + 10×10）
-  const [showBeadList, setShowBeadList] = useState(true); // 显示珠子清单
-  const [paginateMode, setPaginateMode] = useState(false); // 按板分页
-  // 智能推荐板子尺寸
-  const smartBoard = recommendBoard(beadData.width, beadData.height);
+  const [showMajorGrid, setShowMajorGrid] = useState(true);
+  const [showBeadList, setShowBeadList] = useState(true);
+  const [paginateMode, setPaginateMode] = useState(false);
+
+  const smartBoard = useMemo(
+    () => recommendBoard(beadData.width, beadData.height),
+    [beadData.width, beadData.height]
+  );
   const [boardSize, setBoardSize] = useState(smartBoard.boardSize);
 
-  // 计算图案尺寸
   const patternWidth = beadData.width;
   const patternHeight = beadData.height;
 
-  // 导出选项配置
   const exportOptions: ExportOption[] = [
     {
       id: 'small',
       label: '小图',
-      description: `${patternWidth * 10}×${patternHeight * 10}px · 快速分享`,
+      description: `${patternWidth * 10}x${patternHeight * 10}px · 快速分享`,
       cellSize: 10,
       icon: Image,
       color: colors.bead.green,
@@ -58,7 +63,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
     {
       id: 'standard',
       label: '标准',
-      description: `${patternWidth * 20}×${patternHeight * 20}px · 日常使用`,
+      description: `${patternWidth * 20}x${patternHeight * 20}px · 日常使用`,
       cellSize: 20,
       icon: FileImage,
       color: colors.bead.cyan,
@@ -66,7 +71,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
     {
       id: 'hd',
       label: '高清',
-      description: `${patternWidth * 40}×${patternHeight * 40}px · 适合打印`,
+      description: `${patternWidth * 40}x${patternHeight * 40}px · 适合打印`,
       cellSize: 40,
       icon: FileImage,
       color: colors.bead.purple,
@@ -75,7 +80,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
     {
       id: 'ultra',
       label: '超高清',
-      description: `${patternWidth * 80}×${patternHeight * 80}px · 高质量打印`,
+      description: `${patternWidth * 80}x${patternHeight * 80}px · 高质量打印`,
       cellSize: 80,
       icon: FileImage,
       color: colors.bead.pink,
@@ -83,66 +88,81 @@ const ExportModal: React.FC<ExportModalProps> = ({
     {
       id: 'max',
       label: '极清',
-      description: `${patternWidth * 100}×${patternHeight * 100}px · 专业海报`,
+      description: `${patternWidth * 100}x${patternHeight * 100}px · 海报级输出`,
       cellSize: 100,
       icon: FileImage,
       color: colors.bead.orange,
     },
   ];
 
-  // 获取当前选中的选项
-  const currentOption = exportOptions.find(opt => opt.id === selectedOption) || exportOptions[1];
+  const currentOption = exportOptions.find((opt) => opt.id === selectedOption) || exportOptions[1];
 
-  // 预估文件大小
   const estimateFileSize = (cellSize: number): string => {
     const pixels = patternWidth * cellSize * patternHeight * cellSize;
-    // PNG 压缩比大约 1:10 到 1:20，像素图压缩效果好
-    const estimatedBytes = pixels * 0.5; // 粗略估算
-    if (estimatedBytes < 1024) {
-      return `${Math.round(estimatedBytes)} B`;
-    } else if (estimatedBytes < 1024 * 1024) {
-      return `${Math.round(estimatedBytes / 1024)} KB`;
-    } else {
-      return `${(estimatedBytes / 1024 / 1024).toFixed(1)} MB`;
-    }
+    const estimatedBytes = pixels * 0.5;
+    if (estimatedBytes < 1024) return `${Math.round(estimatedBytes)} B`;
+    if (estimatedBytes < 1024 * 1024) return `${Math.round(estimatedBytes / 1024)} KB`;
+    return `${(estimatedBytes / 1024 / 1024).toFixed(1)} MB`;
   };
 
-  // 计算分页数
   const paginatedPageCount = paginateMode
     ? Math.ceil(patternWidth / boardSize) * Math.ceil(patternHeight / boardSize)
     : 0;
 
-  // 执行导出
   const handleExport = async () => {
-    setIsExporting(true);
+    const needsPremiumUnlock =
+      selectedOption === 'hd' ||
+      selectedOption === 'ultra' ||
+      selectedOption === 'max' ||
+      paginateMode;
 
+    if (needsPremiumUnlock) {
+      const decision = adService.getPremiumExportDecision();
+      if (!decision.allowed) {
+        onNeedRewardUnlock?.('premium_export');
+        return;
+      }
+      adService.recordPremiumExportOpened(decision.channel);
+    }
+
+    setIsExporting(true);
     try {
       const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-
       if (paginateMode) {
-        // 分页模式
         const pages = renderBeadsPaginated(beadData, currentOption.cellSize, boardSize, {
           showGrid,
           showCoords,
           showMajorGrid,
         });
 
-        // 逐页下载
         for (const page of pages) {
           const link = document.createElement('a');
           link.download = `perler-${patternWidth}x${patternHeight}-p${page.pageIndex + 1}of${page.totalPages}-${timestamp}.png`;
           link.href = page.canvas.toDataURL('image/png');
           link.click();
-          // 小延迟避免浏览器拦截多次下载
-          await new Promise(r => setTimeout(r, 200));
+          await new Promise((resolve) => setTimeout(resolve, 200));
         }
       } else {
-        // 单张模式
         const canvas = document.createElement('canvas');
         if (showBeadList) {
-          renderBeadsToCanvasWithList(beadData, canvas, currentOption.cellSize, showGrid, showCoords, showMajorGrid, true);
+          renderBeadsToCanvasWithList(
+            beadData,
+            canvas,
+            currentOption.cellSize,
+            showGrid,
+            showCoords,
+            showMajorGrid,
+            true
+          );
         } else {
-          renderBeadsToCanvas(beadData, canvas, currentOption.cellSize, showGrid, showCoords, showMajorGrid);
+          renderBeadsToCanvas(
+            beadData,
+            canvas,
+            currentOption.cellSize,
+            showGrid,
+            showCoords,
+            showMajorGrid
+          );
         }
 
         const link = document.createElement('a');
@@ -154,7 +174,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
       setTimeout(() => {
         setIsExporting(false);
         onClose();
-      }, 500);
+      }, 300);
     } catch (error) {
       console.error('导出失败:', error);
       setIsExporting(false);
@@ -165,208 +185,120 @@ const ExportModal: React.FC<ExportModalProps> = ({
 
   return createPortal(
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
-        {/* 头部 */}
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
           <h2 style={styles.title}>导出图案</h2>
           <button style={styles.closeBtn} onClick={onClose}>
-            <X size={20} weight="bold" />
+            <X size={18} weight="bold" />
           </button>
         </div>
 
-        {/* 可滚动内容区域 */}
         <div style={styles.content}>
-          {/* 分辨率选项 */}
-          <div style={styles.section}>
+          <section style={styles.section}>
             <h3 style={styles.sectionTitle}>选择分辨率</h3>
             <div style={styles.optionList}>
               {exportOptions.map((option) => (
-                <div
+                <button
                   key={option.id}
+                  type="button"
                   style={{
                     ...styles.optionItem,
-                    ...(selectedOption === option.id ? {
-                      borderColor: option.color,
-                      background: `linear-gradient(145deg, ${option.color}15, ${option.color}08)`,
-                    } : {}),
+                    ...(selectedOption === option.id ? styles.optionItemActive : {}),
+                    borderColor: selectedOption === option.id ? option.color : colors.border.soft,
                   }}
                   onClick={() => setSelectedOption(option.id)}
                 >
-                  <div style={{
-                    ...styles.optionIcon,
-                    background: `linear-gradient(145deg, ${option.color}30, ${option.color}15)`,
-                  }}>
-                    <option.icon size={20} weight="fill" style={{ color: option.color }} />
+                  <div
+                    style={{
+                      ...styles.optionIcon,
+                      background: `linear-gradient(145deg, ${option.color}30, ${option.color}12)`,
+                    }}
+                  >
+                    <option.icon size={18} weight="fill" style={{ color: option.color }} />
                   </div>
-                  <div style={styles.optionContent}>
-                    <div style={styles.optionHeader}>
+                  <div style={styles.optionTextWrap}>
+                    <div style={styles.optionLabelRow}>
                       <span style={styles.optionLabel}>{option.label}</span>
-                      {option.recommended && (
-                        <span style={styles.recommendBadge}>推荐</span>
-                      )}
+                      {option.recommended ? <span style={styles.recommendTag}>推荐</span> : null}
                     </div>
                     <span style={styles.optionDesc}>{option.description}</span>
-                    <span style={styles.optionSize}>
-                      预估大小: ~{estimateFileSize(option.cellSize)}
-                    </span>
+                    <span style={styles.optionMeta}>预计文件大小：{estimateFileSize(option.cellSize)}</span>
                   </div>
-                  {selectedOption === option.id && (
-                    <div style={{
-                      ...styles.checkIcon,
-                      background: option.color,
-                    }}>
-                      <Check size={14} weight="bold" color="#fff" />
-                    </div>
-                  )}
-                </div>
+                  {selectedOption === option.id ? (
+                    <span style={{ ...styles.checkedIcon, background: option.color }}>
+                      <Check size={12} weight="bold" color="#fff" />
+                    </span>
+                  ) : null}
+                </button>
               ))}
             </div>
-          </div>
+          </section>
 
-          {/* 导出选项 */}
-          <div style={styles.section}>
+          <section style={styles.section}>
             <h3 style={styles.sectionTitle}>导出选项</h3>
-            <div style={styles.toggleList}>
-              <label style={styles.toggleItem}>
-                <span style={styles.toggleLabel}>显示网格线</span>
-                <input
-                  type="checkbox"
-                  checked={showGrid}
-                  onChange={(e) => setShowGrid(e.target.checked)}
-                  style={styles.checkbox}
-                />
-                <span style={{
-                  ...styles.toggleSlider,
-                  background: showGrid
-                    ? `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.bead.cyan}cc)`
-                    : colors.bg.tertiary,
-                }} />
+            <div style={styles.switchList}>
+              <label style={styles.switchItem}>
+                <span style={styles.switchLabel}>显示网格线</span>
+                <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
               </label>
-              <label style={styles.toggleItem}>
-                <span style={styles.toggleLabel}>显示坐标刻度</span>
-                <input
-                  type="checkbox"
-                  checked={showCoords}
-                  onChange={(e) => setShowCoords(e.target.checked)}
-                  style={styles.checkbox}
-                />
-                <span style={{
-                  ...styles.toggleSlider,
-                  background: showCoords
-                    ? `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.bead.cyan}cc)`
-                    : colors.bg.tertiary,
-                }} />
+              <label style={styles.switchItem}>
+                <span style={styles.switchLabel}>显示坐标刻度</span>
+                <input type="checkbox" checked={showCoords} onChange={(e) => setShowCoords(e.target.checked)} />
               </label>
-              <label style={styles.toggleItem}>
-                <div style={styles.toggleLabelGroup}>
-                  <span style={styles.toggleLabel}>显示大网格线</span>
-                  <span style={styles.toggleHint}>5×5蓝线 + 10×10黑线</span>
-                </div>
+              <label style={styles.switchItem}>
+                <span style={styles.switchLabel}>显示大网格线（5x5/10x10）</span>
                 <input
                   type="checkbox"
                   checked={showMajorGrid}
                   onChange={(e) => setShowMajorGrid(e.target.checked)}
-                  style={styles.checkbox}
                 />
-                <span style={{
-                  ...styles.toggleSlider,
-                  background: showMajorGrid
-                    ? `linear-gradient(145deg, ${colors.bead.orange}, ${colors.bead.orange}cc)`
-                    : colors.bg.tertiary,
-                }} />
               </label>
-              <label style={styles.toggleItem}>
-                <div style={styles.toggleLabelGroup}>
-                  <span style={styles.toggleLabel}>显示珠子清单</span>
-                  <span style={styles.toggleHint}>在图纸右侧显示颜色列表</span>
-                </div>
+              <label style={styles.switchItem}>
+                <span style={styles.switchLabel}>显示珠子清单</span>
                 <input
                   type="checkbox"
                   checked={showBeadList}
                   onChange={(e) => setShowBeadList(e.target.checked)}
-                  style={styles.checkbox}
                 />
-                <span style={{
-                  ...styles.toggleSlider,
-                  background: showBeadList
-                    ? `linear-gradient(145deg, ${colors.bead.purple}, ${colors.bead.purple}cc)`
-                    : colors.bg.tertiary,
-                }} />
               </label>
-              <label style={styles.toggleItem}>
-                <div style={styles.toggleLabelGroup}>
-                  <span style={styles.toggleLabel}>按拼豆板分页</span>
-                  <span style={styles.toggleHint}>大图案分割成多页打印</span>
-                </div>
+              <label style={styles.switchItem}>
+                <span style={styles.switchLabel}>按拼豆板分页导出</span>
                 <input
                   type="checkbox"
                   checked={paginateMode}
                   onChange={(e) => setPaginateMode(e.target.checked)}
-                  style={styles.checkbox}
                 />
-                <span style={{
-                  ...styles.toggleSlider,
-                  background: paginateMode
-                    ? `linear-gradient(145deg, ${colors.bead.pink}, ${colors.bead.pink}cc)`
-                    : colors.bg.tertiary,
-                }} />
               </label>
-              {paginateMode && (
-                <div style={styles.boardSizeSelector}>
-                  <span style={styles.boardSizeLabel}>板子尺寸</span>
-                  <div style={styles.boardSizeOptions}>
-                    {BOARD_SPECS.map(spec => {
-                      const isRecommended = spec.size === smartBoard.boardSize;
-                      return (
-                        <button
-                          key={spec.size}
-                          style={{
-                            ...styles.boardSizeBtn,
-                            ...(boardSize === spec.size ? styles.boardSizeBtnActive : {}),
-                          }}
-                          onClick={() => setBoardSize(spec.size)}
-                        >
-                          {spec.size}×{spec.size}
-                          {isRecommended && <span style={styles.recommendedDot}> *</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <span style={styles.boardSizeHint}>
-                    将生成 {paginatedPageCount} 页
-                    {boardSize === smartBoard.boardSize && ' (推荐)'}
-                  </span>
-                </div>
-              )}
             </div>
-          </div>
+          </section>
 
-          {/* 预览信息 */}
-          <div style={styles.previewInfo}>
-            <div style={styles.previewRow}>
-              <span style={styles.previewLabel}>图案尺寸</span>
-              <span style={styles.previewValue}>{patternWidth} × {patternHeight} 珠子</span>
-            </div>
-            <div style={styles.previewRow}>
-              <span style={styles.previewLabel}>导出尺寸</span>
-              <span style={styles.previewValue}>
-                {patternWidth * currentOption.cellSize} × {patternHeight * currentOption.cellSize} px
-              </span>
-            </div>
-          </div>
+          {paginateMode ? (
+            <section style={styles.section}>
+              <h3 style={styles.sectionTitle}>分页设置</h3>
+              <div style={styles.pageSetting}>
+                <label style={styles.pageSettingLabel}>拼豆板规格</label>
+                <select
+                  value={boardSize}
+                  onChange={(e) => setBoardSize(Number(e.target.value))}
+                  style={styles.select}
+                >
+                  {getAllBoardOptions().map((item) => (
+                    <option key={item.size} value={item.size}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+                <div style={styles.pageHint}>
+                  预计导出 {paginatedPageCount} 页（当前图案 {patternWidth}x{patternHeight}）
+                </div>
+              </div>
+            </section>
+          ) : null}
         </div>
 
-        {/* 固定底部导出按钮 */}
         <div style={styles.footer}>
-          <button
-            style={{
-              ...styles.exportBtn,
-              ...(isExporting ? styles.exportBtnDisabled : {}),
-            }}
-            onClick={handleExport}
-            disabled={isExporting}
-          >
-            <Download size={20} weight="bold" />
+          <button style={styles.exportBtn} onClick={handleExport} disabled={isExporting}>
+            <Download size={16} weight="bold" />
             <span>{isExporting ? '导出中...' : '导出图片'}</span>
           </button>
         </div>
@@ -379,341 +311,200 @@ const ExportModal: React.FC<ExportModalProps> = ({
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0, 0, 0, 0.7)',
+    inset: 0,
+    zIndex: 12000,
+    background: 'rgba(0, 0, 0, 0.72)',
+    backdropFilter: 'blur(8px)',
     display: 'flex',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 1100,
-    animation: 'fadeIn 0.2s ease-out',
+    padding: 12,
   },
-
   modal: {
     width: '100%',
-    maxWidth: '500px',
-    maxHeight: '85vh',
-    background: colors.bg.secondary,
-    borderRadius: `${radius.card} ${radius.card} 0 0`,
-    overflow: 'hidden',
+    maxWidth: 520,
+    maxHeight: '92vh',
+    background: colors.bg.card,
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: radius.card,
+    boxShadow: shadows.xl,
     display: 'flex',
     flexDirection: 'column',
-    animation: 'slideUp 0.3s ease-out',
+    overflow: 'hidden',
   },
-
-  content: {
-    flex: 1,
-    overflowY: 'auto',
-    overflowX: 'hidden',
-  },
-
-  footer: {
-    flexShrink: 0,
-    padding: '16px 20px',
-    paddingTop: '0',
-    background: colors.bg.secondary,
-  },
-
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '16px 20px',
+    padding: '14px 14px 10px',
     borderBottom: `1px solid ${colors.border.soft}`,
   },
-
   title: {
+    margin: 0,
+    color: colors.text.primary,
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    fontFamily: typography.fontFamilyAlt,
-    background: colors.gradients.primary,
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
-    margin: 0,
   },
-
   closeBtn: {
-    ...mixins.iconButton,
+    width: 30,
+    height: 30,
+    border: 'none',
+    borderRadius: radius.bead,
     background: colors.bg.tertiary,
-  },
-
-  section: {
-    padding: '16px 20px',
-  },
-
-  sectionTitle: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
-    fontFamily: typography.fontFamilyAlt,
     color: colors.text.secondary,
-    margin: '0 0 12px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-
+  content: {
+    overflowY: 'auto',
+    padding: 14,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 14,
+  },
+  section: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  },
+  sectionTitle: {
+    margin: 0,
+    color: colors.text.primary,
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.semibold,
+  },
   optionList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px',
+    gap: 8,
   },
-
   optionItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '12px',
-    background: colors.bg.card,
-    borderRadius: radius.card,
-    border: `2px solid ${colors.border.soft}`,
-    cursor: 'pointer',
-    transition: animation.transition.fast,
-  },
-
-  optionIcon: {
-    width: '44px',
-    height: '44px',
-    borderRadius: radius.bead,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-
-  optionContent: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-  },
-
-  optionHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-
-  optionLabel: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
-  },
-
-  recommendBadge: {
-    fontSize: '10px',
-    padding: '2px 6px',
-    background: colors.bead.pink,
-    color: '#fff',
-    borderRadius: radius.full,
-    fontWeight: typography.fontWeight.medium,
-  },
-
-  optionDesc: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
-  },
-
-  optionSize: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
-  },
-
-  checkIcon: {
-    width: '24px',
-    height: '24px',
-    borderRadius: radius.full,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-
-  toggleList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-
-  toggleItem: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '12px 16px',
-    background: colors.bg.card,
-    borderRadius: radius.bead,
-    cursor: 'pointer',
-  },
-
-  toggleLabel: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
-  },
-
-  toggleLabelGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-  },
-
-  toggleHint: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
-  },
-
-  checkbox: {
-    display: 'none',
-  },
-
-  toggleSlider: {
-    width: '44px',
-    height: '24px',
-    borderRadius: radius.full,
-    position: 'relative',
-    transition: animation.transition.fast,
-  },
-
-  previewInfo: {
-    margin: '0 20px 16px',
-    padding: '12px 16px',
-    background: colors.bg.tertiary,
-    borderRadius: radius.bead,
-  },
-
-  previewRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    padding: '4px 0',
-  },
-
-  previewLabel: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
-  },
-
-  previewValue: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
-    fontWeight: typography.fontWeight.medium,
-  },
-
-  exportBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    width: '100%',
-    padding: '16px',
-    background: `linear-gradient(145deg, ${colors.bead.green}, ${colors.bead.green}cc)`,
-    border: 'none',
-    borderRadius: radius.button,
-    color: '#ffffff',
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
-    fontFamily: typography.fontFamilyAlt,
-    cursor: 'pointer',
-    boxShadow: `${shadows.button}, ${shadows.glow.green}`,
-    transition: animation.transition.fast,
-  },
-
-  exportBtnDisabled: {
-    opacity: 0.6,
-    cursor: 'not-allowed',
-  },
-
-  boardSizeSelector: {
-    padding: '10px 16px',
-    background: colors.bg.card,
-    borderRadius: radius.bead,
-  },
-
-  boardSizeLabel: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
-    marginBottom: '8px',
-    display: 'block',
-  },
-
-  boardSizeOptions: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '6px',
-  },
-
-  boardSizeBtn: {
-    flex: 1,
-    padding: '8px',
-    background: colors.bg.tertiary,
     border: `1px solid ${colors.border.soft}`,
-    borderRadius: radius.button,
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.text.secondary,
+    borderRadius: radius.md,
+    background: colors.bg.secondary,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '10px 12px',
+    color: colors.text.primary,
     cursor: 'pointer',
-    transition: animation.transition.fast,
-    textAlign: 'center' as const,
+    textAlign: 'left',
   },
-
-  boardSizeBtnActive: {
-    background: `linear-gradient(145deg, ${colors.bead.pink}20, ${colors.bead.pink}08)`,
-    borderColor: colors.bead.pink,
-    color: colors.bead.pink,
-    fontWeight: typography.fontWeight.semibold,
+  optionItemActive: {
+    background: 'linear-gradient(145deg, rgba(107,154,212,0.18), rgba(108,200,173,0.10))',
   },
-
-  boardSizeHint: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.bead.pink,
+  optionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
-
-  recommendedDot: {
-    color: colors.bead.yellow,
+  optionTextWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    minWidth: 0,
+  },
+  optionLabelRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  optionLabel: {
+    fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.bold,
   },
+  recommendTag: {
+    fontSize: 11,
+    padding: '1px 6px',
+    borderRadius: 999,
+    background: `${colors.bead.green}25`,
+    color: colors.bead.green,
+  },
+  optionDesc: {
+    fontSize: 12,
+    color: colors.text.secondary,
+  },
+  optionMeta: {
+    fontSize: 11,
+    color: colors.text.muted,
+  },
+  checkedIcon: {
+    marginLeft: 'auto',
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switchList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    padding: 10,
+    borderRadius: radius.md,
+    background: colors.bg.secondary,
+    border: `1px solid ${colors.border.soft}`,
+  },
+  switchItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    fontSize: typography.fontSize.sm,
+    color: colors.text.secondary,
+    gap: 10,
+  },
+  switchLabel: {
+    lineHeight: 1.4,
+  },
+  pageSetting: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    padding: 10,
+    borderRadius: radius.md,
+    background: colors.bg.secondary,
+    border: `1px solid ${colors.border.soft}`,
+  },
+  pageSettingLabel: {
+    fontSize: 12,
+    color: colors.text.muted,
+  },
+  select: {
+    borderRadius: 8,
+    border: `1px solid ${colors.border.soft}`,
+    background: colors.bg.card,
+    color: colors.text.primary,
+    padding: '8px 10px',
+  },
+  pageHint: {
+    fontSize: 12,
+    color: colors.text.secondary,
+  },
+  footer: {
+    borderTop: `1px solid ${colors.border.soft}`,
+    padding: 12,
+  },
+  exportBtn: {
+    width: '100%',
+    border: 'none',
+    borderRadius: radius.button,
+    background: `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.bead.cyan}cc)`,
+    color: '#fff',
+    padding: '11px 14px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    fontWeight: typography.fontWeight.bold,
+    cursor: 'pointer',
+  },
 };
-
-// 添加动画样式
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  @keyframes slideUp {
-    from { transform: translateY(100%); }
-    to { transform: translateY(0); }
-  }
-
-  /* Toggle slider thumb */
-  .toggle-slider::before {
-    content: "";
-    position: absolute;
-    width: 20px;
-    height: 20px;
-    left: 2px;
-    top: 2px;
-    background: white;
-    border-radius: 50%;
-    transition: 0.3s;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  }
-
-  input:checked + .toggle-slider::before {
-    transform: translateX(20px);
-  }
-`;
-if (!document.querySelector('#export-modal-styles')) {
-  styleSheet.id = 'export-modal-styles';
-  document.head.appendChild(styleSheet);
-}
 
 export default ExportModal;

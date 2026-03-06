@@ -303,6 +303,14 @@ export const useModal = () => {
     setState(prev => ({ ...prev, visible: false }));
   }, []);
 
+  const normalizeUserErrorText = useCallback((content: string) => {
+    const raw = content || '';
+    if (/token|未登录|未登陆|未授权|鉴权|授權/i.test(raw)) {
+      return '登录状态已失效，请重新登录';
+    }
+    return raw;
+  }, []);
+
   // 便捷方法：Alert
   const showAlert = useCallback((
     content: string,
@@ -333,11 +341,11 @@ export const useModal = () => {
     showModal({
       type: 'error',
       title: '错误',
-      content,
+      content: normalizeUserErrorText(content),
       showCancel: false,
       onConfirm,
     });
-  }, [showModal]);
+  }, [normalizeUserErrorText, showModal]);
 
   // 便捷方法：Confirm
   const showConfirm = useCallback((

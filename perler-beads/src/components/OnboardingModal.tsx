@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Camera, Palette, GridFour, Sparkle, ArrowRight, X } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../styles/designSystem';
 
@@ -32,28 +32,28 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete, forceShow
       icon: <Sparkle size={64} weight="fill" />,
       iconColor: colors.bead.yellow,
       title: '欢迎来到拼豆工坊',
-      description: '将你喜欢的图片\n变成可制作的拼豆图案',
+      description: '把你喜欢的图片\n变成可制作的拼豆图案',
       beadColors: [colors.bead.pink, colors.bead.orange, colors.bead.yellow, colors.bead.green, colors.bead.cyan],
     },
     {
       icon: <Camera size={64} weight="fill" />,
       iconColor: colors.bead.cyan,
-      title: '简单三步完成作品',
-      description: '1. 上传或拍摄图片\n2. 调整大小和颜色\n3. 对照图案制作',
+      title: '三步完成创作',
+      description: '1. 上传或拍摄图片\n2. 调整网格与配色\n3. 对照图案开始制作',
       beadColors: [colors.bead.cyan, colors.bead.blue, colors.bead.purple],
     },
     {
       icon: <Palette size={64} weight="fill" />,
       iconColor: colors.bead.pink,
-      title: '多品牌珠子色板',
-      description: '支持 Perler、Hama、Artkal\n自动匹配最接近的珠子颜色',
+      title: 'MARD 珠子色板',
+      description: '当前支持 MARD 色系\n自动匹配最接近的珠子颜色',
       beadColors: [colors.bead.red, colors.bead.pink, colors.bead.purple],
     },
     {
       icon: <GridFour size={64} weight="fill" />,
       iconColor: colors.bead.green,
-      title: '贴心的制作辅助',
-      description: '区块选择 + 同色高亮\n坐标语音播报 + 屏幕常亮',
+      title: '制作辅助模式',
+      description: '区块选择 + 同色高亮\n坐标播报 + 屏幕常亮',
       beadColors: [colors.bead.green, colors.bead.cyan, colors.bead.yellow],
     },
   ];
@@ -337,7 +337,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-// 添加 CSS 动画
+// 娣诲姞 CSS 鍔ㄧ敾
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
   @keyframes bounce {
@@ -360,3 +360,4 @@ export const shouldShowOnboarding = (): boolean => {
 export const resetOnboarding = (): void => {
   localStorage.removeItem(ONBOARDING_COMPLETED_KEY);
 };
+

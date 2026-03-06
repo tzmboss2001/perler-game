@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Check, CaretDown, CaretRight } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation, mixins } from '../styles/designSystem';
@@ -13,7 +13,7 @@ interface MyColorsModalProps {
 
 /**
  * 我的色板管理弹窗
- * 用户按系列勾选拥有的颜色
+ * 用户按系列勾选自己拥有的颜色
  */
 const MyColorsModal: React.FC<MyColorsModalProps> = ({ visible, onClose, onSave }) => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -22,10 +22,12 @@ const MyColorsModal: React.FC<MyColorsModalProps> = ({ visible, onClose, onSave 
 
   // 加载已保存的选择
   useEffect(() => {
-    if (visible) {
-      const saved = myColorsService.getSelectedIds();
+    const load = async () => {
+      if (!visible) return;
+
+      const saved = await myColorsService.syncFromCloud();
       setSelectedIds(new Set(saved));
-      // 默认展开第一个有选中颜色的系列，否则展开第一个
+      // 默认展开第一个有已选颜色的系列，否则展开第一个系列
       if (saved.length > 0) {
         const firstSelectedSeries = series.find(s =>
           s.colors.some(c => saved.includes(c.id))
@@ -36,7 +38,9 @@ const MyColorsModal: React.FC<MyColorsModalProps> = ({ visible, onClose, onSave 
       } else {
         setExpandedSeries(new Set([series[0]?.key]));
       }
-    }
+    };
+
+    load();
   }, [visible, series]);
 
   const toggleColor = (id: string) => {
@@ -88,9 +92,10 @@ const MyColorsModal: React.FC<MyColorsModalProps> = ({ visible, onClose, onSave 
     setSelectedIds(new Set());
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const ids = Array.from(selectedIds);
     myColorsService.saveSelectedIds(ids);
+    await myColorsService.syncToCloud(ids);
     onSave?.(ids);
     onClose();
   };
@@ -422,3 +427,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default MyColorsModal;
+

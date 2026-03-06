@@ -18,6 +18,7 @@ import { useUserStore } from '../../store/userStore';
 import { projectApi } from '../../services/api/projectApi';
 import { uploadApi } from '../../services/api/uploadApi';
 import { useToast } from '../../components/Toast';
+import Modal, { useModal } from '../../components/Modal';
 import BottomNav from '../../components/BottomNav';
 import { localStorageService } from '../../services/localStorageService';
 import { recommendBoard } from '../../services/boardService';
@@ -31,6 +32,7 @@ const EditorPage: React.FC = () => {
   const location = useLocation();
   const toast = useToast();
   const { isLoggedIn, initUser } = useUserStore();
+  const { modalProps, showConfirm } = useModal();
   const downloadCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const savedScrollPosition = useRef<number>(0);
@@ -520,18 +522,78 @@ const EditorPage: React.FC = () => {
   }, []);
 
   // 点击"开始制作"按钮
+  // 保存编辑器状态到 sessionStorage（登录跳转前调用，登录后回来可恢复）
+  const saveEditorStateToSession = useCallback(() => {
+    if (!imageData) return;
+    try {
+      const editorState: EditorStateData = {
+        imageData,
+        colorCount,
+        gridWidth: gridSize,
+        customColorIds,
+      };
+      sessionStorage.setItem('editorData', JSON.stringify(editorState));
+    } catch (e) {
+      console.warn('保存编辑器状态失败:', e);
+    }
+  }, [imageData, colorCount, gridSize, customColorIds]);
+
   const handleStartMakingClick = (e?: React.MouseEvent) => {
     if (!beadData) return;
+    const e2eBypassLogin = import.meta.env.DEV && typeof window !== 'undefined' && Boolean((window as any).__E2E_BYPASS_LOGIN__);
+    // 登录检查：制作功能需要登录
+    if (!isLoggedIn && !e2eBypassLogin) {
+      showConfirm('登录后才能使用制作功能', {
+        title: '请先登录',
+        type: 'info',
+        confirmText: '去登录',
+        onConfirm: () => {
+          saveEditorStateToSession();
+          navigate('/mobile/login', { state: { from: '/mobile/editor' } });
+        },
+      });
+      return;
+    }
     // 测试模式：按住 Shift 点击可跳过保存直接进入制作模式
-    if (e?.shiftKey) {
+    if (e?.shiftKey || e2eBypassLogin) {
       navigate('/mobile/making', {
         state: { beadData, colorCount },
       });
       return;
     }
-    // 直接弹保存弹窗（不再要求登录）
+    // 直接弹保存弹窗
     setShowSaveModal(true);
   };
+
+  // 统计列表显示信息：中文优先，其次英文，最后回退到色号
+  const getColorDisplayInfo = useCallback((color: BeadColor) => {
+    const nameCN = (color.nameCN || '').trim();
+    const nameEN = (color.name || '').trim();
+    if (nameCN && nameCN.toLowerCase() !== color.id.toLowerCase()) {
+      return { name: nameCN, showCode: true };
+    }
+    if (nameEN && nameEN.toLowerCase() !== color.id.toLowerCase()) {
+      return { name: nameEN, showCode: true };
+    }
+    return { name: `色号 ${color.id}`, showCode: false };
+  }, []);
+
+  // 次级入口：分享图纸（不占主流程注意力）
+  const handleShareClick = useCallback(() => {
+    if (!isLoggedIn) {
+      showConfirm('登录后才能分享图纸', {
+        title: '请先登录',
+        type: 'info',
+        confirmText: '去登录',
+        onConfirm: () => {
+          saveEditorStateToSession();
+          navigate('/mobile/login', { state: { from: '/mobile/editor' } });
+        },
+      });
+      return;
+    }
+    setShowShareModal(true);
+  }, [isLoggedIn, showConfirm, saveEditorStateToSession, navigate]);
 
   // 登录成功后的回调
   const handleLoginSuccess = () => {
@@ -636,10 +698,10 @@ const EditorPage: React.FC = () => {
   const saveToLocal = (name: string, thumbnail: string, originalImage: string) => {
     if (!beadData) return;
     try {
-      const result = localStorageService.createProject({
+      const projectPayload = {
         name,
         thumbnail,
-        originalImage,
+        originalImage: originalImage.length > 2_000_000 ? thumbnail : originalImage,
         beadData: {
           width: beadData.width,
           height: beadData.height,
@@ -659,7 +721,14 @@ const EditorPage: React.FC = () => {
           saturationBoost,
           vibrancyPreference,
         },
-      });
+      };
+
+      let result: { id: number };
+      try {
+        result = localStorageService.createProject(projectPayload);
+      } catch {
+        result = localStorageService.createProject({ ...projectPayload, originalImage: thumbnail });
+      }
       toast.success('方案已保存到本地！');
       setShowSaveModal(false);
       navigate('/mobile/making', {
@@ -949,9 +1018,17 @@ const EditorPage: React.FC = () => {
 
         {/* 珠子统计 */}
         <div style={styles.statsSection}>
-          <button
+          <div
             style={styles.statsHeader}
+            role="button"
+            tabIndex={0}
             onClick={() => setShowStats(!showStats)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setShowStats(!showStats);
+              }
+            }}
           >
             <div style={styles.statsHeaderLeft}>
               <ListBullets size={16} weight="fill" style={{ color: colors.bead.yellow }} />
@@ -973,63 +1050,67 @@ const EditorPage: React.FC = () => {
                 ▼
               </span>
             </div>
-          </button>
+          </div>
 
           {showStats && (
             <div style={styles.statsList}>
-              {statistics.map((stat, index) => (
-                <div
-                  key={stat.color.id}
-                  style={{
-                    ...styles.statsItem,
-                    ...(highlightedColorId === stat.color.id ? styles.statsItemHighlighted : {}),
-                  }}
-                  onClick={() => handleStatsColorClick(stat.color)}
-                >
-                  <span style={styles.statsRank}>{index + 1}</span>
-                  <div style={{ ...styles.statsColorBox, backgroundColor: stat.color.hex }} />
-                  <span style={styles.statsColorId}>{stat.color.id}</span>
-                  <span style={styles.statsColorName}>{stat.color.nameCN}</span>
-                  <span style={styles.statsColorCount}>{stat.count}</span>
-                  <span style={styles.statsColorPercent}>{stat.percentage.toFixed(1)}%</span>
-                  {/* 换色按钮 - 始终显示，支持多次更换 */}
-                  <button
-                    style={styles.replaceBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleReplaceColor(stat.color.id);
-                    }}
-                  >
-                    换
-                  </button>
-                  {/* 排除按钮 */}
-                  <button
+              {statistics.map((stat, index) => {
+                const colorInfo = getColorDisplayInfo(stat.color);
+                return (
+                  <div
+                    key={stat.color.id}
                     style={{
-                      ...styles.excludeBtn,
-                      ...(excludedColorIds.has(stat.color.id) ? styles.excludeBtnActive : {}),
+                      ...styles.statsItem,
+                      ...(highlightedColorId === stat.color.id ? styles.statsItemHighlighted : {}),
                     }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleExcludeColor(stat.color.id);
-                    }}
-                    title={excludedColorIds.has(stat.color.id) ? '取消排除' : '排除此颜色'}
+                    onClick={() => handleStatsColorClick(stat.color)}
+                    title={`${colorInfo.name} · ${stat.color.id} · ${stat.count}颗`}
                   >
-                    {excludedColorIds.has(stat.color.id) ? <CheckCircle size={12} /> : <Prohibit size={12} />}
-                  </button>
-                  {/* 还原按钮 - 仅当该颜色被替换过时显示 */}
-                  {replacedColors.has(stat.color.id) && (
+                    <span style={styles.statsRank}>{index + 1}</span>
+                    <div style={{ ...styles.statsColorBox, backgroundColor: stat.color.hex }} />
+                    <span style={styles.statsColorName}>{colorInfo.name}</span>
+                    {colorInfo.showCode && <span style={styles.statsColorId}>编号 {stat.color.id}</span>}
+                    <span style={styles.statsColorCount}>{stat.count}</span>
+                    <span style={styles.statsColorPercent}>{stat.percentage.toFixed(1)}%</span>
+                    {/* 换色按钮 - 始终显示，支持多次更换 */}
                     <button
-                      style={styles.restoreBtn}
+                      style={styles.replaceBtn}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleRestoreColor(stat.color.id);
+                        handleReplaceColor(stat.color.id);
                       }}
                     >
-                      原
+                      换色
                     </button>
-                  )}
-                </div>
-              ))}
+                    {/* 排除按钮 */}
+                    <button
+                      style={{
+                        ...styles.excludeBtn,
+                        ...(excludedColorIds.has(stat.color.id) ? styles.excludeBtnActive : {}),
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleExcludeColor(stat.color.id);
+                      }}
+                      title={excludedColorIds.has(stat.color.id) ? '取消排除' : '排除此颜色'}
+                    >
+                      {excludedColorIds.has(stat.color.id) ? <CheckCircle size={12} /> : <Prohibit size={12} />}
+                    </button>
+                    {/* 还原按钮 - 仅当该颜色被替换过时显示 */}
+                    {replacedColors.has(stat.color.id) && (
+                      <button
+                        style={styles.restoreBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRestoreColor(stat.color.id);
+                        }}
+                      >
+                        还原
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
               {/* 还原全部按钮 - 当有颜色被替换时显示 */}
               {replacedColors.size > 0 && (
                 <button style={styles.restoreAllBtn} onClick={handleRestoreAll}>
@@ -1046,15 +1127,16 @@ const EditorPage: React.FC = () => {
           )}
         </div>
 
+        <div style={styles.primaryFlowHint}>
+          <Play size={14} weight="fill" />
+          <span>完成调整后，点击“保存并开始制作”进入制作模式</span>
+        </div>
+
         {/* 操作按钮 */}
         <div style={styles.actions}>
           <button style={styles.secondaryBtn} onClick={() => navigate('/mobile/create')}>
             <ArrowClockwise size={18} />
-            重新选图
-          </button>
-          <button style={styles.secondaryBtn} onClick={() => setShowShareModal(true)} disabled={!beadData}>
-            <ShareNetwork size={18} />
-            分享
+            返回选图
           </button>
           <button
             style={styles.primaryBtn}
@@ -1062,7 +1144,13 @@ const EditorPage: React.FC = () => {
             disabled={!beadData}
           >
             <Play size={18} weight="fill" />
-            开始制作
+            保存并开始制作
+          </button>
+        </div>
+        <div style={styles.subActions}>
+          <button style={styles.ghostLinkBtn} onClick={handleShareClick} disabled={!beadData}>
+            <ShareNetwork size={14} />
+            <span>分享图纸</span>
           </button>
         </div>
       </div>
@@ -1147,6 +1235,9 @@ const EditorPage: React.FC = () => {
           }}
         />
       )}
+
+      {/* 统一弹框 */}
+      <Modal {...modalProps} />
 
       {/* 背景处理模式覆盖层 */}
       {isBackgroundMode && beadData && (
@@ -1839,7 +1930,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '9px',
     fontFamily: typography.fontFamilyAlt,
     color: colors.text.muted,
-    minWidth: '26px',
+    minWidth: '48px',
     flexShrink: 0,
   },
 
@@ -1965,7 +2056,44 @@ const styles: Record<string, React.CSSProperties> = {
   actions: {
     display: 'flex',
     gap: '6px',
+    paddingBottom: '6px',
+  },
+
+  primaryFlowHint: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '6px 10px',
+    marginBottom: '8px',
+    background: `${colors.bead.cyan}12`,
+    border: `1px solid ${colors.bead.cyan}30`,
+    borderRadius: radius.button,
+    color: colors.bead.cyan,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamilyAlt,
+  },
+
+  subActions: {
+    display: 'flex',
+    justifyContent: 'center',
     paddingBottom: '12px',
+  },
+
+  ghostLinkBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '4px 10px',
+    background: 'transparent',
+    border: 'none',
+    color: colors.text.muted,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
   },
 
   secondaryBtn: {

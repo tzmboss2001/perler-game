@@ -1,0 +1,3 @@
+﻿src/pages/mobile/CreatePage.tsx:148:<p style={styles.tipsCardTitle}>馃摳 閫夊浘寤鸿</p>
+src/pages/mobile/CreatePage.tsx:170:{colorCountOptions.find(o => o.count === colorCount)?.description} 路 {colorCountOptions.find(o => o.count === colorCount)?.detailDesc}
+src/pages/mobile/CreatePage.tsx:255:<p style={styles.tipsLine}>馃挕 棰滆壊瓒婂瓒婄粏鑵伙紝浣嗗埗浣滈毦搴︿篃瓒婇珮</p>

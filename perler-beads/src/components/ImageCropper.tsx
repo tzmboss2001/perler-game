@@ -312,7 +312,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     background: colors.bg.primary,
-    zIndex: 1100,
+    zIndex: 11001,
   },
 
   header: {

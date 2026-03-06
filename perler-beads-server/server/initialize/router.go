@@ -1,48 +1,46 @@
 package initialize
 
 import (
+	"os"
+	"path/filepath"
 	"perler-beads-server/middleware"
 	"perler-beads-server/router"
 
 	"github.com/gin-gonic/gin"
 )
 
-// Routers 初始化路由
+// Routers initializes all HTTP routes.
 func Routers() *gin.Engine {
 	r := gin.Default()
 
-	// 全局中间件
 	r.Use(middleware.Cors())
 
-	// API 路由组
 	publicGroup := r.Group("/api/v1")
 	privateGroup := r.Group("/api/v1")
 	privateGroup.Use(middleware.JWTAuth())
 
-	// 注册路由
-	{
-		// 公开路由（无需登录）
-		router.InitAuthRouter(publicGroup)
-		router.InitBeadRouter(publicGroup)
-		router.InitTemplatePublicRouter(publicGroup)
-		router.InitCommunityPublicRouter(publicGroup)
-		router.InitProjectRouter(publicGroup)  // 支持游客模式，使用 DeviceID 验证
-		router.InitUploadRouter(publicGroup)   // 图片上传
-		router.InitFeedbackRouter(publicGroup) // 意见反馈（无需登录也可提交）
-		router.InitDepthRouter(publicGroup)    // 深度估计（Marigold AI）
-	}
-	{
-		// 私有路由（需要登录）
-		router.InitAuthPrivateRouter(privateGroup)    // 认证相关私有路由
-		router.InitUserRouter(privateGroup)
-		router.InitTemplateRouter(privateGroup)
-		router.InitTemplateAdminRouter(privateGroup)  // 模板管理路由（暂时放在私有路由，后续可加管理员验证）
-		router.InitCommunityRouter(privateGroup)
-		router.InitPaymentRouter(privateGroup)
-		router.InitProjectPrivateRouter(privateGroup) // 作品相关私有路由（创建、更新、删除）
-	}
+	// Public APIs
+	router.InitAuthRouter(publicGroup)
+	router.InitBeadRouter(publicGroup)
+	router.InitTemplatePublicRouter(publicGroup)
+	router.InitCommunityPublicRouter(publicGroup)
+	router.InitFinishedWorkPublicRouter(publicGroup)
+	router.InitProjectRouter(publicGroup)
+	router.InitUploadRouter(publicGroup)
+	router.InitFeedbackRouter(publicGroup)
+	router.InitDepthRouter(publicGroup)
 
-	// 健康检查
+	// Private APIs
+	router.InitAuthPrivateRouter(privateGroup)
+	router.InitUserRouter(privateGroup)
+	router.InitTemplateRouter(privateGroup)
+	router.InitTemplateAdminRouter(privateGroup)
+	router.InitCommunityRouter(privateGroup)
+	router.InitFinishedWorkRouter(privateGroup)
+	router.InitPaymentRouter(privateGroup)
+	router.InitProjectPrivateRouter(privateGroup)
+
+	// Health check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"status":  "ok",
@@ -50,5 +48,38 @@ func Routers() *gin.Engine {
 		})
 	})
 
+	// Static media for community thumbnails and finished-work images.
+	thumbnailDir := resolveStaticDir("THUMBNAIL_DIR", "thumbnails")
+	_ = os.MkdirAll(thumbnailDir, 0755)
+	r.Static("/thumbnails", thumbnailDir)
+
+	finishedDir := resolveStaticDir("FINISHED_WORK_DIR", "finished-works")
+	_ = os.MkdirAll(finishedDir, 0755)
+	r.Static("/finished-works", finishedDir)
+
 	return r
 }
+
+func resolveStaticDir(envKey string, subDir string) string {
+	if v := os.Getenv(envKey); v != "" {
+		return v
+	}
+
+	wd, _ := os.Getwd()
+	candidates := []string{
+		filepath.Join(wd, "..", "..", "perler-beads", "public", subDir),
+		filepath.Join(wd, "..", "perler-beads", "public", subDir),
+		filepath.Join(wd, "perler-beads", "public", subDir),
+		filepath.Join(wd, subDir),
+	}
+
+	for _, dir := range candidates {
+		parent := filepath.Dir(dir)
+		if st, err := os.Stat(parent); err == nil && st.IsDir() {
+			return dir
+		}
+	}
+
+	return filepath.Join(wd, subDir)
+}
+

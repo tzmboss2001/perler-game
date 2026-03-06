@@ -4,6 +4,8 @@ import (
 	"perler-beads-server/model/request"
 	"perler-beads-server/model/response"
 	"perler-beads-server/service"
+	"perler-beads-server/utils"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -11,13 +13,6 @@ import (
 type AuthApi struct{}
 
 // Register 邮箱注册
-// @Tags     Auth
-// @Summary  邮箱注册
-// @accept   application/json
-// @Produce  application/json
-// @Param    data body request.RegisterReq true "注册参数"
-// @Success  200 {object} response.Response{data=response.RegisterResp} "注册成功"
-// @Router   /auth/register [post]
 func (a *AuthApi) Register(c *gin.Context) {
 	var req request.RegisterReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -35,13 +30,6 @@ func (a *AuthApi) Register(c *gin.Context) {
 }
 
 // Login 邮箱登录
-// @Tags     Auth
-// @Summary  邮箱登录
-// @accept   application/json
-// @Produce  application/json
-// @Param    data body request.LoginReq true "登录参数"
-// @Success  200 {object} response.Response{data=response.LoginResp} "登录成功"
-// @Router   /auth/login [post]
 func (a *AuthApi) Login(c *gin.Context) {
 	var req request.LoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -49,9 +37,7 @@ func (a *AuthApi) Login(c *gin.Context) {
 		return
 	}
 
-	// 获取客户端 IP
 	ip := c.ClientIP()
-
 	resp, err := service.AuthServiceApp.Login(&req, ip)
 	if err != nil {
 		response.FailWithMessage(err.Error(), c)
@@ -61,14 +47,7 @@ func (a *AuthApi) Login(c *gin.Context) {
 	response.OkWithData(resp, c)
 }
 
-// SmartLogin 智能登录（邮箱不存在时自动注册）
-// @Tags     Auth
-// @Summary  智能登录（邮箱不存在时自动注册）
-// @accept   application/json
-// @Produce  application/json
-// @Param    data body request.SmartLoginReq true "登录参数"
-// @Success  200 {object} response.Response{data=response.SmartLoginResp} "登录成功"
-// @Router   /auth/smart-login [post]
+// SmartLogin 智能登录（不存在则自动注册）
 func (a *AuthApi) SmartLogin(c *gin.Context) {
 	var req request.SmartLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -76,9 +55,7 @@ func (a *AuthApi) SmartLogin(c *gin.Context) {
 		return
 	}
 
-	// 获取客户端 IP
 	ip := c.ClientIP()
-
 	loginResp, isNewUser, err := service.AuthServiceApp.SmartLogin(&req, ip)
 	if err != nil {
 		response.FailWithMessage(err.Error(), c)
@@ -90,18 +67,10 @@ func (a *AuthApi) SmartLogin(c *gin.Context) {
 		UserInfo:  loginResp.UserInfo,
 		IsNewUser: isNewUser,
 	}
-
 	response.OkWithData(resp, c)
 }
 
 // GetUserInfo 获取当前用户信息
-// @Tags     Auth
-// @Summary  获取当前用户信息
-// @accept   application/json
-// @Produce  application/json
-// @Security ApiKeyAuth
-// @Success  200 {object} response.Response{data=response.UserInfo} "获取成功"
-// @Router   /auth/user-info [get]
 func (a *AuthApi) GetUserInfo(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -119,14 +88,6 @@ func (a *AuthApi) GetUserInfo(c *gin.Context) {
 }
 
 // ChangePassword 修改密码
-// @Tags     Auth
-// @Summary  修改密码
-// @accept   application/json
-// @Produce  application/json
-// @Security ApiKeyAuth
-// @Param    data body request.ChangePasswordReq true "修改密码参数"
-// @Success  200 {object} response.Response "修改成功"
-// @Router   /auth/change-password [post]
 func (a *AuthApi) ChangePassword(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -148,52 +109,98 @@ func (a *AuthApi) ChangePassword(c *gin.Context) {
 	response.OkWithMessage("密码修改成功", c)
 }
 
-// WechatLogin 微信登录
-// @Tags     Auth
-// @Summary  微信登录
-// @accept   application/json
-// @Produce  application/json
-// @Param    data body object true "微信登录参数"
-// @Success  200 {object} response.Response{data=object} "登录成功"
-// @Router   /auth/wechat-login [post]
+// WechatLogin 微信登录（MVP：按 openid 映射为系统账号）
 func (a *AuthApi) WechatLogin(c *gin.Context) {
-	// TODO: 实现微信登录逻辑
-	response.OkWithMessage("微信登录接口待实现", c)
+	type wechatLoginReq struct {
+		OpenID   string `json:"openid" binding:"required"`
+		Code     string `json:"code"`
+		Nickname string `json:"nickname"`
+		Avatar   string `json:"avatar"`
+	}
+	var req wechatLoginReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMessage("参数错误: "+err.Error(), c)
+		return
+	}
+
+	password := req.Code
+	if len(password) < 6 {
+		password = "wx_" + req.OpenID
+	}
+	if len(password) < 6 {
+		password = password + "123456"
+	}
+
+	email := "wx_" + sanitizeAccountID(req.OpenID) + "@wechat.local"
+	ip := c.ClientIP()
+	loginResp, _, err := service.AuthServiceApp.SmartLogin(&request.SmartLoginReq{Email: email, Password: password}, ip)
+	if err != nil {
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+
+	_ = service.AuthServiceApp.UpdateUserInfo(loginResp.UserInfo.ID, req.Nickname, req.Avatar)
+	response.OkWithData(loginResp, c)
 }
 
-// PhoneLogin 手机号登录
-// @Tags     Auth
-// @Summary  手机号登录
-// @accept   application/json
-// @Produce  application/json
-// @Param    data body object true "手机号登录参数"
-// @Success  200 {object} response.Response{data=object} "登录成功"
-// @Router   /auth/phone-login [post]
+// PhoneLogin 手机号登录（MVP：按 phone 映射为系统账号）
 func (a *AuthApi) PhoneLogin(c *gin.Context) {
-	// TODO: 实现手机号登录逻辑
-	response.OkWithMessage("手机号登录接口待实现", c)
+	type phoneLoginReq struct {
+		Phone string `json:"phone" binding:"required"`
+		Code  string `json:"code" binding:"required"`
+	}
+	var req phoneLoginReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMessage("参数错误: "+err.Error(), c)
+		return
+	}
+
+	phone := sanitizeAccountID(req.Phone)
+	password := req.Code
+	if len(password) < 6 {
+		password = "ph_" + phone
+	}
+	if len(password) < 6 {
+		password = password + "123456"
+	}
+
+	email := "ph_" + phone + "@phone.local"
+	ip := c.ClientIP()
+	loginResp, _, err := service.AuthServiceApp.SmartLogin(&request.SmartLoginReq{Email: email, Password: password}, ip)
+	if err != nil {
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+
+	response.OkWithData(loginResp, c)
 }
 
 // RefreshToken 刷新 Token
-// @Tags     Auth
-// @Summary  刷新 Token
-// @accept   application/json
-// @Produce  application/json
-// @Success  200 {object} response.Response{data=object} "刷新成功"
-// @Router   /auth/refresh-token [post]
 func (a *AuthApi) RefreshToken(c *gin.Context) {
-	// TODO: 实现刷新 Token 逻辑
-	response.OkWithMessage("刷新 Token 接口待实现", c)
+	var req request.RefreshTokenReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailWithMessage("参数错误: "+err.Error(), c)
+		return
+	}
+
+	j := utils.NewJWT()
+	claims, err := j.ParseToken(req.RefreshToken)
+	if err != nil {
+		response.FailWithMessage("refresh_token 无效或已过期", c)
+		return
+	}
+
+	newClaims := j.CreateClaims(claims.UserID, claims.Username)
+	token, err := j.CreateToken(newClaims)
+	if err != nil {
+		response.FailWithMessage("刷新 token 失败", c)
+		return
+	}
+
+	response.OkWithData(gin.H{"token": token}, c)
 }
 
 // DeleteAccount 注销账号
-// @Tags     Auth
-// @Summary  注销账号（永久删除用户所有数据）
-// @accept   application/json
-// @Produce  application/json
-// @Security ApiKeyAuth
-// @Success  200 {object} response.Response "注销成功"
-// @Router   /auth/delete-account [delete]
 func (a *AuthApi) DeleteAccount(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -206,5 +213,23 @@ func (a *AuthApi) DeleteAccount(c *gin.Context) {
 		return
 	}
 
-	response.OkWithMessage("账号已注销，感谢您的使用", c)
+	response.OkWithMessage("账号已注销，感谢使用", c)
+}
+
+func sanitizeAccountID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "anonymous"
+	}
+	builder := strings.Builder{}
+	for _, r := range raw {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			builder.WriteRune(r)
+		}
+	}
+	s := strings.ToLower(builder.String())
+	if s == "" {
+		return "anonymous"
+	}
+	return s
 }

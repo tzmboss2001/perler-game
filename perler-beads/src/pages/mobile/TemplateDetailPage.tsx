@@ -1,11 +1,31 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Play, GridFour, Palette, Star, SpinnerGap, MagnifyingGlassPlus, MagnifyingGlassMinus, ArrowCounterClockwise } from '@phosphor-icons/react';
-import { colors, radius, typography, shadows, animation, mixins } from '../../styles/designSystem';
-import { templateApi, TemplateResponse } from '../../services/api/templateApi';
-import { BeadPixelData, renderBeadsToCanvas } from '../../services/colorMatchService';
-import { BeadColor } from '../../data/beadColors';
-import { useToast } from '../../components/Toast';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  Play,
+  GridFour,
+  Palette,
+  Star,
+  SpinnerGap,
+  MagnifyingGlassPlus,
+  MagnifyingGlassMinus,
+  ArrowCounterClockwise,
+} from "@phosphor-icons/react";
+import {
+  colors,
+  radius,
+  typography,
+  shadows,
+  animation,
+  mixins,
+} from "../../styles/designSystem";
+import { templateApi, TemplateResponse } from "../../services/api/templateApi";
+import {
+  BeadPixelData,
+  renderBeadsToCanvas,
+} from "../../services/colorMatchService";
+import { BeadColor } from "../../data/beadColors";
+import { useToast } from "../../components/Toast";
 
 /**
  * 模板详情页
@@ -39,16 +59,16 @@ const TemplateDetailPage: React.FC = () => {
 
   // 难度配置
   const difficultyConfig: Record<string, { label: string; color: string }> = {
-    easy: { label: '简单', color: colors.bead.green },
-    medium: { label: '中等', color: colors.bead.yellow },
-    hard: { label: '困难', color: colors.bead.red },
+    easy: { label: "简单", color: colors.bead.green },
+    medium: { label: "中等", color: colors.bead.yellow },
+    hard: { label: "困难", color: colors.bead.red },
   };
 
   // 加载模板详情
   useEffect(() => {
     const loadTemplate = async () => {
       if (!id) {
-        setError('无效的模板ID');
+        setError("无效的模板ID");
         setLoading(false);
         return;
       }
@@ -64,21 +84,28 @@ const TemplateDetailPage: React.FC = () => {
             setBeadData(parsed);
           }
         } else {
-          setError(response.msg || '加载失败');
+          setError(response.msg || "加载失败");
         }
       } catch (err) {
-        console.error('加载模板详情失败:', err);
-        setError('网络错误，请稍后重试');
+        console.error("加载模板详情失败:", err);
+        setError("网络错误，请稍后重试");
       } finally {
         setLoading(false);
       }
     };
 
     // 解析函数
-    const parseBeadDataFn = (data: Record<string, unknown>): BeadPixelData | null => {
+    const parseBeadDataFn = (
+      data: Record<string, unknown>,
+    ): BeadPixelData | null => {
       try {
         const d = data as {
-          beads?: Array<{ brand: string; hex: string; id: string; name: string }>;
+          beads?: Array<{
+            brand: string;
+            hex: string;
+            id: string;
+            name: string;
+          }>;
           width?: number;
           height?: number;
         };
@@ -89,7 +116,7 @@ const TemplateDetailPage: React.FC = () => {
           id: bead.id,
           name: bead.name,
           hex: bead.hex,
-          brand: bead.brand as 'perler' | 'artkal' | 'hama' | 'other',
+          brand: bead.brand as "perler" | "artkal" | "hama" | "other",
         }));
         return { width: Math.floor(width), height: Math.floor(height), beads };
       } catch {
@@ -129,43 +156,56 @@ const TemplateDetailPage: React.FC = () => {
   }, [beadData]);
 
   // 解析 bead_data 转换为 BeadPixelData 格式
-  const parseBeadData = useCallback((beadData: Record<string, unknown>): BeadPixelData | null => {
-    try {
-      // bead_data 格式: { beads: [{brand, hex, id, name}, ...], width, height }
-      const data = beadData as {
-        beads?: Array<{ brand: string; hex: string; id: string; name: string }>;
-        width?: number;
-        height?: number;
-      };
+  const parseBeadData = useCallback(
+    (beadData: Record<string, unknown>): BeadPixelData | null => {
+      try {
+        // bead_data 格式: { beads: [{brand, hex, id, name}, ...], width, height }
+        const data = beadData as {
+          beads?: Array<{
+            brand: string;
+            hex: string;
+            id: string;
+            name: string;
+          }>;
+          width?: number;
+          height?: number;
+        };
 
-      if (!data.beads || !Array.isArray(data.beads)) {
-        console.error('bead_data 格式错误: 缺少 beads 数组');
+        if (!data.beads || !Array.isArray(data.beads)) {
+          console.error("bead_data 格式错误: 缺少 beads 数组");
+          return null;
+        }
+
+        const width = data.width || Math.sqrt(data.beads.length);
+        const height = data.height || Math.sqrt(data.beads.length);
+
+        const beads: BeadColor[] = data.beads.map((bead) => ({
+          id: bead.id,
+          name: bead.name,
+          hex: bead.hex,
+          brand: bead.brand as "perler" | "artkal" | "hama" | "other",
+        }));
+
+        return {
+          width: Math.floor(width),
+          height: Math.floor(height),
+          beads,
+        };
+      } catch (err) {
+        console.error("解析 bead_data 失败:", err);
         return null;
       }
-
-      const width = data.width || Math.sqrt(data.beads.length);
-      const height = data.height || Math.sqrt(data.beads.length);
-
-      const beads: BeadColor[] = data.beads.map((bead) => ({
-        id: bead.id,
-        name: bead.name,
-        hex: bead.hex,
-        brand: bead.brand as 'perler' | 'artkal' | 'hama' | 'other',
-      }));
-
-      return {
-        width: Math.floor(width),
-        height: Math.floor(height),
-        beads,
-      };
-    } catch (err) {
-      console.error('解析 bead_data 失败:', err);
-      return null;
-    }
-  }, []);
+    },
+    [],
+  );
 
   // 提取所有颜色（用于预览）
-  const getAllColors = useCallback((): { hex: string; count: number; name: string; id: string }[] => {
+  const getAllColors = useCallback((): {
+    hex: string;
+    count: number;
+    name: string;
+    id: string;
+  }[] => {
     if (!template?.bead_data) return [];
 
     try {
@@ -176,7 +216,10 @@ const TemplateDetailPage: React.FC = () => {
       if (!data.beads) return [];
 
       // 统计颜色
-      const colorMap = new Map<string, { count: number; name: string; id: string }>();
+      const colorMap = new Map<
+        string,
+        { count: number; name: string; id: string }
+      >();
       data.beads.forEach((bead) => {
         const existing = colorMap.get(bead.hex);
         if (existing) {
@@ -187,12 +230,14 @@ const TemplateDetailPage: React.FC = () => {
       });
 
       // 转换并排序
-      const colorList = Array.from(colorMap.entries()).map(([hex, { count, name, id }]) => ({
-        hex,
-        count,
-        name,
-        id,
-      }));
+      const colorList = Array.from(colorMap.entries()).map(
+        ([hex, { count, name, id }]) => ({
+          hex,
+          count,
+          name,
+          id,
+        }),
+      );
       colorList.sort((a, b) => b.count - a.count);
 
       // 返回所有颜色
@@ -212,7 +257,7 @@ const TemplateDetailPage: React.FC = () => {
 
   const handleZoomOut = useCallback(() => {
     setScale((prev) => {
-      const newScale = Math.max(0.5, prev - 0.3);
+      const newScale = Math.max(0.2, prev - 0.3);
       return Math.round(newScale * 10) / 10;
     });
   }, []);
@@ -220,6 +265,10 @@ const TemplateDetailPage: React.FC = () => {
   const handleReset = useCallback(() => {
     setScale(1);
     setOffset({ x: 0, y: 0 });
+  }, []);
+
+  const handleScaleChange = useCallback((value: number) => {
+    setScale(Math.min(4, Math.max(0.2, value)));
   }, []);
 
   // 开始制作
@@ -231,7 +280,7 @@ const TemplateDetailPage: React.FC = () => {
       // 解析 bead_data
       const beadData = parseBeadData(template.bead_data);
       if (!beadData) {
-        toast.error('模板数据解析失败');
+        toast.error("模板数据解析失败");
         setStarting(false);
         return;
       }
@@ -242,57 +291,66 @@ const TemplateDetailPage: React.FC = () => {
       });
 
       // 跳转到制作页面
-      navigate('/mobile/making', {
+      navigate("/mobile/making", {
         state: {
           beadData,
           colorCount: template.color_count,
         },
       });
     } catch (err) {
-      console.error('开始制作失败:', err);
-      toast.error('开始制作失败，请稍后重试');
+      console.error("开始制作失败:", err);
+      toast.error("开始制作失败，请稍后重试");
       setStarting(false);
     }
   }, [template, parseBeadData, navigate, toast]);
 
   // 触摸拖动处理
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      setIsDragging(true);
-      const touch = e.touches[0];
-      lastTouchRef.current = { x: touch.clientX, y: touch.clientY };
-    } else if (e.touches.length === 2) {
-      // 双指缩放
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastPinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
-      pinchStartScale.current = scale;
-    }
-  }, [scale]);
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 1) {
+        setIsDragging(true);
+        const touch = e.touches[0];
+        lastTouchRef.current = { x: touch.clientX, y: touch.clientY };
+      } else if (e.touches.length === 2) {
+        // 双指缩放
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastPinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+        pinchStartScale.current = scale;
+      }
+    },
+    [scale],
+  );
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 1 && isDragging && lastTouchRef.current) {
-      const deltaX = e.touches[0].clientX - lastTouchRef.current.x;
-      const deltaY = e.touches[0].clientY - lastTouchRef.current.y;
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 1 && isDragging && lastTouchRef.current) {
+        const deltaX = e.touches[0].clientX - lastTouchRef.current.x;
+        const deltaY = e.touches[0].clientY - lastTouchRef.current.y;
 
-      setOffset((prev) => ({ x: prev.x + deltaX, y: prev.y + deltaY }));
+        setOffset((prev) => ({ x: prev.x + deltaX, y: prev.y + deltaY }));
 
-      lastTouchRef.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
-      };
-    } else if (e.touches.length === 2 && lastPinchDistRef.current) {
-      e.preventDefault();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+        lastTouchRef.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+        };
+      } else if (e.touches.length === 2 && lastPinchDistRef.current) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
 
-      const scaleDelta = dist / lastPinchDistRef.current;
-      const newScale = Math.min(4, Math.max(0.5, pinchStartScale.current * scaleDelta));
+        const scaleDelta = dist / lastPinchDistRef.current;
+        const newScale = Math.min(
+          4,
+          Math.max(0.2, pinchStartScale.current * scaleDelta),
+        );
 
-      setScale(newScale);
-    }
-  }, [isDragging]);
+        setScale(newScale);
+      }
+    },
+    [isDragging],
+  );
 
   const handleTouchEnd = useCallback(() => {
     setIsDragging(false);
@@ -308,11 +366,11 @@ const TemplateDetailPage: React.FC = () => {
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.2 : 0.2;
-      setScale((prev) => Math.min(4, Math.max(0.5, prev + delta)));
+      setScale((prev) => Math.min(4, Math.max(0.2, prev + delta)));
     };
 
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheel);
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
   }, []);
 
   // 双击重置缩放
@@ -352,7 +410,7 @@ const TemplateDetailPage: React.FC = () => {
           <div style={{ width: 40 }} />
         </div>
         <div style={styles.errorContainer}>
-          <p style={styles.errorText}>{error || '模板不存在'}</p>
+          <p style={styles.errorText}>{error || "模板不存在"}</p>
           <button style={styles.retryBtn} onClick={() => navigate(-1)}>
             返回
           </button>
@@ -362,7 +420,8 @@ const TemplateDetailPage: React.FC = () => {
   }
 
   const allColors = getAllColors();
-  const difficulty = difficultyConfig[template.difficulty] || difficultyConfig.medium;
+  const difficulty =
+    difficultyConfig[template.difficulty] || difficultyConfig.medium;
 
   return (
     <div style={styles.container}>
@@ -392,10 +451,7 @@ const TemplateDetailPage: React.FC = () => {
               transform: `translate(${offset.x}px, ${offset.y}px) scale(${baseScale * scale})`,
             }}
           >
-            <canvas
-              ref={canvasRef}
-              style={styles.canvas}
-            />
+            <canvas ref={canvasRef} style={styles.canvas} />
           </div>
           {/* 缩放提示 */}
           <div style={styles.zoomHint}>
@@ -405,31 +461,24 @@ const TemplateDetailPage: React.FC = () => {
 
         {/* 缩放控制条 - 移到画面外部 */}
         <div style={styles.zoomBar}>
-          <button
-            style={styles.zoomBtn}
-            onClick={handleZoomOut}
-          >
+          <button style={styles.zoomBtn} onClick={handleZoomOut}>
             <MagnifyingGlassMinus size={18} />
           </button>
-          <div style={styles.zoomProgress}>
-            <div
-              style={{
-                ...styles.zoomProgressFill,
-                width: `${((scale - 0.5) / 3.5) * 100}%`,
-              }}
-            />
-          </div>
+          <input
+            type="range"
+            min={0.2}
+            max={4}
+            step={0.05}
+            value={scale}
+            style={styles.zoomRange}
+            onChange={(e) => handleScaleChange(Number(e.target.value))}
+            aria-label="模板缩放"
+          />
           <span style={styles.zoomLabel}>{Math.round(scale * 100)}%</span>
-          <button
-            style={styles.zoomBtn}
-            onClick={handleZoomIn}
-          >
+          <button style={styles.zoomBtn} onClick={handleZoomIn}>
             <MagnifyingGlassPlus size={18} />
           </button>
-          <button
-            style={styles.resetBtn}
-            onClick={handleReset}
-          >
+          <button style={styles.resetBtn} onClick={handleReset}>
             <ArrowCounterClockwise size={16} />
             重置
           </button>
@@ -467,11 +516,16 @@ const TemplateDetailPage: React.FC = () => {
             <div style={styles.infoGrid}>
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>网格尺寸</span>
-                <span style={styles.infoValue}>{beadData?.width || template.grid_width} × {beadData?.height || template.grid_height}</span>
+                <span style={styles.infoValue}>
+                  {beadData?.width || template.grid_width} ×{" "}
+                  {beadData?.height || template.grid_height}
+                </span>
               </div>
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>珠子数量</span>
-                <span style={styles.infoValue}>{template.bead_count.toLocaleString()} 颗</span>
+                <span style={styles.infoValue}>
+                  {template.bead_count.toLocaleString()} 颗
+                </span>
               </div>
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>颜色种类</span>
@@ -479,7 +533,9 @@ const TemplateDetailPage: React.FC = () => {
               </div>
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>分类</span>
-                <span style={styles.infoValue}>{template.category_name || '其他'}</span>
+                <span style={styles.infoValue}>
+                  {template.category_name || "其他"}
+                </span>
               </div>
             </div>
           </div>
@@ -543,17 +599,17 @@ const TemplateDetailPage: React.FC = () => {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    minHeight: '100dvh',
-    display: 'flex',
-    flexDirection: 'column',
+    minHeight: "100dvh",
+    display: "flex",
+    flexDirection: "column",
     background: colors.bg.primary,
   },
 
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '10px 16px',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "10px 16px",
     background: colors.bg.secondary,
     borderBottom: `1px solid ${colors.border.soft}`,
     flexShrink: 0,
@@ -568,132 +624,122 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
     background: colors.gradients.primary,
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundClip: "text",
     margin: 0,
   },
 
   content: {
     flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'auto',
+    display: "flex",
+    flexDirection: "column",
+    overflow: "auto",
   },
 
   imageSection: {
-    position: 'relative',
-    width: '100%',
-    height: '38vh',
-    minHeight: '240px',
-    maxHeight: '340px',
-    background: '#1a1b2e',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    touchAction: 'none',
-    cursor: 'grab',
+    position: "relative",
+    width: "100%",
+    height: "38vh",
+    minHeight: "240px",
+    maxHeight: "340px",
+    background: "#1a1b2e",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    touchAction: "none",
+    cursor: "grab",
   },
 
   canvasWrapper: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   canvas: {
-    imageRendering: 'pixelated',
+    imageRendering: "pixelated",
     borderRadius: radius.bead,
   },
 
   zoomHint: {
-    position: 'absolute',
-    bottom: '8px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    display: 'flex',
-    alignItems: 'center',
-    padding: '4px 10px',
-    background: 'rgba(0, 0, 0, 0.5)',
-    backdropFilter: 'blur(8px)',
+    position: "absolute",
+    bottom: "8px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    display: "flex",
+    alignItems: "center",
+    padding: "4px 10px",
+    background: "rgba(0, 0, 0, 0.5)",
+    backdropFilter: "blur(8px)",
     borderRadius: radius.full,
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: '10px',
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: "10px",
   },
 
   zoomBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 16px',
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "10px 16px",
     background: colors.bg.secondary,
     borderBottom: `1px solid ${colors.border.soft}`,
   },
 
   zoomBtn: {
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "32px",
+    height: "32px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     background: colors.bg.tertiary,
     border: `1px solid ${colors.border.soft}`,
     borderRadius: radius.bead,
     color: colors.text.secondary,
-    cursor: 'pointer',
+    cursor: "pointer",
     transition: animation.transition.fast,
   },
 
-  zoomProgress: {
+  zoomRange: {
     flex: 1,
-    height: '4px',
-    background: colors.bg.tertiary,
-    borderRadius: radius.full,
-    overflow: 'hidden',
-  },
-
-  zoomProgressFill: {
-    height: '100%',
-    background: `linear-gradient(90deg, ${colors.bead.cyan}, ${colors.bead.blue})`,
-    borderRadius: radius.full,
-    transition: 'width 0.2s ease',
+    minWidth: 90,
   },
 
   zoomLabel: {
-    minWidth: '40px',
-    textAlign: 'center' as const,
-    fontSize: '12px',
-    fontWeight: 'bold',
+    minWidth: "40px",
+    textAlign: "center" as const,
+    fontSize: "12px",
+    fontWeight: "bold",
     color: colors.text.primary,
   },
 
   resetBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    padding: '6px 10px',
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "6px 10px",
     background: colors.bg.tertiary,
     border: `1px solid ${colors.border.soft}`,
     borderRadius: radius.bead,
     color: colors.text.secondary,
-    fontSize: '12px',
-    cursor: 'pointer',
+    fontSize: "12px",
+    cursor: "pointer",
     transition: animation.transition.fast,
   },
 
   infoSection: {
-    padding: '16px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
+    padding: "16px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
   },
 
   titleRow: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: '12px',
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "12px",
   },
 
   templateName: {
@@ -707,29 +753,29 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   badges: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
     flexShrink: 0,
   },
 
   badge: {
-    padding: '4px 10px',
+    padding: "4px 10px",
     borderRadius: radius.full,
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold,
-    color: '#ffffff',
+    color: "#ffffff",
   },
 
   officialBadge: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    padding: '4px 10px',
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "4px 10px",
     borderRadius: radius.full,
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold,
-    color: '#ffffff',
+    color: "#ffffff",
     background: `linear-gradient(145deg, ${colors.bead.purple}, ${colors.bead.blue})`,
   },
 
@@ -737,30 +783,30 @@ const styles: Record<string, React.CSSProperties> = {
     background: colors.bg.card,
     borderRadius: radius.card,
     border: `1px solid ${colors.border.soft}`,
-    padding: '14px',
+    padding: "14px",
   },
 
   infoTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
     color: colors.text.primary,
-    margin: '0 0 12px',
+    margin: "0 0 12px",
   },
 
   infoGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '10px',
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap: "10px",
   },
 
   infoItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
   },
 
   infoLabel: {
@@ -778,110 +824,110 @@ const styles: Record<string, React.CSSProperties> = {
     background: colors.bg.card,
     borderRadius: radius.card,
     border: `1px solid ${colors.border.soft}`,
-    padding: '14px',
+    padding: "14px",
   },
 
   colorTotal: {
-    marginLeft: 'auto',
+    marginLeft: "auto",
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.normal,
     color: colors.text.muted,
   },
 
   colorScrollArea: {
-    height: '120px',
-    overflowY: 'auto',
-    marginRight: '-8px',
-    paddingRight: '8px',
+    height: "120px",
+    overflowY: "auto",
+    marginRight: "-8px",
+    paddingRight: "8px",
   },
 
   colorGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '6px',
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    gap: "6px",
   },
 
   colorItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    padding: '4px 6px',
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "4px 6px",
     background: colors.bg.tertiary,
     borderRadius: radius.bead,
   },
 
   colorBlock: {
-    width: '24px',
-    height: '24px',
-    borderRadius: '4px',
-    border: '1px solid rgba(255, 255, 255, 0.15)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "24px",
+    height: "24px",
+    borderRadius: "4px",
+    border: "1px solid rgba(255, 255, 255, 0.15)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     flexShrink: 0,
   },
 
   colorId: {
-    fontSize: '8px',
-    fontWeight: 'bold',
-    color: 'rgba(255, 255, 255, 0.95)',
-    textShadow: '0 1px 2px rgba(0, 0, 0, 0.6)',
+    fontSize: "8px",
+    fontWeight: "bold",
+    color: "rgba(255, 255, 255, 0.95)",
+    textShadow: "0 1px 2px rgba(0, 0, 0, 0.6)",
   },
 
   colorCount: {
-    fontSize: '10px',
+    fontSize: "10px",
     color: colors.text.muted,
     flex: 1,
-    textAlign: 'right' as const,
+    textAlign: "right" as const,
   },
 
   bottomBar: {
-    padding: '12px 16px 24px',
+    padding: "12px 16px 24px",
     background: colors.bg.secondary,
     borderTop: `1px solid ${colors.border.soft}`,
     flexShrink: 0,
   },
 
   startBtn: {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    padding: '14px 24px',
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "14px 24px",
     background: `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.bead.blue})`,
-    border: 'none',
+    border: "none",
     borderRadius: radius.button,
-    color: '#ffffff',
+    color: "#ffffff",
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
-    cursor: 'pointer',
+    cursor: "pointer",
     boxShadow: shadows.button,
     transition: animation.transition.fast,
   },
 
   startBtnDisabled: {
     opacity: 0.6,
-    cursor: 'not-allowed',
+    cursor: "not-allowed",
   },
 
   btnSpinner: {
-    animation: 'spin 1s linear infinite',
+    animation: "spin 1s linear infinite",
   },
 
   loadingContainer: {
     flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "12px",
   },
 
   spinner: {
     color: colors.bead.cyan,
-    animation: 'spin 1s linear infinite',
+    animation: "spin 1s linear infinite",
   },
 
   loadingText: {
@@ -891,29 +937,29 @@ const styles: Record<string, React.CSSProperties> = {
 
   errorContainer: {
     flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '16px',
-    padding: '40px',
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "16px",
+    padding: "40px",
   },
 
   errorText: {
     fontSize: typography.fontSize.md,
     color: colors.text.muted,
-    textAlign: 'center',
+    textAlign: "center",
   },
 
   retryBtn: {
-    padding: '10px 24px',
+    padding: "10px 24px",
     background: colors.bg.tertiary,
     border: `1px solid ${colors.border.soft}`,
     borderRadius: radius.button,
     color: colors.text.secondary,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
 };
 

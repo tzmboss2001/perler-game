@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, CircleNotch } from '@phosphor-icons/react';
 import { colors, spacing, radius, typography, shadows, animation, mixins } from '../styles/designSystem';
 
-// 预设标签（与 CommunityPage 一致，去掉"全部"）
 const TAG_PRESETS = ['动漫', '游戏', '动物', '风景', '节日', '人物', '食物', '其他'];
 
 interface PublishModalProps {
@@ -12,7 +11,14 @@ interface PublishModalProps {
   loading?: boolean;
   defaultTitle?: string;
   gridSize?: string;
+  autoDifficulty?: 'easy' | 'medium' | 'hard';
 }
+
+const difficultyLabelMap: Record<'easy' | 'medium' | 'hard', string> = {
+  easy: '简单',
+  medium: '中等',
+  hard: '困难',
+};
 
 const PublishModal: React.FC<PublishModalProps> = ({
   visible,
@@ -21,73 +27,54 @@ const PublishModal: React.FC<PublishModalProps> = ({
   loading = false,
   defaultTitle = '',
   gridSize = '',
+  autoDifficulty = 'medium',
 }) => {
   const [title, setTitle] = useState(defaultTitle);
   const [description, setDescription] = useState('');
-  const [difficulty, setDifficulty] = useState('medium');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   useEffect(() => {
-    if (visible) {
-      setTitle(defaultTitle || '');
-      setDescription('');
-      setDifficulty('medium');
-      setSelectedTags([]);
-    }
+    if (!visible) return;
+    setTitle(defaultTitle || '');
+    setDescription('');
+    setSelectedTags([]);
   }, [visible, defaultTitle]);
 
+  if (!visible) return null;
+
   const toggleTag = (tag: string) => {
-    setSelectedTags(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
-    );
+    setSelectedTags(prev => (prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]));
   };
 
   const handlePublish = () => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return;
-    onPublish({ title: trimmedTitle, description: description.trim(), difficulty, tags: selectedTags.join(',') });
+    onPublish({
+      title: trimmedTitle,
+      description: description.trim(),
+      difficulty: autoDifficulty,
+      tags: selectedTags.join(','),
+    });
   };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey && !loading) {
-      handlePublish();
-    }
-    if (e.key === 'Escape') {
-      onCancel();
-    }
-  };
-
-  if (!visible) return null;
-
-  const difficultyOptions = [
-    { value: 'easy', label: '简单', color: colors.bead.green },
-    { value: 'medium', label: '中等', color: colors.bead.orange },
-    { value: 'hard', label: '困难', color: colors.bead.red },
-  ];
 
   return (
     <div style={styles.overlay} onClick={onCancel}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        {/* 头部 */}
         <div style={styles.header}>
-          <h3 style={styles.headerTitle}>分享到社区</h3>
+          <h3 style={styles.headerTitle}>发布到社区</h3>
           <button style={styles.closeButton} onClick={onCancel}>
             <X size={20} weight="bold" />
           </button>
         </div>
 
-        {/* 内容 */}
         <div style={styles.content}>
-          <p style={styles.desc}>
-            分享你的拼豆作品，让更多人看到你的创意
-          </p>
-          {gridSize && (
-            <p style={{ ...styles.desc, fontSize: '12px', color: colors.bead.cyan, margin: '0 0 12px' }}>
+          <p style={styles.desc}>分享你的拼豆作品，让更多人看到你的创意</p>
+          {gridSize ? (
+            <p style={{ ...styles.desc, fontSize: 12, color: colors.bead.cyan, margin: '0 0 12px' }}>
               网格尺寸: {gridSize}
             </p>
-          )}
+          ) : null}
 
-          {/* 标题 */}
           <div style={styles.inputGroup}>
             <label style={styles.label}>作品标题 *</label>
             <input
@@ -95,18 +82,16 @@ const PublishModal: React.FC<PublishModalProps> = ({
               style={styles.input}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={handleKeyDown}
               placeholder="给你的作品起个名字"
               maxLength={50}
               autoFocus
             />
           </div>
 
-          {/* 描述 */}
-          <div style={{ ...styles.inputGroup, marginTop: '12px' }}>
+          <div style={{ ...styles.inputGroup, marginTop: 12 }}>
             <label style={styles.label}>作品描述（选填）</label>
             <textarea
-              style={{ ...styles.input, minHeight: '72px', resize: 'vertical' } as React.CSSProperties}
+              style={{ ...styles.input, minHeight: 72, resize: 'vertical' }}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="介绍一下这个作品的灵感或特点"
@@ -114,40 +99,20 @@ const PublishModal: React.FC<PublishModalProps> = ({
             />
           </div>
 
-          {/* 难度选择 */}
-          <div style={{ ...styles.inputGroup, marginTop: '12px' }}>
-            <label style={styles.label}>难度</label>
+          <div style={{ ...styles.inputGroup, marginTop: 12 }}>
+            <label style={styles.label}>系统判定难度</label>
             <div style={styles.difficultyRow}>
-              {difficultyOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  style={{
-                    ...styles.difficultyBtn,
-                    ...(difficulty === opt.value ? {
-                      background: `${opt.color}25`,
-                      borderColor: opt.color,
-                      color: opt.color,
-                    } : {}),
-                  }}
-                  onClick={() => setDifficulty(opt.value)}
-                >
-                  {opt.label}
-                </button>
-              ))}
+              <div style={styles.difficultyTag}>{difficultyLabelMap[autoDifficulty]}</div>
             </div>
           </div>
 
-          {/* 标签选择 */}
-          <div style={{ ...styles.inputGroup, marginTop: '12px' }}>
+          <div style={{ ...styles.inputGroup, marginTop: 12 }}>
             <label style={styles.label}>标签（可多选）</label>
             <div style={styles.tagRow}>
               {TAG_PRESETS.map((tag) => (
                 <button
                   key={tag}
-                  style={{
-                    ...styles.tagBtn,
-                    ...(selectedTags.includes(tag) ? styles.tagBtnActive : {}),
-                  }}
+                  style={{ ...styles.tagBtn, ...(selectedTags.includes(tag) ? styles.tagBtnActive : {}) }}
                   onClick={() => toggleTag(tag)}
                 >
                   {tag}
@@ -157,16 +122,12 @@ const PublishModal: React.FC<PublishModalProps> = ({
           </div>
         </div>
 
-        {/* 底部按钮 */}
         <div style={styles.footer}>
           <button style={styles.cancelButton} onClick={onCancel} disabled={loading}>
             取消
           </button>
           <button
-            style={{
-              ...styles.publishButton,
-              opacity: loading || !title.trim() ? 0.6 : 1,
-            }}
+            style={{ ...styles.publishButton, opacity: loading || !title.trim() ? 0.6 : 1 }}
             onClick={handlePublish}
             disabled={loading || !title.trim()}
           >
@@ -175,7 +136,9 @@ const PublishModal: React.FC<PublishModalProps> = ({
                 <CircleNotch size={18} style={{ animation: 'spin 1s linear infinite' }} />
                 发布中...
               </>
-            ) : '发布到社区'}
+            ) : (
+              '发布到社区'
+            )}
           </button>
         </div>
       </div>
@@ -257,29 +220,27 @@ const styles: Record<string, React.CSSProperties> = {
     ...mixins.input,
     width: '100%',
     boxSizing: 'border-box',
-  } as React.CSSProperties,
+  },
   difficultyRow: {
     display: 'flex',
-    gap: '8px',
+    gap: 8,
   },
-  difficultyBtn: {
-    flex: 1,
+  difficultyTag: {
+    width: '100%',
     padding: '8px 12px',
-    background: colors.bg.tertiary,
-    border: `1px solid ${colors.border.soft}`,
+    background: `${colors.bead.cyan}18`,
+    border: `1px solid ${colors.bead.cyan}`,
     borderRadius: radius.md,
-    color: colors.text.secondary,
+    color: colors.bead.cyan,
     fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
-    fontFamily: typography.fontFamilyAlt,
-    cursor: 'pointer',
-    transition: animation.transition.fast,
+    fontWeight: typography.fontWeight.bold,
+    textAlign: 'center',
   },
   tagRow: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: '8px',
-  } as React.CSSProperties,
+    gap: 8,
+  },
   tagBtn: {
     padding: '5px 12px',
     background: colors.bg.tertiary,
@@ -309,7 +270,7 @@ const styles: Record<string, React.CSSProperties> = {
     ...mixins.buttonSecondary,
     padding: `${spacing.md}px ${spacing.lg}px`,
     fontSize: typography.fontSize.md,
-  } as React.CSSProperties,
+  },
   publishButton: {
     flex: 2,
     ...mixins.buttonPrimary,
@@ -319,7 +280,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-  } as React.CSSProperties,
+  },
 };
 
 export default PublishModal;
+

@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Gorm 初始化数据库
+// Gorm 鍒濆鍖栨暟鎹簱
 func Gorm() *gorm.DB {
 	m := global.GVA_CONFIG.Mysql
 
@@ -23,7 +23,6 @@ func Gorm() *gorm.DB {
 		m.Config,
 	)
 
-	// 设置日志级别
 	var logLevel logger.LogLevel
 	switch m.LogMode {
 	case "silent":
@@ -52,16 +51,23 @@ func Gorm() *gorm.DB {
 
 	global.GVA_LOG.Info("MySQL connected successfully")
 
-	// 自动迁移数据库表
 	if err := db.AutoMigrate(
 		&entity.User{},
 		&entity.UserMember{},
+		&entity.UserPreference{},
 		&entity.Project{},
 		&entity.Template{},
 		&entity.TemplateCategory{},
 		&entity.Feedback{},
 		&entity.CommunityPost{},
 		&entity.CommunityLike{},
+		&entity.FinishedWork{},
+		&entity.FinishedWorkLike{},
+		&entity.FinishedWorkComment{},
+		&entity.FinishedWorkReport{},
+		&entity.PaymentOrder{},
+		&entity.CommunityReviewLog{},
+		&entity.CommunityReport{},
 	); err != nil {
 		global.GVA_LOG.Error("AutoMigrate failed: " + err.Error())
 	} else {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { ArrowLeft, CaretDown, CaretUp, Camera, Palette, GridFour, Download, PencilSimple, ShoppingCart, Question } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, pixelIcons, mixins } from '../../styles/designSystem';
@@ -17,37 +17,37 @@ const HelpPage: React.FC = () => {
     {
       icon: Camera,
       title: '上传图片',
-      description: '点击首页的"开始创作"，选择一张照片或直接拍摄。支持 JPG、PNG 格式，建议使用清晰的图片。',
+      description: '点击首页的“开始创作”，选择照片或直接拍摄。支持 JPG、PNG 格式，建议使用清晰图片。',
       color: colors.bead.cyan,
     },
     {
       icon: Palette,
       title: '选择配色',
-      description: '选择拼豆品牌（如 Artkal、Perler）和颜色数量。颜色数量越少，图案越简洁易做。',
+      description: '当前使用 MARD 色系，可调整颜色数量。颜色越少，图案越简洁、越容易制作。',
       color: colors.bead.pink,
     },
     {
       icon: GridFour,
       title: '生成图案',
-      description: '系统自动将图片转换为拼豆图案。可以调整网格大小（如 32×32）来控制图案复杂度。',
+      description: '系统会自动把图片转成拼豆图案。可调整网格大小（如 32x32）来控制复杂度。',
       color: colors.bead.green,
     },
     {
       icon: PencilSimple,
-      title: '编辑修改',
-      description: '在编辑器中可以手动修改珠子颜色，使用画笔、填充、吸色等工具进行微调。',
+      title: '编辑微调',
+      description: '可在编辑器中手动替换颜色，使用画笔、填充、吸色等工具做细节修正。',
       color: colors.bead.yellow,
     },
     {
       icon: ShoppingCart,
       title: '查看清单',
-      description: '点击"珠子统计"查看各颜色珠子数量，方便采购。可以禁用不需要的颜色。',
+      description: '点击“珠子统计”查看每种颜色所需数量，便于采购。也可禁用不需要的颜色。',
       color: colors.bead.orange,
     },
     {
       icon: Download,
       title: '导出图案',
-      description: '点击"导出图案"保存高清图片，可用于打印或分享给朋友。',
+      description: '点击“导出图案”保存高清图，可用于打印或分享。',
       color: colors.bead.purple,
     },
   ];
@@ -55,32 +55,32 @@ const HelpPage: React.FC = () => {
   // 常见问题
   const faqItems = [
     {
-      question: '支持哪些拼豆品牌？',
-      answer: '目前支持 Artkal（A-2.6mm、C-2.6mm、S-5mm 系列）和 Perler 两个主流品牌的色板。每个品牌有不同的颜色选择，可根据手边材料选择。',
+      question: '当前支持哪个拼豆色系？',
+      answer: '当前默认使用 MARD 色系（291色）进行自动配色。后续若扩展多品牌，会在这里同步说明。',
     },
     {
-      question: '网格大小怎么选择？',
-      answer: '网格大小决定了图案的精细程度。32×32 适合初学者，图案简单易做；48×48 或更大适合有经验的玩家，图案更精细但制作时间更长。建议根据拼豆板的大小选择。',
+      question: '网格大小怎么选？',
+      answer: '网格越小越容易做，网格越大细节越丰富。建议新手从 32x32 开始。',
     },
     {
-      question: '颜色数量对图案有什么影响？',
-      answer: '颜色数量越多，图案越接近原图，但需要购买更多颜色的珠子；颜色越少，图案越简洁，采购成本更低。建议初学者选择 8-16 色。',
+      question: '颜色数量会影响什么？',
+      answer: '颜色越多越接近原图，但制作和采购成本更高；颜色越少越简洁，制作更快。',
     },
     {
-      question: '如何处理透明背景的图片？',
-      answer: '应用支持 PNG 格式的透明背景图片。透明区域不会生成珠子，显示为棋盘格图案。如需抠除图片背景，可使用其他修图工具处理后再上传。',
+      question: '透明背景图片支持吗？',
+      answer: '支持 PNG 透明图。透明区域不会生成珠子。',
     },
     {
       question: '图案可以保存吗？',
-      answer: '是的！点击"开始制作"可以保存当前图案。登录后方案会同步到云端，换设备也能继续制作。未登录时保存在本地。',
+      answer: '可以。登录后可同步到云端；未登录则保存在本地。',
     },
     {
-      question: '如何购买拼豆材料？',
-      answer: '根据"珠子统计"中的颜色清单，在电商平台（如淘宝、京东）搜索对应品牌和颜色编号即可购买。建议多买一些常用颜色备用。',
+      question: '怎么购买材料？',
+      answer: '可按“珠子统计”里的色号和数量到电商平台采购，建议常用色多备一些。',
     },
     {
-      question: '制作辅助模式是什么？',
-      answer: '制作辅助模式可以按行或按区块高亮显示图案，帮助你一步步完成拼接，避免看错位置。特别适合制作大型图案时使用。',
+      question: '制作辅助模式有什么用？',
+      answer: '会按区块或步骤高亮，帮助你减少错放，尤其适合大图制作。',
     },
   ];
 
@@ -98,7 +98,7 @@ const HelpPage: React.FC = () => {
         <h1 style={styles.title}>帮助</h1>
         <div style={styles.placeholder} />
       </div>
-      {/* Header占位 */}
+      {/* Header 占位 */}
       <div style={styles.headerSpacer} />
 
       {/* 使用教程 */}
@@ -172,7 +172,7 @@ const HelpPage: React.FC = () => {
       {/* 联系我们 */}
       <div style={styles.contactSection}>
         <p style={styles.contactText}>
-          还有其他问题？请通过"关于"页面联系我们
+          还有其他问题？请通过“关于”页面联系我们
         </p>
         <button
           style={styles.contactBtn}
@@ -405,3 +405,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default HelpPage;
+

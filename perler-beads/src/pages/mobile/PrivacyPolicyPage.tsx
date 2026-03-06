@@ -1,27 +1,14 @@
 import React from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
-import { colors, radius, typography, shadows, mixins } from '../../styles/designSystem';
+import { colors, typography, mixins } from '../../styles/designSystem';
+import { LEGAL_INFO } from '../../config/legalInfo';
 
-/**
- * 隐私政策页面
- * 符合微信小程序和抖音小程序的隐私政策要求
- */
 const PrivacyPolicyPage: React.FC = () => {
   const navigate = useNavigate();
 
-  // 配置信息（可替换）
-  const config = {
-    appName: '拼豆工坊',
-    developer: '个人开发者',  // TODO: 替换为实际开发者名称
-    email: 'developer@example.com',  // TODO: 替换为实际邮箱
-    effectiveDate: '2025年1月25日',
-    updateDate: '2025年1月25日',
-  };
-
   return (
     <div style={styles.container}>
-      {/* 固定头部 */}
       <div style={styles.header}>
         <button style={styles.backBtn} onClick={() => navigate(-1)}>
           <ArrowLeft size={20} weight="bold" />
@@ -29,162 +16,71 @@ const PrivacyPolicyPage: React.FC = () => {
         <h1 style={styles.title}>隐私政策</h1>
         <div style={styles.placeholder} />
       </div>
-      {/* Header占位 */}
       <div style={styles.headerSpacer} />
 
-      {/* 内容 */}
       <div style={styles.content}>
-        <div style={styles.updateInfo}>
-          <p>生效日期：{config.effectiveDate}</p>
-          <p>更新日期：{config.updateDate}</p>
+        <div style={styles.meta}>
+          <p>生效日期：{LEGAL_INFO.effectiveDate}</p>
+          <p>更新日期：{LEGAL_INFO.updateDate}</p>
         </div>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>引言</h2>
+          <h2 style={styles.sectionTitle}>一、适用范围</h2>
           <p style={styles.paragraph}>
-            欢迎使用{config.appName}（以下简称"本应用"或"我们"）。我们非常重视用户的隐私保护，
-            本隐私政策将向您说明我们如何收集、使用、存储和保护您的个人信息。
-            请您在使用本应用前仔细阅读并理解本隐私政策。
+            本政策适用于 {LEGAL_INFO.appName}
+            在向您提供服务过程中，对您的个人信息收集、使用、存储、共享与保护行为。
           </p>
         </section>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>一、我们收集的信息</h2>
-
-          <h3 style={styles.subTitle}>1.1 您主动提供的信息</h3>
+          <h2 style={styles.sectionTitle}>二、我们收集的信息</h2>
           <ul style={styles.list}>
-            <li style={styles.listItem}>
-              <strong>账户信息</strong>：当您注册账户时，我们可能收集您的用户名、邮箱地址等信息。
-            </li>
-            <li style={styles.listItem}>
-              <strong>图片信息</strong>：您上传或拍摄的图片将用于生成拼豆图案。
-              这些图片仅在本地处理，不会上传到我们的服务器（除非您主动选择云端保存）。
-            </li>
-          </ul>
-
-          <h3 style={styles.subTitle}>1.2 自动收集的信息</h3>
-          <ul style={styles.list}>
-            <li style={styles.listItem}>
-              <strong>设备信息</strong>：设备型号、操作系统版本、浏览器类型等基本信息。
-            </li>
-            <li style={styles.listItem}>
-              <strong>使用数据</strong>：应用的使用频率、功能使用情况等匿名统计数据。
-            </li>
+            <li style={styles.listItem}>账号信息：邮箱、昵称等用于登录与身份识别的信息。</li>
+            <li style={styles.listItem}>作品数据：您上传的图片、生成的图案、制作进度与发布内容。</li>
+            <li style={styles.listItem}>设备信息：设备型号、系统版本、日志信息，用于故障排查与体验优化。</li>
           </ul>
         </section>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>二、信息的使用</h2>
-          <p style={styles.paragraph}>我们收集的信息将用于以下目的：</p>
+          <h2 style={styles.sectionTitle}>三、信息使用目的</h2>
           <ul style={styles.list}>
-            <li style={styles.listItem}>提供、维护和改进本应用的功能和服务</li>
-            <li style={styles.listItem}>处理您的图片并生成拼豆图案</li>
-            <li style={styles.listItem}>保存您的创作方案（如您选择保存）</li>
-            <li style={styles.listItem}>提供客户支持和响应您的咨询</li>
-            <li style={styles.listItem}>发送服务相关的通知和更新</li>
-            <li style={styles.listItem}>分析和改进用户体验</li>
+            <li style={styles.listItem}>提供核心功能：图案生成、编辑、制作辅助、社区发布。</li>
+            <li style={styles.listItem}>保障服务安全：风控、防刷、防滥用与故障诊断。</li>
+            <li style={styles.listItem}>改善产品体验：性能分析、崩溃修复、交互优化。</li>
           </ul>
         </section>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>三、信息的存储</h2>
-          <ul style={styles.list}>
-            <li style={styles.listItem}>
-              <strong>本地存储</strong>：您的设置偏好和未登录时的方案数据存储在您的设备本地。
-            </li>
-            <li style={styles.listItem}>
-              <strong>云端存储</strong>：登录账户后，您的方案可同步到云端服务器，便于跨设备访问。
-            </li>
-            <li style={styles.listItem}>
-              <strong>图片处理</strong>：您上传的图片在本地完成处理后即被释放，不会持久存储。
-            </li>
-          </ul>
-        </section>
-
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>四、信息的共享</h2>
+          <h2 style={styles.sectionTitle}>四、信息存储与保护</h2>
           <p style={styles.paragraph}>
-            我们不会将您的个人信息出售、出租或以其他方式提供给第三方，但以下情况除外：
+            我们采取合理的技术与管理措施保护您的数据安全，包括访问控制、传输加密、最小权限与日志审计。
           </p>
-          <ul style={styles.list}>
-            <li style={styles.listItem}>获得您的明确同意</li>
-            <li style={styles.listItem}>法律法规要求或政府机关依法要求</li>
-            <li style={styles.listItem}>保护我们或公众的权利、财产或安全所必需</li>
-          </ul>
+          <p style={styles.paragraph}>
+            对于本地草稿和缓存数据，您可在应用内或清理设备缓存时删除。
+          </p>
         </section>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>五、信息安全</h2>
+          <h2 style={styles.sectionTitle}>五、信息共享与披露</h2>
           <p style={styles.paragraph}>
-            我们采取合理的技术和管理措施来保护您的个人信息安全，包括但不限于：
+            未经您同意，我们不会向第三方出售您的个人信息。仅在法律法规要求、保护公共安全或维护合法权益时，依法披露必要信息。
           </p>
-          <ul style={styles.list}>
-            <li style={styles.listItem}>使用加密技术保护数据传输</li>
-            <li style={styles.listItem}>限制有权访问个人信息的人员</li>
-            <li style={styles.listItem}>定期审查安全措施</li>
-          </ul>
         </section>
 
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>六、您的权利</h2>
-          <p style={styles.paragraph}>您对个人信息享有以下权利：</p>
           <ul style={styles.list}>
-            <li style={styles.listItem}>
-              <strong>访问权</strong>：您可以查看您的账户信息和保存的方案。
-            </li>
-            <li style={styles.listItem}>
-              <strong>更正权</strong>：您可以修改不准确的个人信息。
-            </li>
-            <li style={styles.listItem}>
-              <strong>删除权</strong>：您可以删除您的账户和相关数据。
-            </li>
-            <li style={styles.listItem}>
-              <strong>撤回同意</strong>：您可以撤回对特定数据处理的同意。
-            </li>
+            <li style={styles.listItem}>访问、更正或删除您的账号与作品数据。</li>
+            <li style={styles.listItem}>注销账号并申请删除关联数据。</li>
+            <li style={styles.listItem}>对数据处理提出意见和投诉。</li>
           </ul>
         </section>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>七、第三方服务</h2>
-          <p style={styles.paragraph}>
-            本应用可能使用第三方服务（如统计分析服务）。这些第三方服务有其独立的隐私政策，
-            我们建议您阅读相关政策以了解他们如何处理您的信息。
-          </p>
+          <h2 style={styles.sectionTitle}>七、联系我们</h2>
+          <p style={styles.paragraph}>开发者：{LEGAL_INFO.developerName}</p>
+          <p style={styles.paragraph}>联系邮箱：{LEGAL_INFO.contactEmail}</p>
         </section>
-
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>八、未成年人保护</h2>
-          <p style={styles.paragraph}>
-            本应用适合所有年龄段用户使用。如您是未满14周岁的未成年人，
-            请在监护人的陪同下阅读本隐私政策，并在征得监护人同意后使用本应用。
-          </p>
-        </section>
-
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>九、隐私政策的更新</h2>
-          <p style={styles.paragraph}>
-            我们可能会不时更新本隐私政策。更新后的政策将在本页面发布，
-            重大变更将通过应用内通知或其他方式告知您。
-            继续使用本应用即表示您同意更新后的隐私政策。
-          </p>
-        </section>
-
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>十、联系我们</h2>
-          <p style={styles.paragraph}>
-            如您对本隐私政策有任何疑问、意见或建议，请通过以下方式联系我们：
-          </p>
-          <div style={styles.contactBox}>
-            <p style={styles.contactItem}>开发者：{config.developer}</p>
-            <p style={styles.contactItem}>电子邮箱：{config.email}</p>
-          </div>
-        </section>
-
-        <div style={styles.footer}>
-          <p style={styles.footerText}>
-            感谢您使用{config.appName}！
-          </p>
-        </div>
       </div>
     </div>
   );
@@ -195,7 +91,6 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: '100vh',
     background: colors.bg.primary,
   },
-
   header: {
     display: 'flex',
     alignItems: 'center',
@@ -209,116 +104,60 @@ const styles: Record<string, React.CSSProperties> = {
     right: 0,
     zIndex: 100,
   },
-
   headerSpacer: {
-    height: '56px',
+    height: 56,
   },
-
   backBtn: {
     ...mixins.backButton,
   },
-
   title: {
+    margin: 0,
+    color: colors.text.primary,
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    fontFamily: typography.fontFamilyAlt,
-    background: colors.gradients.primary,
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
-    margin: 0,
   },
-
   placeholder: {
     width: 40,
   },
-
   content: {
-    padding: '20px 16px 40px',
+    padding: '16px 16px 32px',
   },
-
-  updateInfo: {
-    padding: '12px 16px',
-    background: colors.bg.card,
-    borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    marginBottom: '24px',
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
+  meta: {
+    marginBottom: 16,
     color: colors.text.muted,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 1.6,
   },
-
   section: {
-    marginBottom: '24px',
+    background: colors.bg.secondary,
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
   },
-
   sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
-    margin: '0 0 12px',
-    paddingBottom: '8px',
-    borderBottom: `2px solid ${colors.bead.cyan}40`,
-  },
-
-  subTitle: {
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
-    margin: '16px 0 8px',
-  },
-
-  paragraph: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
-    lineHeight: 1.8,
-    margin: '0 0 12px',
-  },
-
-  list: {
-    margin: '8px 0',
-    paddingLeft: '20px',
-  },
-
-  listItem: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
-    lineHeight: 1.8,
-    marginBottom: '8px',
-  },
-
-  contactBox: {
-    padding: '16px',
-    background: colors.bg.card,
-    borderRadius: radius.card,
-    border: `1px solid ${colors.bead.cyan}30`,
-    boxShadow: shadows.sm,
-    marginTop: '12px',
-  },
-
-  contactItem: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
     margin: '0 0 8px',
+    color: colors.text.primary,
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.bold,
   },
-
-  footer: {
-    textAlign: 'center',
-    marginTop: '40px',
-    padding: '20px',
-  },
-
-  footerText: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+  paragraph: {
     margin: 0,
+    color: colors.text.secondary,
+    fontSize: typography.fontSize.sm,
+    lineHeight: 1.7,
+  },
+  list: {
+    margin: 0,
+    paddingLeft: 18,
+    color: colors.text.secondary,
+    fontSize: typography.fontSize.sm,
+    lineHeight: 1.7,
+  },
+  listItem: {
+    marginBottom: 6,
   },
 };
 
 export default PrivacyPolicyPage;
+

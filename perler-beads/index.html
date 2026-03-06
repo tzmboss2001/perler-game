@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="format-detection" content="telephone=no" />
-    <meta name="description" content="拼豆图案生成器 - 将照片转换为可制作的拼豆图案，支持 Perler、Hama、Artkal 色板" />
-    <meta name="keywords" content="拼豆,perler beads,像素图,图案生成器,手工DIY" />
+    <meta name="description" content="拼豆工坊图案生成器 - 将图片转换为可制作的拼豆图案，支持 Perler/Hama/Artkal 色板" />
+    <meta name="keywords" content="拼豆, perler beads, 像素画, 图案生成器, 手工DIY" />
     <title>拼豆工坊 - 图案生成器</title>
-    <!-- Favicon 图标 -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <!-- Favicon 鍥炬爣 -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -47,7 +47,7 @@
         min-height: 100vh;
       }
 
-      /* 自定义滚动条 */
+      /* 鑷畾涔夋粴鍔ㄦ潯 */
       ::-webkit-scrollbar {
         width: 4px;
         height: 4px;
@@ -63,7 +63,7 @@
         background: #64748b;
       }
 
-      /* 隐藏移动端滚动条 */
+      /* 闅愯棌绉诲姩绔粴鍔ㄦ潯 */
       @media (max-width: 480px) {
         ::-webkit-scrollbar {
           display: none;
@@ -74,7 +74,7 @@
         }
       }
 
-      /* 通用按钮样式重置 */
+      /* 閫氱敤鎸夐挳鏍峰紡閲嶇疆 */
       button {
         font-family: inherit;
         cursor: pointer;
@@ -89,7 +89,7 @@
         opacity: 0.8;
       }
 
-      /* 输入框样式重置 */
+      /* 杈撳叆妗嗘牱寮忛噸缃?*/
       input, textarea {
         font-family: inherit;
         font-size: inherit;
@@ -102,14 +102,14 @@
         outline: none;
       }
 
-      /* 像素化图片渲染 */
+      /* 鍍忕礌鍖栧浘鐗囨覆鏌?*/
       .image-pixelated {
         image-rendering: pixelated;
         image-rendering: -moz-crisp-edges;
         image-rendering: crisp-edges;
       }
 
-      /* 动画 */
+      /* 鍔ㄧ敾 */
       @keyframes spin {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
@@ -134,3 +134,4 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
