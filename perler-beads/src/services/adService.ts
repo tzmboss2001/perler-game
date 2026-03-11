@@ -1,12 +1,12 @@
 import { isAdEnabled, monetizationConfig } from '../config/monetization';
 
-type PremiumExportChannel = 'free' | 'reward' | 'off';
+type RewardUnlockChannel = 'reward' | 'off';
 type RewardAdResult = 'completed' | 'closed' | 'failed' | 'no_fill';
 
 interface AdLocalState {
   premiumExportDate: string;
-  premiumExportFreeUsed: number;
   premiumExportRewardCredits: number;
+  aiCutoutRewardCredits: number;
 }
 
 const AD_LOCAL_STATE_KEY = 'ad_monetization_state_v1';
@@ -20,8 +20,8 @@ function todayTag(): string {
 function getDefaultState(): AdLocalState {
   return {
     premiumExportDate: todayTag(),
-    premiumExportFreeUsed: 0,
     premiumExportRewardCredits: 0,
+    aiCutoutRewardCredits: 0,
   };
 }
 
@@ -34,8 +34,8 @@ function loadState(): AdLocalState {
     const parsed = JSON.parse(raw) as Partial<AdLocalState>;
     const next: AdLocalState = {
       premiumExportDate: parsed.premiumExportDate || todayTag(),
-      premiumExportFreeUsed: Number(parsed.premiumExportFreeUsed || 0),
       premiumExportRewardCredits: Number(parsed.premiumExportRewardCredits || 0),
+      aiCutoutRewardCredits: Number(parsed.aiCutoutRewardCredits || 0),
     };
     if (next.premiumExportDate !== todayTag()) {
       return getDefaultState();
@@ -74,28 +74,22 @@ export const adService = {
     return isAdEnabled;
   },
 
-  getPremiumExportDecision(): { allowed: boolean; channel: PremiumExportChannel; freeRemaining: number } {
+  getPremiumExportDecision(): { allowed: boolean; channel: RewardUnlockChannel; freeRemaining: number } {
     if (!isAdEnabled) {
       return { allowed: true, channel: 'off', freeRemaining: 999 };
     }
     const state = ensureTodayState();
-    const freeLimit = monetizationConfig.rewardRules.hdExportFreePerDay;
-    const freeRemaining = Math.max(0, freeLimit - state.premiumExportFreeUsed);
-    if (freeRemaining > 0) {
-      return { allowed: true, channel: 'free', freeRemaining };
-    }
+    const freeRemaining = 0;
     if (state.premiumExportRewardCredits > 0) {
       return { allowed: true, channel: 'reward', freeRemaining };
     }
     return { allowed: false, channel: 'reward', freeRemaining };
   },
 
-  recordPremiumExportOpened(channel: PremiumExportChannel): void {
+  recordPremiumExportOpened(channel: RewardUnlockChannel): void {
     if (!isAdEnabled || channel === 'off') return;
     const state = ensureTodayState();
-    if (channel === 'free') {
-      state.premiumExportFreeUsed += 1;
-    } else if (channel === 'reward') {
+    if (channel === 'reward') {
       state.premiumExportRewardCredits = Math.max(0, state.premiumExportRewardCredits - 1);
     }
     saveState(state);
@@ -110,11 +104,42 @@ export const adService = {
     track('reward_granted', { type: 'premium_export_credit', totalCredits: state.premiumExportRewardCredits });
   },
 
+  getAiCutoutDecision(): { allowed: boolean; channel: RewardUnlockChannel; creditsRemaining: number } {
+    if (!isAdEnabled) {
+      return { allowed: true, channel: 'off', creditsRemaining: 999 };
+    }
+
+    const state = ensureTodayState();
+    if (state.aiCutoutRewardCredits > 0) {
+      return { allowed: true, channel: 'reward', creditsRemaining: state.aiCutoutRewardCredits };
+    }
+
+    return { allowed: false, channel: 'reward', creditsRemaining: 0 };
+  },
+
+  recordAiCutoutOpened(channel: RewardUnlockChannel): void {
+    if (!isAdEnabled || channel === 'off') return;
+    const state = ensureTodayState();
+    if (channel === 'reward') {
+      state.aiCutoutRewardCredits = Math.max(0, state.aiCutoutRewardCredits - 1);
+    }
+    saveState(state);
+    track('ai_cutout_opened', { channel, adMode: monetizationConfig.adMode });
+  },
+
+  grantAiCutoutRewardCredit(): void {
+    if (!isAdEnabled) return;
+    const state = ensureTodayState();
+    state.aiCutoutRewardCredits += 1;
+    saveState(state);
+    track('reward_granted', { type: 'ai_cutout_credit', totalCredits: state.aiCutoutRewardCredits });
+  },
+
   // Backward-compatible wrappers
   getHdExportDecision() {
     return this.getPremiumExportDecision();
   },
-  recordHdExportOpened(channel: PremiumExportChannel) {
+  recordHdExportOpened(channel: RewardUnlockChannel) {
     this.recordPremiumExportOpened(channel);
   },
   grantHdExportRewardCredit() {

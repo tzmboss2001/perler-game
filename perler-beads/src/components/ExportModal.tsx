@@ -15,7 +15,7 @@ interface ExportModalProps {
   visible: boolean;
   onClose: () => void;
   beadData: BeadPixelData;
-  onNeedRewardUnlock?: (reason: 'premium_export') => void;
+  onNeedRewardUnlock?: (reason: 'premium_export', onUnlocked?: () => void) => void;
 }
 
 interface ExportOption {
@@ -119,7 +119,11 @@ const ExportModal: React.FC<ExportModalProps> = ({
     if (needsPremiumUnlock) {
       const decision = adService.getPremiumExportDecision();
       if (!decision.allowed) {
-        onNeedRewardUnlock?.('premium_export');
+        onNeedRewardUnlock?.('premium_export', () => {
+          window.setTimeout(() => {
+            void handleExport();
+          }, 0);
+        });
         return;
       }
       adService.recordPremiumExportOpened(decision.channel);
@@ -254,7 +258,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
                 />
               </label>
               <label style={styles.switchItem}>
-                <span style={styles.switchLabel}>显示珠子清单</span>
+                <span style={styles.switchLabel}>显示豆子清单</span>
                 <input
                   type="checkbox"
                   checked={showBeadList}

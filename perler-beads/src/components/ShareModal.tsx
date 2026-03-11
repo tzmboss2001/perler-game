@@ -100,7 +100,7 @@ const ShareModal: React.FC<ShareModalProps> = ({
     ctx.fillStyle = colors.text.secondary;
     ctx.font = `14px "PingFang SC", sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(`${gridSize.width} x ${gridSize.height} 颗珠子`, posterWidth / 2, imgY + imgSize + 30);
+    ctx.fillText(`${gridSize.width} x ${gridSize.height} 颗豆`, posterWidth / 2, imgY + imgSize + 30);
 
     // 颜色统计（前6种）
     const topStats = stats.slice(0, 6);

@@ -1,25 +1,12 @@
 ﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Eye, SortAscending, Fire, Hammer } from '@phosphor-icons/react';
+import { Heart, Eye, SortAscending, Fire, Hammer, Sparkle, MagnifyingGlass } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../../styles/designSystem';
 import { communityApi, CommunityPostListItem } from '../../services/api/communityApi';
 import { sanitizeDisplayTitle } from '../../utils/textUtils';
 
-// 预设分类
-const CATEGORY_OPTIONS = [
-  { label: '全部', value: 'all' },
-  { label: '动漫', value: 'anime' },
-  { label: '游戏', value: 'game' },
-  { label: '动物', value: 'animal' },
-  { label: '风景', value: 'scenery' },
-  { label: '节日', value: 'holiday' },
-  { label: '人物', value: 'character' },
-  { label: '美食', value: 'food' },
-  { label: '其他', value: 'other' },
-];
-
-// 排序选项
-const SORT_OPTIONS = [
+const FEED_OPTIONS = [
+  { key: 'recommended', label: '推荐', icon: Sparkle },
   { key: 'newest', label: '最新', icon: SortAscending },
   { key: 'popular', label: '最热', icon: Fire },
   { key: 'most_made', label: '最多制作', icon: Hammer },
@@ -32,13 +19,14 @@ const CommunityPage: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [sortBy, setSortBy] = useState('newest');
+  const [feedTab, setFeedTab] = useState('recommended');
+  const [keywordInput, setKeywordInput] = useState('');
+  const [keyword, setKeyword] = useState('');
   const loadingRef = useRef(false);
   const pageSize = 20;
 
   // 加载数据
-  const loadPosts = useCallback(async (pageNum: number, append = false, category?: string, sort?: string) => {
+  const loadPosts = useCallback(async (pageNum: number, append = false, sort?: string, searchKeyword?: string) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
@@ -47,8 +35,8 @@ const CommunityPage: React.FC = () => {
       const res = await communityApi.getPosts({
         page: pageNum,
         pageSize,
-        category: category === 'all' ? undefined : category,
-        sort: sort === 'newest' ? undefined : sort,
+        keyword: searchKeyword?.trim() || undefined,
+        sort: sort && sort !== 'newest' ? sort : undefined,
       });
       if (res.code === 0 && res.data) {
         const newList = res.data.list || [];
@@ -66,22 +54,22 @@ const CommunityPage: React.FC = () => {
 
   // 首次加载
   useEffect(() => {
-    loadPosts(1, false, selectedCategory, sortBy);
-  }, [loadPosts, selectedCategory, sortBy]);
+    loadPosts(1, false, feedTab, keyword);
+  }, [loadPosts, feedTab, keyword]);
 
-  // 切换分类
-  const handleCategoryChange = (category: string) => {
-    if (category === selectedCategory) return;
-    setSelectedCategory(category);
-    setPage(1);
-    setPosts([]);
-    setHasMore(true);
-  };
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setKeyword(keywordInput.trim());
+      setPage(1);
+      setPosts([]);
+      setHasMore(true);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [keywordInput]);
 
-  // 切换排序
-  const handleSortChange = (sort: string) => {
-    if (sort === sortBy) return;
-    setSortBy(sort);
+  const handleFeedChange = (next: string) => {
+    if (next === feedTab) return;
+    setFeedTab(next);
     setPage(1);
     setPosts([]);
     setHasMore(true);
@@ -95,12 +83,12 @@ const CommunityPage: React.FC = () => {
       if (scrollHeight - scrollTop - clientHeight < 200) {
         const nextPage = page + 1;
         setPage(nextPage);
-        loadPosts(nextPage, true, selectedCategory, sortBy);
+        loadPosts(nextPage, true, feedTab, keyword);
       }
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [page, hasMore, loadPosts, selectedCategory, sortBy]);
+  }, [page, hasMore, loadPosts, feedTab, keyword]);
 
   // 难度标签颜色
   const getDifficultyColor = (difficulty: string) => {
@@ -128,40 +116,32 @@ const CommunityPage: React.FC = () => {
 
       {/* 内容区 */}
       <div style={styles.scrollArea}>
-        {/* 分类筛选栏 */}
-        <div style={styles.tagBar}>
-          <div style={styles.tagScroll}>
-            {CATEGORY_OPTIONS.map(option => (
-              <button
-                key={option.value}
-                style={{
-                  ...styles.tagButton,
-                  ...(selectedCategory === option.value ? styles.tagButtonActive : {}),
-                }}
-                onClick={() => handleCategoryChange(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+        <div style={styles.searchBar}>
+          <MagnifyingGlass size={16} color={colors.text.muted} />
+          <input
+            value={keywordInput}
+            onChange={e => setKeywordInput(e.target.value)}
+            placeholder="搜索作品名 / 标签 / 作者"
+            style={styles.searchInput}
+          />
         </div>
 
-        {/* 排序栏 + 统计 */}
+        {/* 内容流 + 统计 */}
         <div style={styles.sortBar}>
           <span style={styles.statsText}>共 {total} 个作品</span>
           <div style={styles.sortOptions}>
-            {SORT_OPTIONS.map(opt => {
+            {FEED_OPTIONS.map(opt => {
               const Icon = opt.icon;
               return (
                 <button
                   key={opt.key}
                   style={{
                     ...styles.sortButton,
-                    ...(sortBy === opt.key ? styles.sortButtonActive : {}),
+                    ...(feedTab === opt.key ? styles.sortButtonActive : {}),
                   }}
-                  onClick={() => handleSortChange(opt.key)}
+                  onClick={() => handleFeedChange(opt.key)}
                 >
-                  <Icon size={13} weight={sortBy === opt.key ? 'bold' : 'regular'} />
+                  <Icon size={13} weight={feedTab === opt.key ? 'bold' : 'regular'} />
                   {opt.label}
                 </button>
               );
@@ -238,18 +218,51 @@ interface PostCardProps {
   onClick: () => void;
 }
 
+interface CommunityCardImageProps {
+  previewUrl?: string;
+  thumbnailUrl?: string;
+  alt: string;
+  style: React.CSSProperties;
+}
+
+const CommunityCardImage: React.FC<CommunityCardImageProps> = ({ previewUrl, thumbnailUrl, alt, style }) => {
+  const candidates = [previewUrl, thumbnailUrl].filter((u): u is string => !!u && u.trim().length > 0);
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    setIndex(0);
+  }, [previewUrl, thumbnailUrl]);
+
+  const currentSrc = candidates[index];
+  if (!currentSrc) return null;
+
+  return (
+    <img
+      src={currentSrc}
+      alt={alt}
+      style={style}
+      loading="lazy"
+      onError={() => {
+        if (index < candidates.length - 1) {
+          setIndex(prev => prev + 1);
+        }
+      }}
+    />
+  );
+};
+
 const PostCard: React.FC<PostCardProps> = ({ post, getDifficultyColor, getDifficultyLabel, onClick }) => {
   const safeTitle = sanitizeDisplayTitle(post.title);
   return (
     <div style={cardStyles.card} onClick={onClick}>
       {/* 缩略图 */}
       <div style={cardStyles.imageWrap}>
-        {post.thumbnail_url ? (
-          <img
-            src={post.thumbnail_url}
+        {post.preview_url || post.thumbnail_url ? (
+          <CommunityCardImage
+            previewUrl={post.preview_url}
+            thumbnailUrl={post.thumbnail_url}
             alt={safeTitle}
             style={cardStyles.image}
-            loading="lazy"
           />
         ) : (
           <div style={cardStyles.placeholder}>
@@ -317,38 +330,25 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     boxSizing: 'border-box',
   },
-  tagBar: {
-    marginBottom: '8px',
-    overflow: 'hidden',
-  },
-  tagScroll: {
+  searchBar: {
     display: 'flex',
+    alignItems: 'center',
     gap: '8px',
-    overflowX: 'auto',
-    paddingBottom: '4px',
-    WebkitOverflowScrolling: 'touch',
-    scrollbarWidth: 'none',
-    msOverflowStyle: 'none',
-  } as React.CSSProperties,
-  tagButton: {
-    flexShrink: 0,
-    padding: '5px 14px',
-    borderRadius: radius.full,
+    padding: '8px 10px',
+    borderRadius: radius.lg,
     border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.secondary,
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium,
+    background: `${colors.bg.card}e6`,
+    marginBottom: '10px',
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    color: colors.text.primary,
+    fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
-    cursor: 'pointer',
-    transition: animation.transition.fast,
-    whiteSpace: 'nowrap',
-  } as React.CSSProperties,
-  tagButtonActive: {
-    background: `${colors.bead.cyan}20`,
-    border: `1px solid ${colors.bead.cyan}`,
-    color: colors.bead.cyan,
-    fontWeight: typography.fontWeight.bold,
   },
   sortBar: {
     display: 'flex',

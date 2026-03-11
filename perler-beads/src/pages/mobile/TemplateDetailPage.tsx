@@ -522,7 +522,7 @@ const TemplateDetailPage: React.FC = () => {
                 </span>
               </div>
               <div style={styles.infoItem}>
-                <span style={styles.infoLabel}>珠子数量</span>
+                <span style={styles.infoLabel}>豆子数量</span>
                 <span style={styles.infoValue}>
                   {template.bead_count.toLocaleString()} 颗
                 </span>

@@ -95,7 +95,7 @@ const ColorReplaceModal: React.FC<ColorReplaceModalProps> = ({
 
         {/* 警告提示 */}
         <div style={styles.warning}>
-          ⚠️ 将替换整个作品中的 <strong>{totalCount}</strong> 颗珠子
+          ⚠️ 将替换整个作品中的 <strong>{totalCount}</strong> 颗豆子
         </div>
 
         {/* 推荐颜色 */}

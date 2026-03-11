@@ -7,7 +7,7 @@ type CommunityPost struct {
 	ID           uint      `json:"id" gorm:"primaryKey"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-	UserID       uint      `json:"user_id" gorm:"index;not null"`
+	UserID       uint      `json:"user_id" gorm:"index;index:idx_user_content_hash,priority:1;not null"`
 	ProjectID    *uint     `json:"project_id" gorm:"index"`
 	Title        string    `json:"title" gorm:"size:100;not null"`
 	Description  string    `json:"description" gorm:"size:500"`
@@ -25,6 +25,7 @@ type CommunityPost struct {
 	PaletteName  string    `json:"palette_name" gorm:"size:100"`
 	Category     string    `json:"category" gorm:"size:32;default:other;index"`
 	Tags         string    `json:"tags" gorm:"size:200"`
+	ContentHash  string    `json:"content_hash" gorm:"size:64;index:idx_user_content_hash,priority:2"`
 	LikeCount    int       `json:"like_count" gorm:"default:0;index"`
 	ViewCount    int       `json:"view_count" gorm:"default:0"`
 	MakeCount    int       `json:"make_count" gorm:"default:0"`

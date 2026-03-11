@@ -78,7 +78,7 @@ const LoginPage: React.FC = () => {
       <div style={styles.content}>
         <div style={styles.logo}>
           <div style={styles.logoText}>拼豆工坊</div>
-          <div style={styles.logoSubtext}>让创意变成美丽的珠子画</div>
+          <div style={styles.logoSubtext}>让创意变成好看的拼豆作品</div>
         </div>
 
         <div style={styles.tipText}>输入邮箱和密码，新用户会自动注册</div>

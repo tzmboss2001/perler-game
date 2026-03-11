@@ -166,7 +166,7 @@ const FeaturedCarousel: React.FC<FeaturedCarouselProps> = ({
                   <div style={styles.meta}>
                     <span style={styles.metaItem}>{work.gridSize}</span>
                     <span style={styles.metaDot}>·</span>
-                    <span style={styles.metaItem}>{work.beadCount} 颗珠子</span>
+                    <span style={styles.metaItem}>{work.beadCount} 颗豆</span>
                     {work.author && (
                       <>
                         <span style={styles.metaDot}>·</span>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import ReactCrop, { Crop, PixelCrop, makeAspectCrop, centerCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
@@ -11,12 +11,12 @@ interface ImageCropperProps {
   onCancel: () => void;
 }
 
-// 比例选项配置
+// 姣斾緥閫夐」閰嶇疆
 interface AspectOption {
   label: string;
   key: string;
-  aspect: number | undefined;  // undefined 表示自由比例
-  isOriginal?: boolean;        // 是否为原图模式
+  aspect: number | undefined;  // undefined 琛ㄧず鑷敱姣斾緥
+  isOriginal?: boolean;        // 鏄惁涓哄師鍥炬ā寮?
   recommended?: boolean;
 }
 
@@ -28,11 +28,11 @@ const aspectOptions: AspectOption[] = [
 ];
 
 /**
- * 图片裁剪组件
- * 简化逻辑：aspect prop 直接控制裁剪框比例
- * - 1:1 = 正方形裁剪框
- * - 4:3 = 4:3 矩形裁剪框
- * - 不需要复杂计算，让 react-image-crop 处理
+ * 鍥剧墖瑁佸壀缁勪欢
+ * 绠€鍖栭€昏緫锛歛spect prop 鐩存帴鎺у埗瑁佸壀妗嗘瘮渚?
+ * - 1:1 = 姝ｆ柟褰㈣鍓
+ * - 4:3 = 4:3 鐭╁舰瑁佸壀妗?
+ * - 涓嶉渶瑕佸鏉傝绠楋紝璁?react-image-crop 澶勭悊
  */
 const ImageCropper: React.FC<ImageCropperProps> = ({
   imageSrc,
@@ -42,24 +42,24 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
   const imgRef = useRef<HTMLImageElement>(null);
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
-  // 当前选择的比例 key（默认为自由裁剪，不在选项列表中）
+  // 褰撳墠閫夋嫨鐨勬瘮渚?key锛堥粯璁や负鑷敱瑁佸壀锛屼笉鍦ㄩ€夐」鍒楄〃涓級
   const [selectedKey, setSelectedKey] = useState<string>('free');
   const [isProcessing, setIsProcessing] = useState(false);
-  // 追踪图片是否已加载
+  // 杩借釜鍥剧墖鏄惁宸插姞杞?
   const [imageLoaded, setImageLoaded] = useState(false);
 
-  // 获取当前选中的选项（'free' 是默认的自由裁剪模式，不在选项列表中）
+  // 鑾峰彇褰撳墠閫変腑鐨勯€夐」锛?free' 鏄粯璁ょ殑鑷敱瑁佸壀妯″紡锛屼笉鍦ㄩ€夐」鍒楄〃涓級
   const selectedOption = aspectOptions.find(opt => opt.key === selectedKey);
   const isOriginalMode = selectedOption?.isOriginal === true;
   const isFreeMode = selectedKey === 'free' || (!selectedOption && !isOriginalMode);
   const aspect = isOriginalMode ? undefined : (selectedOption?.aspect ?? undefined);
 
-  // 当图片加载完成后，标记加载完成
+  // 褰撳浘鐗囧姞杞藉畬鎴愬悗锛屾爣璁板姞杞藉畬鎴?
   const onImageLoad = useCallback(() => {
     setImageLoaded(true);
   }, []);
 
-  // 切换比例时，使用 makeAspectCrop 计算正确的初始裁剪区域
+  // 鍒囨崲姣斾緥鏃讹紝浣跨敤 makeAspectCrop 璁＄畻姝ｇ‘鐨勫垵濮嬭鍓尯鍩?
   useEffect(() => {
     if (!imageLoaded || !imgRef.current) return;
 
@@ -74,18 +74,18 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
       return;
     }
 
-    // 获取图片的显示尺寸
+    // 鑾峰彇鍥剧墖鐨勬樉绀哄昂瀵?
     const { width: imgWidth, height: imgHeight } = imgRef.current;
 
-    // 使用 makeAspectCrop 计算符合宽高比的裁剪区域
-    // 然后用 centerCrop 将其居中
+    // 浣跨敤 makeAspectCrop 璁＄畻绗﹀悎瀹介珮姣旂殑瑁佸壀鍖哄煙
+    // 鐒跺悗鐢?centerCrop 灏嗗叾灞呬腑
     if (currentAspect) {
-      // 有固定宽高比（1:1, 4:3, 3:4）
+      // 鏈夊浐瀹氬楂樻瘮锛?:1, 4:3, 3:4锛?
       const newCrop = centerCrop(
         makeAspectCrop(
           {
             unit: '%',
-            width: 80, // 起始宽度为图片的80%
+            width: 80, // 璧峰瀹藉害涓哄浘鐗囩殑80%
           },
           currentAspect,
           imgWidth,
@@ -96,7 +96,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
       );
       setCrop(newCrop);
     } else if (currentIsFree) {
-      // 自由裁剪模式：裁剪框覆盖整个原图
+      // 鑷敱瑁佸壀妯″紡锛氳鍓瑕嗙洊鏁翠釜鍘熷浘
       const newCrop: Crop = {
         unit: '%',
         x: 0,
@@ -110,9 +110,9 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
     setCompletedCrop(undefined);
   }, [imageLoaded, selectedKey]);
 
-  // 使用 Canvas 生成裁剪后的图片
+  // 浣跨敤 Canvas 鐢熸垚瑁佸壀鍚庣殑鍥剧墖
   const getCroppedImg = async (): Promise<string> => {
-    // 原图模式直接返回原图
+    // 鍘熷浘妯″紡鐩存帴杩斿洖鍘熷浘
     if (isOriginalMode) {
       return imageSrc;
     }
@@ -123,16 +123,16 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
 
     const image = imgRef.current;
 
-    // 获取裁剪区域的像素值
-    // 优先使用 completedCrop（用户拖动后的值），如果没有则从 crop 百分比计算
+    // 鑾峰彇瑁佸壀鍖哄煙鐨勫儚绱犲€?
+    // 浼樺厛浣跨敤 completedCrop锛堢敤鎴锋嫋鍔ㄥ悗鐨勫€硷級锛屽鏋滄病鏈夊垯浠?crop 鐧惧垎姣旇绠?
     let pixelCrop: PixelCrop;
 
     if (completedCrop && completedCrop.width > 0 && completedCrop.height > 0) {
-      // 使用用户交互产生的 completedCrop
+      // 浣跨敤鐢ㄦ埛浜や簰浜х敓鐨?completedCrop
       pixelCrop = completedCrop;
     } else if (crop && crop.width && crop.height) {
-      // 从百分比 crop 计算像素值
-      // 注意：crop 百分比是相对于显示尺寸的，需要转换为像素
+      // 浠庣櫨鍒嗘瘮 crop 璁＄畻鍍忕礌鍊?
+      // 娉ㄦ剰锛歝rop 鐧惧垎姣旀槸鐩稿浜庢樉绀哄昂瀵哥殑锛岄渶瑕佽浆鎹负鍍忕礌
       const displayWidth = image.width;
       const displayHeight = image.height;
 
@@ -148,14 +148,8 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
         pixelCrop = crop as PixelCrop;
       }
 
-      console.log('Calculated pixelCrop from crop:', {
-        crop,
-        displayWidth,
-        displayHeight,
-        pixelCrop
-      });
     } else {
-      // 没有有效的裁剪区域，返回原图
+      // 娌℃湁鏈夋晥鐨勮鍓尯鍩燂紝杩斿洖鍘熷浘
       return imageSrc;
     }
 
@@ -166,21 +160,15 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
       throw new Error('Failed to get canvas context');
     }
 
-    // 计算缩放比例 (显示尺寸 vs 实际尺寸)
+    // 璁＄畻缂╂斁姣斾緥 (鏄剧ず灏哄 vs 瀹為檯灏哄)
     const scaleX = image.naturalWidth / image.width;
     const scaleY = image.naturalHeight / image.height;
 
-    // 设置 canvas 尺寸为裁剪区域的实际像素尺寸
+    // 璁剧疆 canvas 灏哄涓鸿鍓尯鍩熺殑瀹為檯鍍忕礌灏哄
     canvas.width = pixelCrop.width * scaleX;
     canvas.height = pixelCrop.height * scaleY;
 
-    console.log('Canvas size:', {
-      canvasWidth: canvas.width,
-      canvasHeight: canvas.height,
-      aspectRatio: canvas.width / canvas.height
-    });
-
-    // 绘制裁剪区域
+    // 缁樺埗瑁佸壀鍖哄煙
     ctx.drawImage(
       image,
       pixelCrop.x * scaleX,
@@ -193,11 +181,11 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
       canvas.height
     );
 
-    // 转换为 base64
+    // 杞崲涓?base64
     return canvas.toDataURL('image/jpeg', 0.92);
   };
 
-  // 确认
+  // 纭
   const handleConfirm = async () => {
     if (isProcessing) return;
 
@@ -206,16 +194,16 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
       const resultImage = await getCroppedImg();
       onCropComplete(resultImage);
     } catch (error) {
-      console.error('处理失败:', error);
+      console.error('处理裁剪结果失败:', error);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 使用 Portal 渲染到 body，避免层叠上下文问题
+  // 浣跨敤 Portal 娓叉煋鍒?body锛岄伩鍏嶅眰鍙犱笂涓嬫枃闂
   return createPortal(
     <div style={styles.container}>
-      {/* 头部 - 左上角返回按钮就是取消 */}
+      {/* 澶撮儴 - 宸︿笂瑙掕繑鍥炴寜閽氨鏄彇娑?*/}
       <div style={styles.header}>
         <button style={styles.backBtn} onClick={onCancel}>
           <ArrowLeft size={20} weight="bold" />
@@ -224,10 +212,10 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
         <div style={styles.placeholder} />
       </div>
 
-      {/* 裁剪区域 */}
+      {/* 瑁佸壀鍖哄煙 */}
       <div style={styles.cropArea}>
         {isOriginalMode ? (
-          // 原图模式：直接显示图片，无裁剪框
+          // 鍘熷浘妯″紡锛氱洿鎺ユ樉绀哄浘鐗囷紝鏃犺鍓
           <img
             ref={imgRef}
             src={imageSrc}
@@ -236,7 +224,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
             onLoad={onImageLoad}
           />
         ) : (
-          // 裁剪模式：显示裁剪框
+          // 瑁佸壀妯″紡锛氭樉绀鸿鍓
           <ReactCrop
             crop={crop}
             onChange={(_, percentCrop) => setCrop(percentCrop)}
@@ -259,7 +247,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
         )}
       </div>
 
-      {/* 比例选择（5个选项） */}
+      {/* 姣斾緥閫夋嫨锛?涓€夐」锛?*/}
       <div style={styles.aspectSection}>
         <div style={styles.aspectHeader}>
           <span style={styles.aspectTitle}>宽高比</span>
@@ -283,7 +271,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
         </div>
       </div>
 
-      {/* 操作按钮 - 只有一个确认按钮 */}
+      {/* 鎿嶄綔鎸夐挳 - 鍙湁涓€涓‘璁ゆ寜閽?*/}
       <div style={styles.actions}>
         <button
           style={{
@@ -352,7 +340,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '16px',
     overflow: 'auto',
     background: colors.bg.tertiary,
-    minHeight: 0, // 重要：允许flex子元素收缩
+    minHeight: 0, // 閲嶈锛氬厑璁竑lex瀛愬厓绱犳敹缂?
   },
 
   image: {
@@ -452,3 +440,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default ImageCropper;
+

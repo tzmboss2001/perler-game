@@ -28,7 +28,7 @@ const OnboardingGuide: React.FC<OnboardingGuideProps> = ({ onComplete }) => {
       icon: <PaintBrush size={48} weight="duotone" />,
       color: colors.bead.yellow,
       title: '编辑调整',
-      desc: '调节图案大小、选择珠子色板、手动修改颜色，让作品更完美',
+      desc: '调节图案大小、选择拼豆色板、手动修改颜色，让作品更完美',
     },
     {
       icon: <Sparkle size={48} weight="duotone" />,

@@ -2,7 +2,9 @@
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -37,6 +39,13 @@ func (s *CommunityService) GetPosts(req *request.CommunityPostListRequest) ([]re
 	if req.Category != "" && req.Category != "all" {
 		db = db.Where("community_posts.category = ?", normalizeCommunityCategory(req.Category))
 	}
+	if keyword := strings.TrimSpace(req.Keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		db = db.Where(
+			"(community_posts.title LIKE ? OR community_posts.tags LIKE ? OR EXISTS (SELECT 1 FROM users u WHERE u.id = community_posts.user_id AND u.nickname LIKE ?))",
+			like, like, like,
+		)
+	}
 
 	// 闂傚倸鍊峰ù鍥敋閺嶎厼绀堟繛鎴炶壘閸ㄦ繃銇勯弽顐粶婵?
 	var total int64
@@ -53,6 +62,8 @@ func (s *CommunityService) GetPosts(req *request.CommunityPostListRequest) ([]re
 	// 闂傚倸鍊风粈浣革耿闁秴纾块柕鍫濇处閺嗘粓鏌熼悜妯活梿濠?
 	orderClause := "community_posts.created_at DESC"
 	switch req.Sort {
+	case "recommended":
+		orderClause = "(community_posts.make_count * 4 + community_posts.like_count * 3 + community_posts.view_count * 0.2) DESC, community_posts.created_at DESC"
 	case "popular":
 		orderClause = "community_posts.like_count DESC, community_posts.created_at DESC"
 	case "most_made":
@@ -79,18 +90,27 @@ func (s *CommunityService) GetPosts(req *request.CommunityPostListRequest) ([]re
 		}
 		if s.ensurePostBeadHex(&p) {
 			posts[i].BeadData = p.BeadData
+			// bead_data 被修正后，强制触发缩略图与详情预览重建，避免图文不一致
+			p.ThumbnailURL = ""
+			p.PreviewURL = ""
+			posts[i].ThumbnailURL = ""
+			posts[i].PreviewURL = ""
 		}
 		if fixedURL, fixed := s.ensurePostThumbnail(&p); fixed {
 			p.ThumbnailURL = fixedURL
 			posts[i].ThumbnailURL = fixedURL
+		}
+		if previewURL, fixed := s.ensurePostPreview(&p); fixed {
+			p.PreviewURL = previewURL
+			posts[i].PreviewURL = previewURL
 		}
 		result[i] = response.CommunityPostListItem{
 			ID:           p.ID,
 			Title:        p.Title,
 			Category:     p.Category,
 			Tags:         p.Tags,
-			ThumbnailURL: p.ThumbnailURL,
-			PreviewURL:   p.PreviewURL,
+			ThumbnailURL: withMediaVersion(p.ThumbnailURL, p.UpdatedAt),
+			PreviewURL:   withMediaVersion(p.PreviewURL, p.UpdatedAt),
 			GridWidth:    p.GridWidth,
 			GridHeight:   p.GridHeight,
 			ColorCount:   p.ColorCount,
@@ -151,8 +171,8 @@ func (s *CommunityService) GetMyPosts(userID uint, req *request.CommunityMyPostL
 			Title:        p.Title,
 			Category:     p.Category,
 			Tags:         p.Tags,
-			ThumbnailURL: p.ThumbnailURL,
-			PreviewURL:   p.PreviewURL,
+			ThumbnailURL: withMediaVersion(p.ThumbnailURL, p.UpdatedAt),
+			PreviewURL:   withMediaVersion(p.PreviewURL, p.UpdatedAt),
 			GridWidth:    p.GridWidth,
 			GridHeight:   p.GridHeight,
 			ColorCount:   p.ColorCount,
@@ -185,7 +205,10 @@ func (s *CommunityService) GetPostByID(id uint) (*response.CommunityPostDetail, 
 	}
 
 	s.ensurePostCategory(&post)
-	s.ensurePostBeadHex(&post)
+	if s.ensurePostBeadHex(&post) {
+		post.ThumbnailURL = ""
+		post.PreviewURL = ""
+	}
 
 	if fixedURL, fixed := s.ensurePostThumbnail(&post); fixed {
 		post.ThumbnailURL = fixedURL
@@ -220,8 +243,8 @@ func (s *CommunityService) GetPostByID(id uint) (*response.CommunityPostDetail, 
 		Category:     post.Category,
 		Tags:         post.Tags,
 		Description:  post.Description,
-		ThumbnailURL: post.ThumbnailURL,
-		PreviewURL:   post.PreviewURL,
+		ThumbnailURL: withMediaVersion(post.ThumbnailURL, post.UpdatedAt),
+		PreviewURL:   withMediaVersion(post.PreviewURL, post.UpdatedAt),
 		ImageURLs:    imageURLs,
 		BeadData:     beadData,
 		GridWidth:    post.GridWidth,
@@ -240,23 +263,33 @@ func (s *CommunityService) GetPostByID(id uint) (*response.CommunityPostDetail, 
 	}, nil
 }
 
+func withMediaVersion(raw string, updatedAt time.Time) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return raw
+	}
+	sep := "?"
+	if strings.Contains(raw, "?") {
+		sep = "&"
+	}
+	return fmt.Sprintf("%s%sv=%d", raw, sep, updatedAt.Unix())
+}
+
 // CreatePost 闂傚倸鍊风粈渚€骞夐敓鐘冲仭闁挎洖鍊搁崹鍌炴煟閵忋垺鏆╅柛妤佽壘椤啰鈧綆浜濋幑锝夋煟椤撶偞顥㈤柡宀€鍠栭、娑㈠幢濡も偓閺嗭絾绻涢崼顐㈠缂佺粯绋掑蹇涘礈瑜忚摫缂傚倷绶￠崰鏍儗閸岀偟宓?
-func (s *CommunityService) CreatePost(req *request.CreateCommunityPostRequest, userID uint) (*entity.CommunityPost, error) {
+func (s *CommunityService) CreatePost(req *request.CreateCommunityPostRequest, userID uint) (*entity.CommunityPost, bool, error) {
 	if looksLikeGarbledTitle(req.Title) {
-		return nil, fmt.Errorf("title encoding invalid, please re-enter title")
+		return nil, false, fmt.Errorf("title encoding invalid, please re-enter title")
 	}
 	if err := validateCreatePostPayload(req); err != nil {
-		return nil, err
-	}
-	if err := checkDailyPostLimit(userID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if blockedWord := containsBlockedWords(req.Title + " " + req.Description + " " + req.Tags); blockedWord != "" {
-		return nil, fmt.Errorf("contains blocked content: %s", blockedWord)
+		return nil, false, fmt.Errorf("contains blocked content: %s", blockedWord)
 	}
 
 	// 闂傚倸鍊风粈渚€骞栭锔绘晞闁告侗鍨崑鎾愁潩閻撳骸顫紓?beadData 濠?entity.JSON
 	beadData := entity.JSON(req.BeadData)
+	contentHash := buildCommunityContentHash(req.BeadData)
 
 	// 闂傚倸鍊搁崐鎼佸磹閹间礁绠犻煫鍥ㄧ☉绾捐法鈧娲栧ú鐘诲磻閹捐埖鍏滈柛娑卞枤瑜把冾渻閵堝簼绨撮柛瀣尭閳规垿鍩ラ崱妤冧画濡炪倖鍨堕悷鈺佺暦閵夆晛鐐婃い鎺嶈兌閸?
 	difficulty := req.Difficulty
@@ -287,6 +320,7 @@ func (s *CommunityService) CreatePost(req *request.CreateCommunityPostRequest, u
 		Description:  req.Description,
 		Category:     resolveCommunityCategory(req.Category, req.Title, req.Tags),
 		Tags:         req.Tags,
+		ContentHash:  contentHash,
 		BeadData:     beadData,
 		GridWidth:    req.GridWidth,
 		GridHeight:   req.GridHeight,
@@ -304,9 +338,64 @@ func (s *CommunityService) CreatePost(req *request.CreateCommunityPostRequest, u
 		post.ReviewStatus = 0
 	}
 
-	// 闂傚倸鍊烽懗鍫曗€﹂崼銏″床闁规壆澧楅崑瀣煕閳╁啰鈽夐柛銊ュ€块弻娑樜旈崘銊ュ闂佹悶鍊曢悧鍡氱亙闂佹寧姊婚悺鏃堝磿閵夆晜鐓曢柣鎰絻椤ｆ娊鏌熼崣澶嬪€愰柟顔ㄥ洤閱囬柣鏃囥€€閺佸秶绱撻崒娆愮グ濡炴潙鎽滈幑銏ゅ醇閵夈儳鐤囬梺闈涚箳婵兘寮崇€ｎ喗鐓欐繛鍫濈仢閺嬨倗绱?ID
-	if err := global.GVA_DB.Create(&post).Error; err != nil {
-		return nil, err
+	if existing, ok, err := s.findUserDuplicatePost(userID, req.ProjectID, contentHash); err != nil {
+		return nil, false, err
+	} else if ok {
+		updates := map[string]interface{}{
+			"title":         post.Title,
+			"description":   post.Description,
+			"category":      post.Category,
+			"tags":          post.Tags,
+			"bead_data":     post.BeadData,
+			"grid_width":    post.GridWidth,
+			"grid_height":   post.GridHeight,
+			"bead_count":    post.BeadCount,
+			"color_count":   post.ColorCount,
+			"difficulty":    post.Difficulty,
+			"palette_brand": post.PaletteBrand,
+			"palette_ver":   post.PaletteVer,
+			"palette_name":  post.PaletteName,
+			"project_id":    post.ProjectID,
+			"content_hash":  contentHash,
+			"status":        1,
+			"review_status": 1,
+			"review_reason": "",
+		}
+		if !communityAutoApproveEnabled() {
+			updates["status"] = 0
+			updates["review_status"] = 0
+		}
+		if err := global.GVA_DB.Model(&entity.CommunityPost{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
+			return nil, false, err
+		}
+		post = *existing
+		post.Title = req.Title
+		post.Description = req.Description
+		post.Category = resolveCommunityCategory(req.Category, req.Title, req.Tags)
+		post.Tags = req.Tags
+		post.BeadData = beadData
+		post.GridWidth = req.GridWidth
+		post.GridHeight = req.GridHeight
+		post.BeadCount = req.BeadCount
+		post.ColorCount = req.ColorCount
+		post.Difficulty = difficulty
+		post.PaletteBrand = paletteBrand
+		post.PaletteVer = paletteVer
+		post.PaletteName = paletteName
+		post.ProjectID = req.ProjectID
+		post.ContentHash = contentHash
+		post.ThumbnailURL = ""
+		post.PreviewURL = ""
+		global.GVA_DB.Model(&entity.CommunityPost{}).Where("id = ?", post.ID).
+			Updates(map[string]interface{}{"thumbnail_url": "", "preview_url": ""})
+	} else {
+		if err := checkDailyPostLimit(userID); err != nil {
+			return nil, false, err
+		}
+		// 闂傚倸鍊烽懗鍫曗€﹂崼銏″床闁规壆澧楅崑瀣煕閳╁啰鈽夐柛銊ュ€块弻娑樜旈崘銊ュ闂佹悶鍊曢悧鍡氱亙闂佹寧姊婚悺鏃堝磿閵夆晜鐓曢柣鎰絻椤ｆ娊鏌熼崣澶嬪€愰柟顔ㄥ洤閱囬柣鏃囥€€閺佸秶绱撻崒娆愮グ濡炴潙鎽滈幑銏ゅ醇閵夈儳鐤囬梺闈涚箳婵兘寮崇€ｎ喗鐓欐繛鍫濈仢閺嬨倗绱?ID
+		if err := global.GVA_DB.Create(&post).Error; err != nil {
+			return nil, false, err
+		}
 	}
 
 	// 濠电姷鏁告慨浼村垂閻撳簶鏋栨繛鎴炲焹閸嬫挸顫濋悡搴㈢彎濡ょ姷鍋涢崯顖滄崲濠靛绀嬫い鎾跺缁辨娊姊绘担绋挎毐闁圭⒈鍋婂畷顖烆敍濮橈絾鐏侀梺鎸庣箓椤︿即鎮?base64
@@ -328,7 +417,48 @@ func (s *CommunityService) CreatePost(req *request.CreateCommunityPostRequest, u
 		}
 	}
 
-	return &post, nil
+	return &post, post.CreatedAt.Before(time.Now().Add(-2 * time.Second)), nil
+}
+
+func buildCommunityContentHash(beadData map[string]interface{}) string {
+	raw, err := json.Marshal(beadData)
+	if err != nil {
+		return ""
+	}
+	sum := sha1.Sum(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *CommunityService) findUserDuplicatePost(userID uint, projectID *uint, contentHash string) (*entity.CommunityPost, bool, error) {
+	if projectID != nil && *projectID > 0 {
+		var post entity.CommunityPost
+		err := global.GVA_DB.
+			Where("user_id = ? AND project_id = ? AND status = ? AND review_status IN ?", userID, *projectID, 1, []int{0, 1}).
+			Order("id DESC").
+			First(&post).Error
+		if err == nil {
+			return &post, true, nil
+		}
+		if err != gorm.ErrRecordNotFound {
+			return nil, false, err
+		}
+	}
+
+	if strings.TrimSpace(contentHash) == "" {
+		return nil, false, nil
+	}
+	var post entity.CommunityPost
+	err := global.GVA_DB.
+		Where("user_id = ? AND content_hash = ? AND status = ? AND review_status IN ?", userID, contentHash, 1, []int{0, 1}).
+		Order("id DESC").
+		First(&post).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return &post, true, nil
 }
 
 func communityAutoApproveEnabled() bool {
@@ -419,6 +549,12 @@ func validateCreatePostPayload(req *request.CreateCommunityPostRequest) error {
 	}
 	if req.GridWidth <= 0 || req.GridHeight <= 0 || req.GridWidth > 256 || req.GridHeight > 256 {
 		return fmt.Errorf("invalid grid size")
+	}
+	if beadW := toInt(req.BeadData["width"]); beadW > 0 && beadW != req.GridWidth {
+		return fmt.Errorf("bead_data width mismatch with grid_width")
+	}
+	if beadH := toInt(req.BeadData["height"]); beadH > 0 && beadH != req.GridHeight {
+		return fmt.Errorf("bead_data height mismatch with grid_height")
 	}
 	if req.GridWidth*req.GridHeight > 65536 {
 		return fmt.Errorf("grid too large")
@@ -668,7 +804,7 @@ func (s *CommunityService) ensurePostThumbnail(post *entity.CommunityPost) (stri
 	}
 
 	if post.ThumbnailURL != "" {
-		if thumbnailFileExists(post.ThumbnailURL) {
+		if thumbnailFileExists(post.ThumbnailURL) && !thumbnailFileOutdated(post.ThumbnailURL, post.UpdatedAt) {
 			return post.ThumbnailURL, false
 		}
 		if migratedURL, migrated := migrateLegacyThumbnail(post.ThumbnailURL); migrated {
@@ -705,7 +841,7 @@ func (s *CommunityService) ensurePostPreview(post *entity.CommunityPost) (string
 	if post == nil || post.ID == 0 || len(post.BeadData) == 0 {
 		return "", false
 	}
-	if post.PreviewURL != "" && thumbnailFileExists(post.PreviewURL) {
+	if post.PreviewURL != "" && thumbnailFileExists(post.PreviewURL) && !thumbnailFileOutdated(post.PreviewURL, post.UpdatedAt) {
 		return post.PreviewURL, false
 	}
 	pngData, err := buildDetailPreviewFromBeadData(map[string]interface{}(post.BeadData))
@@ -846,12 +982,32 @@ func thumbnailFileExists(thumbnailURL string) bool {
 	if err != nil {
 		return false
 	}
-	filename := filepath.Base(thumbnailURL)
+	filename := filepath.Base(strings.SplitN(thumbnailURL, "?", 2)[0])
 	if filename == "." || filename == "/" || filename == "" {
 		return false
 	}
 	_, statErr := os.Stat(filepath.Join(dir, filename))
 	return statErr == nil
+}
+
+func thumbnailFileOutdated(thumbnailURL string, updatedAt time.Time) bool {
+	if strings.TrimSpace(thumbnailURL) == "" || updatedAt.IsZero() {
+		return false
+	}
+	dir, err := resolveThumbnailDir()
+	if err != nil {
+		return false
+	}
+	filename := filepath.Base(strings.SplitN(thumbnailURL, "?", 2)[0])
+	if filename == "." || filename == "/" || filename == "" {
+		return false
+	}
+	info, statErr := os.Stat(filepath.Join(dir, filename))
+	if statErr != nil {
+		return false
+	}
+	// 允许 2 秒误差，避免 DB 时间与文件系统时间粒度差异导致误判
+	return info.ModTime().Before(updatedAt.Add(-2 * time.Second))
 }
 
 func migrateLegacyThumbnail(thumbnailURL string) (string, bool) {
@@ -938,8 +1094,7 @@ func buildThumbnailFromBeadData(beadData map[string]interface{}) ([]byte, error)
 			continue
 		}
 
-		colorID, _ := bead["colorId"].(string)
-		c := colorFromID(colorID)
+		c := colorFromID(normalizeColorID(bead["colorId"]))
 		if hexStr, ok := bead["hex"].(string); ok {
 			if parsed, valid := parseHexColor(hexStr); valid {
 				c = parsed
@@ -1006,8 +1161,7 @@ func buildDetailPreviewFromBeadData(beadData map[string]interface{}) ([]byte, er
 		if x < 0 || x >= width || y < 0 || y >= height {
 			continue
 		}
-		colorID, _ := bead["colorId"].(string)
-		c := colorFromID(colorID)
+		c := colorFromID(normalizeColorID(bead["colorId"]))
 		if hexStr, ok := bead["hex"].(string); ok {
 			if parsed, valid := parseHexColor(hexStr); valid {
 				c = parsed
@@ -1084,8 +1238,35 @@ func toInt(v interface{}) int {
 	case json.Number:
 		i, _ := t.Int64()
 		return int(i)
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(t))
+		if err != nil {
+			return 0
+		}
+		return n
 	default:
 		return 0
+	}
+}
+
+func normalizeColorID(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case int:
+		return strconv.Itoa(t)
+	case int32:
+		return strconv.FormatInt(int64(t), 10)
+	case int64:
+		return strconv.FormatInt(t, 10)
+	case float32:
+		return strconv.FormatInt(int64(t), 10)
+	case float64:
+		return strconv.FormatInt(int64(t), 10)
+	case json.Number:
+		return t.String()
+	default:
+		return ""
 	}
 }
 

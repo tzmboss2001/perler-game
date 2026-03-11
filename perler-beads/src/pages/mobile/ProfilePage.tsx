@@ -445,8 +445,9 @@ const ProfilePage: React.FC = () => {
       const res = await communityApi.createPost(postData);
       if (res.code === 0) {
         setShowPublishModal(false);
-        showConfirm('作品已成功分享到社区。', {
-          title: '发布成功',
+        const updatedExisting = !!res.data?.updated_existing;
+        showConfirm(updatedExisting ? '检测到重复作品，已自动更新你之前发布的帖子。' : '作品已成功分享到社区。', {
+          title: updatedExisting ? '已更新原帖子' : '发布成功',
           type: 'info',
           confirmText: '去社区看看',
           cancelText: '留在这里',

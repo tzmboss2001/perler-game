@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { House, Plus, User } from '@phosphor-icons/react';
 import { colors, shadows, animation, radius, typography } from '../../styles/designSystem';
+import { useUserStore } from '../../store/userStore';
 
 // Navigation items configuration
 const navItems = [
@@ -13,6 +14,11 @@ const navItems = [
 const MobileLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { initUser } = useUserStore();
+
+  useEffect(() => {
+    initUser();
+  }, [initUser]);
 
   const isNavActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');

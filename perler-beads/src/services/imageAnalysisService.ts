@@ -8,6 +8,7 @@ export interface ImageAnalysisResult {
   colorComplexity: number;    // 颜色复杂度 0-1
   overallComplexity: number;  // 综合复杂度 0-1
   recommendedWidth: number;   // 推荐的网格宽度
+  recommendedColorCount: number; // 推荐的颜色数量
   recommendation: string;     // 推荐说明
 }
 
@@ -64,12 +65,14 @@ const analyzeFromImage = (image: HTMLImageElement): ImageAnalysisResult => {
 
   // 根据复杂度推荐网格宽度
   const { recommendedWidth, recommendation } = getRecommendation(overallComplexity, image.width, image.height);
+  const recommendedColorCount = getRecommendedColorCount(overallComplexity);
 
   return {
     edgeDensity,
     colorComplexity,
     overallComplexity,
     recommendedWidth,
+    recommendedColorCount,
     recommendation,
   };
 };
@@ -224,3 +227,12 @@ export const STANDARD_BOARD_SIZES = [
   { value: 80, label: '80', description: '适合复杂图案' },
   { value: 104, label: '104', description: '标准104钉大板' },
 ];
+
+const getRecommendedColorCount = (complexity: number): number => {
+  if (complexity < 0.15) return 48;
+  if (complexity < 0.25) return 72;
+  if (complexity < 0.4) return 96;
+  if (complexity < 0.65) return 150;
+  if (complexity < 0.8) return 200;
+  return 291;
+};

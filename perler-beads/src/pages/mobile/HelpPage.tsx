@@ -41,7 +41,7 @@ const HelpPage: React.FC = () => {
     {
       icon: ShoppingCart,
       title: '查看清单',
-      description: '点击“珠子统计”查看每种颜色所需数量，便于采购。也可禁用不需要的颜色。',
+      description: '点击“豆子统计”查看每种颜色所需数量，便于采购。也可禁用不需要的颜色。',
       color: colors.bead.orange,
     },
     {
@@ -68,7 +68,7 @@ const HelpPage: React.FC = () => {
     },
     {
       question: '透明背景图片支持吗？',
-      answer: '支持 PNG 透明图。透明区域不会生成珠子。',
+      answer: '支持 PNG 透明图。透明区域不会生成豆子。',
     },
     {
       question: '图案可以保存吗？',
@@ -76,7 +76,7 @@ const HelpPage: React.FC = () => {
     },
     {
       question: '怎么购买材料？',
-      answer: '可按“珠子统计”里的色号和数量到电商平台采购，建议常用色多备一些。',
+      answer: '可按“豆子统计”里的色号和数量到电商平台采购，建议常用色多备一些。',
     },
     {
       question: '制作辅助模式有什么用？',

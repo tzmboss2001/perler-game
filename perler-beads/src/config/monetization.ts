@@ -6,7 +6,8 @@ function resolveAdMode(): AdMode {
   if (rawMode === 'adsense' || rawMode === 'mock' || rawMode === 'off' || rawMode === 'douyin') {
     return rawMode;
   }
-  return import.meta.env.DEV ? 'mock' : 'off';
+  // 未显式配置时，默认走 mock，保证真机测试能看到广告位节点。
+  return 'mock';
 }
 
 export const monetizationConfig = {

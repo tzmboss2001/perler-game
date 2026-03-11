@@ -49,6 +49,15 @@ import RewardedUnlockModal from "../../components/ads/RewardedUnlockModal";
 import { adService } from "../../services/adService";
 
 const COMMUNITY_MAKING_DRAFT_KEY = "community_making_bead_data";
+type CommunityMakingDraftPayload =
+  | BeadPixelData
+  | {
+      version?: number;
+      source?: "community";
+      postId?: number;
+      savedAt?: number;
+      beadData?: BeadPixelData;
+    };
 
 // Wake Lock API 类型声明
 declare global {
@@ -96,7 +105,14 @@ const MakingPage: React.FC = () => {
   // 拖动和缩放相关状态
   const [isDragging, setIsDragging] = useState(false);
   const lastTouchRef = useRef<{ x: number; y: number } | null>(null);
-  const lastPinchDistRef = useRef<number | null>(null);
+  const pinchStartRef = useRef<{
+    distance: number;
+    scale: number;
+    translateX: number;
+    translateY: number;
+    focalX: number;
+    focalY: number;
+  } | null>(null);
   const dragStartTimeRef = useRef<number>(0);
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const lastTapProcessedRef = useRef<number>(0); // 防止 touch + click 重复触发
@@ -121,20 +137,39 @@ const MakingPage: React.FC = () => {
     savedProgress,
   } = (location.state as LocationState) || {};
 
+  const isValidBeadData = (input: unknown): input is BeadPixelData => {
+    const data = input as BeadPixelData | null;
+    return !!(
+      data &&
+      Number.isFinite(data.width) &&
+      Number.isFinite(data.height) &&
+      data.width > 0 &&
+      data.height > 0 &&
+      Array.isArray(data.beads) &&
+      data.beads.length === data.width * data.height
+    );
+  };
+
   const getBeadDataFromCommunityDraft = (): BeadPixelData | null => {
     try {
       const raw = localStorage.getItem(COMMUNITY_MAKING_DRAFT_KEY);
       if (!raw) return null;
-      const parsed = JSON.parse(raw) as BeadPixelData;
-      const valid =
-        !!parsed &&
-        Number.isFinite(parsed.width) &&
-        Number.isFinite(parsed.height) &&
-        parsed.width > 0 &&
-        parsed.height > 0 &&
-        Array.isArray(parsed.beads) &&
-        parsed.beads.length === parsed.width * parsed.height;
-      return valid ? parsed : null;
+      const parsed = JSON.parse(raw) as CommunityMakingDraftPayload;
+
+      if (isValidBeadData(parsed)) {
+        return parsed;
+      }
+
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        "beadData" in parsed &&
+        isValidBeadData((parsed as { beadData?: BeadPixelData }).beadData)
+      ) {
+        return (parsed as { beadData: BeadPixelData }).beadData;
+      }
+
+      return null;
     } catch (e) {
       console.warn("[MakingPage] 读取社区制作缓存失败:", e);
       return null;
@@ -146,6 +181,7 @@ const MakingPage: React.FC = () => {
     if (initialBeadData) return initialBeadData;
     const cachedFromCommunity = getBeadDataFromCommunityDraft();
     if (cachedFromCommunity) return cachedFromCommunity;
+    if (!import.meta.env.DEV) return null;
     const params = new URLSearchParams(location.search);
     if (params.get("test") !== "1") return null;
 
@@ -181,6 +217,7 @@ const MakingPage: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showRewardedUnlockModal, setShowRewardedUnlockModal] = useState(false);
+  const pendingExportAfterRewardRef = useRef<(() => void) | null>(null);
   const [showReplaceModal, setShowReplaceModal] = useState(false);
   const [scale, setScale] = useState(1);
   const [translateX, setTranslateX] = useState(0);
@@ -380,10 +417,14 @@ const MakingPage: React.FC = () => {
       initialScaleSetRef.current = true;
       const timer = setTimeout(() => {
         const viewportHeight = window.innerHeight;
-        const availableHeight = viewportHeight - 40 - 64 - 50 - 60 - 24;
-        const baseHeight = beadData.height * baseCellSize;
-        const fitScale = availableHeight / baseHeight;
-        const nextScale = Math.min(MAX_SCALE, Math.max(1, fitScale));
+        const wrapper = wrapperRef.current;
+        const wrapperWidth = wrapper?.clientWidth || window.innerWidth;
+        const wrapperHeight =
+          wrapper?.clientHeight || viewportHeight - 40 - 64 - 50 - 60 - 24;
+        const fitWidth = wrapperWidth / (beadData.width * baseCellSize);
+        const fitHeight = wrapperHeight / (beadData.height * baseCellSize);
+        const fitScale = Math.min(fitWidth, fitHeight);
+        const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, fitScale));
         scaleRef.current = nextScale;
         setScale(nextScale);
         commitTranslate(nextScale, 0, 0);
@@ -395,13 +436,10 @@ const MakingPage: React.FC = () => {
   // 适应屏幕：重置缩放与位移
   const handleFitScreen = useCallback(() => {
     if (!beadData) return;
-    const vh = window.innerHeight;
-    const availableHeight = vh - 40 - 64 - 50 - 60 - 24;
-    const baseHeight = beadData.height * baseCellSize;
-    const nextScale = Math.min(
-      MAX_SCALE,
-      Math.max(1, availableHeight / baseHeight),
-    );
+    const wrapper = wrapperRef.current;
+    const wrapperWidth = wrapper?.clientWidth || window.innerWidth;
+    const fitWidth = wrapperWidth / (beadData.width * baseCellSize);
+    const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, fitWidth));
     scaleRef.current = nextScale;
     setScale(nextScale);
     commitTranslate(nextScale, 0, 0);
@@ -691,9 +729,25 @@ const MakingPage: React.FC = () => {
       dragStartTimeRef.current = Date.now();
       dragStartPosRef.current = { x: touch.clientX, y: touch.clientY };
     } else if (e.touches.length === 2) {
+      setIsDragging(false);
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastPinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const wrapperRect = wrapperRef.current?.getBoundingClientRect();
+      if (!wrapperRect) return;
+      const focalX =
+        (e.touches[0].clientX + e.touches[1].clientX) / 2 - wrapperRect.left;
+      const focalY =
+        (e.touches[0].clientY + e.touches[1].clientY) / 2 - wrapperRect.top;
+
+      pinchStartRef.current = {
+        distance,
+        scale: scaleRef.current,
+        translateX: translateRef.current.x,
+        translateY: translateRef.current.y,
+        focalX,
+        focalY,
+      };
     }
   }, []);
 
@@ -709,26 +763,47 @@ const MakingPage: React.FC = () => {
           x: e.touches[0].clientX,
           y: e.touches[0].clientY,
         };
-      } else if (e.touches.length === 2 && lastPinchDistRef.current) {
+      } else if (e.touches.length === 2 && pinchStartRef.current) {
         e.preventDefault();
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-
-        const scaleDelta = dist / lastPinchDistRef.current;
         const wrapperRect = wrapperRef.current?.getBoundingClientRect();
-        if (wrapperRect) {
-          const focalX =
-            (e.touches[0].clientX + e.touches[1].clientX) / 2 -
-            wrapperRect.left;
-          const focalY =
-            (e.touches[0].clientY + e.touches[1].clientY) / 2 - wrapperRect.top;
-          applyScaleAtPoint(scaleRef.current * scaleDelta, focalX, focalY);
-        }
-        lastPinchDistRef.current = dist;
+        const start = pinchStartRef.current;
+        if (!wrapperRect || start.distance <= 0) return;
+
+        const currentFocalX =
+          (e.touches[0].clientX + e.touches[1].clientX) / 2 - wrapperRect.left;
+        const currentFocalY =
+          (e.touches[0].clientY + e.touches[1].clientY) / 2 - wrapperRect.top;
+
+        // 以手势起点为基准计算，避免逐帧增量误差放大造成抖动
+        const scaleRatio = dist / start.distance;
+        const nextScale = Math.min(
+          MAX_SCALE,
+          Math.max(MIN_SCALE, start.scale * scaleRatio),
+        );
+
+        const centerX = wrapperRect.width / 2;
+        const centerY = wrapperRect.height / 2;
+        const ratioFromStart = nextScale / start.scale;
+        const deltaFocalX = currentFocalX - start.focalX;
+        const deltaFocalY = currentFocalY - start.focalY;
+        const nextX =
+          ratioFromStart * start.translateX +
+          (1 - ratioFromStart) * (start.focalX - centerX) +
+          deltaFocalX;
+        const nextY =
+          ratioFromStart * start.translateY +
+          (1 - ratioFromStart) * (start.focalY - centerY) +
+          deltaFocalY;
+
+        scaleRef.current = nextScale;
+        setScale(nextScale);
+        commitTranslate(nextScale, nextX, nextY);
       }
     },
-    [isDragging, applyScaleAtPoint, shiftTranslate],
+    [isDragging, commitTranslate, shiftTranslate],
   );
 
   const handleTouchEnd = useCallback(
@@ -749,7 +824,7 @@ const MakingPage: React.FC = () => {
           if (!wrapper || !beadData) {
             setIsDragging(false);
             lastTouchRef.current = null;
-            lastPinchDistRef.current = null;
+            pinchStartRef.current = null;
             dragStartPosRef.current = null;
             return;
           }
@@ -825,7 +900,7 @@ const MakingPage: React.FC = () => {
 
       setIsDragging(false);
       lastTouchRef.current = null;
-      lastPinchDistRef.current = null;
+      pinchStartRef.current = null;
       dragStartPosRef.current = null;
     },
     [beadData, scale, selection, voiceEnabled, toast],
@@ -925,7 +1000,7 @@ const MakingPage: React.FC = () => {
         colorId: newColor.id,
       });
 
-      toast.success(`已将 ${colorCountTotal} 颗珠子替换为 ${newColor.name}`);
+      toast.success(`已将 ${colorCountTotal} 颗豆子替换为 ${newColor.name}`);
     },
     [beadData, selection, colorCountTotal, toast],
   );
@@ -987,7 +1062,8 @@ const MakingPage: React.FC = () => {
         const py = y * drawCellSize;
 
         // 绘制背景色
-        ctx.fillStyle = bead.hex;
+        const beadHex = bead?.hex || "#1a1a24";
+        ctx.fillStyle = beadHex;
         ctx.fillRect(px, py, drawCellSize, drawCellSize);
 
         // 选中区块时，非选中区半透明
@@ -1019,11 +1095,14 @@ const MakingPage: React.FC = () => {
     }
 
     // 绘制网格线
-    const gridLineWidth = Math.max(1, scale * 0.3);
+    // 网格线保持视觉细线，不随缩放显著变粗
+    const tinyLine = Math.max(0.5, 1 / Math.max(scale, 1.4));
+    const normalLine = Math.max(0.7, 1.2 / Math.max(scale, 1.2));
+    const blockLine = Math.max(1, 2 / Math.max(scale, 1.2));
 
-    // 白色底线
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
-    ctx.lineWidth = gridLineWidth + 1;
+    // 细网格线（深色，避免放大后发白）
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.lineWidth = normalLine;
     for (let x = 0; x <= width; x++) {
       ctx.beginPath();
       ctx.moveTo(x * drawCellSize, 0);
@@ -1037,9 +1116,9 @@ const MakingPage: React.FC = () => {
       ctx.stroke();
     }
 
-    // 深色线
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
-    ctx.lineWidth = gridLineWidth;
+    // 叠加一层更深线，提升清晰度
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.62)";
+    ctx.lineWidth = tinyLine;
     for (let x = 0; x <= width; x++) {
       ctx.beginPath();
       ctx.moveTo(x * drawCellSize, 0);
@@ -1053,9 +1132,9 @@ const MakingPage: React.FC = () => {
       ctx.stroke();
     }
 
-    // 5×5 中等网格线（蓝色）
-    ctx.strokeStyle = "rgba(0, 100, 200, 0.6)";
-    ctx.lineWidth = Math.max(1, scale * 0.6);
+    // 5×5 中等网格线（深灰）
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.72)";
+    ctx.lineWidth = normalLine;
     for (let x = 0; x <= width; x++) {
       if (x % 5 === 0 && x % BLOCK_SIZE !== 0) {
         ctx.beginPath();
@@ -1074,8 +1153,8 @@ const MakingPage: React.FC = () => {
     }
 
     // 10×10 大网格线（黑色）
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-    ctx.lineWidth = Math.max(2, scale);
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+    ctx.lineWidth = blockLine;
     for (let x = 0; x <= width; x += BLOCK_SIZE) {
       ctx.beginPath();
       ctx.moveTo(x * drawCellSize, 0);
@@ -1098,7 +1177,7 @@ const MakingPage: React.FC = () => {
       ctx.save();
       ctx.setLineDash([drawCellSize * 0.5, drawCellSize * 0.3]);
       ctx.strokeStyle = "rgba(255, 160, 0, 0.8)";
-      ctx.lineWidth = Math.max(2, scale * 1.2);
+      ctx.lineWidth = blockLine;
       // 垂直板线
       for (let c = 1; c < boardCols; c++) {
         const px = c * BOARD_SIZE * drawCellSize;
@@ -1144,7 +1223,7 @@ const MakingPage: React.FC = () => {
     // 选中区块时，绘制高亮边框
     if (selection.type === "block") {
       ctx.strokeStyle = "#00FFFF";
-      ctx.lineWidth = Math.max(5, scale * 2);
+      ctx.lineWidth = Math.max(2, blockLine + 1);
       ctx.shadowColor = "#00FFFF";
       ctx.shadowBlur = 4;
       const bw = (selectedBlockEndX - selectedBlockStartX) * drawCellSize;
@@ -1186,6 +1265,7 @@ const MakingPage: React.FC = () => {
           const bead = beads[index];
           const px = x * drawCellSize + drawCellSize / 2;
           const py = y * drawCellSize + drawCellSize / 2;
+          const beadHex = bead?.hex || "#1a1a24";
 
           // 判断该像素是否处于“激活”状态（未被遮罩变暗）
           let isActive = true;
@@ -1204,14 +1284,14 @@ const MakingPage: React.FC = () => {
           // 激活像素正常显示，非激活像素降低透明度（仍可见色号）
           const effectiveOpacity = isActive ? opacity : opacity * 0.35;
 
-          const contrastColor = getContrastColor(bead.hex);
+          const contrastColor = getContrastColor(beadHex);
           const r = parseInt(contrastColor.slice(1, 3), 16);
           const g = parseInt(contrastColor.slice(3, 5), 16);
           const b = parseInt(contrastColor.slice(5, 7), 16);
           ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${effectiveOpacity})`;
 
           // 直接使用原始色号（MARD: H9、A1 等已足够简短）
-          const displayColorId = bead.id;
+          const displayColorId = bead?.id || "--";
 
           let displayText = "";
           if (bead.id !== currentColorId || segmentCount >= 99) {
@@ -1325,9 +1405,9 @@ const MakingPage: React.FC = () => {
               <button
                 style={styles.fitBtn}
                 onClick={handleFitScreen}
-                title="适应屏幕"
+                title="适应屏幕宽度"
               >
-                适应
+                适宽
               </button>
             </div>
 
@@ -1339,43 +1419,6 @@ const MakingPage: React.FC = () => {
                 title="下载图纸"
               >
                 <DownloadSimple size={14} />
-              </button>
-              <button
-                style={{
-                  ...styles.miniBtn,
-                  ...(wakeLockActive ? styles.miniBtnActive : {}),
-                }}
-                onClick={toggleWakeLock}
-                title={wakeLockActive ? "关闭屏幕常亮" : "开启屏幕常亮"}
-              >
-                {wakeLockActive ? (
-                  <Lightning size={14} weight="fill" />
-                ) : (
-                  <LightningSlash size={14} />
-                )}
-              </button>
-              <button
-                style={{
-                  ...styles.miniBtn,
-                  ...(voiceEnabled ? styles.miniBtnActive : {}),
-                }}
-                onClick={() => {
-                  if (!canSpeak()) {
-                    toast.info("您的浏览器不支持语音功能");
-                    return;
-                  }
-                  setVoiceEnabled(!voiceEnabled);
-                  toast.info(
-                    voiceEnabled ? "语音提示已关闭" : "语音提示已开启",
-                  );
-                }}
-                title={voiceEnabled ? "关闭语音" : "开启语音"}
-              >
-                {voiceEnabled ? (
-                  <SpeakerHigh size={14} />
-                ) : (
-                  <SpeakerSlash size={14} />
-                )}
               </button>
               <button
                 style={styles.miniBtn}
@@ -1410,6 +1453,37 @@ const MakingPage: React.FC = () => {
                     onClick={() => setShowColorId(!showColorId)}
                   >
                     {showColorId ? <Eye size={16} /> : <EyeSlash size={16} />}
+                  </button>
+                </div>
+                <div style={styles.settingRow}>
+                  <span style={styles.settingLabel}>屏幕常亮</span>
+                  <button
+                    style={{
+                      ...styles.toggleBtn,
+                      ...(wakeLockActive ? styles.toggleBtnActive : {}),
+                    }}
+                    onClick={toggleWakeLock}
+                  >
+                    {wakeLockActive ? <Lightning size={16} weight="fill" /> : <LightningSlash size={16} />}
+                  </button>
+                </div>
+                <div style={styles.settingRow}>
+                  <span style={styles.settingLabel}>语音播报</span>
+                  <button
+                    style={{
+                      ...styles.toggleBtn,
+                      ...(voiceEnabled ? styles.toggleBtnActive : {}),
+                    }}
+                    onClick={() => {
+                      if (!canSpeak()) {
+                        toast.info("您的浏览器不支持语音功能");
+                        return;
+                      }
+                      setVoiceEnabled(!voiceEnabled);
+                      toast.info(voiceEnabled ? "语音提示已关闭" : "语音提示已开启");
+                    }}
+                  >
+                    {voiceEnabled ? <SpeakerHigh size={16} /> : <SpeakerSlash size={16} />}
                   </button>
                 </div>
                 <div style={styles.settingHint}>
@@ -1525,18 +1599,28 @@ const MakingPage: React.FC = () => {
           visible={showExportModal}
           onClose={() => setShowExportModal(false)}
           beadData={beadData}
-          onNeedRewardUnlock={() => setShowRewardedUnlockModal(true)}
+          onNeedRewardUnlock={(_reason, onUnlocked) => {
+            pendingExportAfterRewardRef.current = onUnlocked || null;
+            setShowRewardedUnlockModal(true);
+          }}
         />
       )}
 
       <RewardedUnlockModal
         visible={showRewardedUnlockModal}
         title="解锁高清导出"
-        desc="今日免费次数已用完，观看短广告可再解锁 1 次高清导出。"
+        desc="观看短广告后可解锁 1 次高级导出。"
         onClose={() => setShowRewardedUnlockModal(false)}
         onRewardEarned={() => {
           adService.grantPremiumExportRewardCredit();
-          toast.success("已解锁 1 次高级导出，请再次点击导出按钮");
+          const run = pendingExportAfterRewardRef.current;
+          pendingExportAfterRewardRef.current = null;
+          if (run) {
+            toast.success("广告已完成，开始下载图纸");
+            run();
+            return;
+          }
+          toast.success("已解锁 1 次高级导出");
         }}
       />
 
@@ -1618,6 +1702,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    flexWrap: "nowrap",
     gap: "8px",
     zIndex: 20,
     pointerEvents: "none",
@@ -1628,6 +1713,9 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "6px",
     padding: "6px 10px",
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
     background:
       "linear-gradient(145deg, rgba(16, 22, 36, 0.88), rgba(10, 14, 24, 0.82))",
     backdropFilter: "blur(12px)",
@@ -1682,7 +1770,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "11px",
     fontWeight: 700,
     color: "#f1f6ff",
-    minWidth: "46px",
+    minWidth: "42px",
     padding: "0 6px",
     lineHeight: "20px",
     background: "rgba(148, 163, 184, 0.18)",
@@ -1691,8 +1779,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   zoomRange: {
-    width: "92px",
+    width: "clamp(52px, 16vw, 80px)",
     accentColor: colors.bead.cyan,
+    flexShrink: 1,
   },
 
   controlBtns: {
@@ -1706,6 +1795,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.12)",
     boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
     borderRadius: "12px",
+    flexShrink: 0,
     pointerEvents: "auto",
   },
 

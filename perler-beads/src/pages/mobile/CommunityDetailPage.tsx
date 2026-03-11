@@ -8,6 +8,7 @@ import { BeadPixelData } from '../../services/colorMatchService';
 import { clearToken, getToken } from '../../services/api/authApi';
 import Modal, { useModal } from '../../components/Modal';
 import { sanitizeDisplayTitle } from '../../utils/textUtils';
+import { formatAbsoluteTime } from '../../utils/timeUtils';
 
 const COMMUNITY_MAKING_DRAFT_KEY = 'community_making_bead_data';
 const isAuthExpiredResponse = (code?: number | string, msg?: string) => {
@@ -81,20 +82,48 @@ const CommunityDetailPage: React.FC = () => {
     // 初始化扁平数组
     const flatBeads: (BeadColor | null)[] = new Array(width * height).fill(null);
 
-    // 填充数据
-    for (const b of rawBeads) {
-      if (b.x >= 0 && b.x < width && b.y >= 0 && b.y < height && b.colorId) {
-        const mapped = colorMap.get(b.colorId);
-        const fallbackHex = normalizeHexColor(b?.hex) || colorFromID(String(b.colorId));
+    // 兼容两种社区 bead_data 结构：
+    // 1) 坐标结构: [{ x, y, colorId, hex }]
+    // 2) 扁平结构: [{ id, hex, ... }] 长度 = width * height
+    const first = rawBeads[0];
+    const isFlatArray =
+      rawBeads.length === width * height &&
+      first &&
+      typeof first === 'object' &&
+      !('x' in first) &&
+      !('y' in first);
+
+    if (isFlatArray) {
+      for (let i = 0; i < rawBeads.length; i++) {
+        const b = rawBeads[i];
+        const colorId = String((b as { id?: string; colorId?: string })?.id || (b as { colorId?: string })?.colorId || '');
+        const mapped = colorMap.get(colorId);
+        const fallbackHex = normalizeHexColor((b as { hex?: string })?.hex) || colorFromID(colorId || `c${i}`);
         const color: BeadColor = mapped || {
-          id: String(b.colorId),
-          name: String(b.colorId),
-          nameCN: String(b.colorId),
+          id: colorId || `c${i}`,
+          name: colorId || `c${i}`,
+          nameCN: colorId || `c${i}`,
           rgb: hexToRgb(fallbackHex),
           hex: fallbackHex,
           brand: 'mard',
         };
-        flatBeads[b.y * width + b.x] = color;
+        flatBeads[i] = color;
+      }
+    } else {
+      for (const b of rawBeads) {
+        if (b.x >= 0 && b.x < width && b.y >= 0 && b.y < height && b.colorId) {
+          const mapped = colorMap.get(b.colorId);
+          const fallbackHex = normalizeHexColor(b?.hex) || colorFromID(String(b.colorId));
+          const color: BeadColor = mapped || {
+            id: String(b.colorId),
+            name: String(b.colorId),
+            nameCN: String(b.colorId),
+            rgb: hexToRgb(fallbackHex),
+            hex: fallbackHex,
+            brand: 'mard',
+          };
+          flatBeads[b.y * width + b.x] = color;
+        }
       }
     }
 
@@ -164,7 +193,16 @@ const CommunityDetailPage: React.FC = () => {
       return;
     }
     try {
-      localStorage.setItem(COMMUNITY_MAKING_DRAFT_KEY, JSON.stringify(beadPixelData));
+      localStorage.setItem(
+        COMMUNITY_MAKING_DRAFT_KEY,
+        JSON.stringify({
+          version: 2,
+          source: 'community',
+          postId: post.id,
+          savedAt: Date.now(),
+          beadData: beadPixelData,
+        }),
+      );
     } catch (e) {
       console.warn('[CommunityDetailPage] 保存制作数据到本地失败:', e);
     }
@@ -381,7 +419,10 @@ const CommunityDetailPage: React.FC = () => {
               <span style={styles.avatarFallback}>{post.user.nickname?.[0] || '?'}</span>
             )}
           </div>
-          <span style={styles.authorName}>{post.user.nickname || '匿名用户'}</span>
+          <div style={styles.authorMeta}>
+            <span style={styles.authorName}>{post.user.nickname || '匿名用户'}</span>
+            <span style={styles.publishTime}>发布于 {formatAbsoluteTime(post.created_at)}</span>
+          </div>
         </div>
 
         {/* 信息标签 */}
@@ -401,7 +442,7 @@ const CommunityDetailPage: React.FC = () => {
           {post.bead_count > 0 && (
             <div style={styles.tag}>
               <span>🧮</span>
-              <span>{post.bead_count}颗</span>
+              <span>{post.bead_count}颗豆</span>
             </div>
           )}
           {(post.palette_name || post.palette_brand) && (
@@ -667,6 +708,16 @@ const styles: Record<string, React.CSSProperties> = {
   authorName: {
     fontSize: typography.fontSize.sm,
     color: colors.text.secondary,
+    fontFamily: typography.fontFamilyAlt,
+  },
+  authorMeta: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  publishTime: {
+    fontSize: '11px',
+    color: colors.text.muted,
     fontFamily: typography.fontFamilyAlt,
   },
 

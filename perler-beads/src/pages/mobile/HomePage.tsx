@@ -1,22 +1,55 @@
 ﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Image, FolderOpen, Sparkle, Heart, Eye, SortAscending, Fire, Hammer, Images } from '@phosphor-icons/react';
+import { FolderOpen, Sparkle, Heart, Eye, SortAscending, Fire, Hammer, MagnifyingGlass } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../../styles/designSystem';
 import OnboardingModal from '../../components/OnboardingModal';
 import { communityApi, CommunityPostListItem } from '../../services/api/communityApi';
+import { finishedWorkApi, FinishedWorkItem } from '../../services/api/finishedWorkApi';
 import { useUserStore } from '../../store/userStore';
 import { localStorageService } from '../../services/localStorageService';
 import { sanitizeDisplayTitle } from '../../utils/textUtils';
-
-// 预设标签
-const TAG_OPTIONS = ['全部', '动漫', '游戏', '动物', '风景', '节日', '人物', '食物', '其他'];
+import { formatRelativeTime } from '../../utils/timeUtils';
 
 // 排序选项
 const SORT_OPTIONS = [
+  { key: 'recommended', label: '推荐', icon: Sparkle },
   { key: 'newest', label: '最新', icon: SortAscending },
   { key: 'popular', label: '最热', icon: Fire },
   { key: 'most_made', label: '最多制作', icon: Hammer },
 ] as const;
+
+interface CommunityCardImageProps {
+  previewUrl?: string;
+  thumbnailUrl?: string;
+  alt: string;
+  style: React.CSSProperties;
+}
+
+const CommunityCardImage: React.FC<CommunityCardImageProps> = ({ previewUrl, thumbnailUrl, alt, style }) => {
+  const candidates = [previewUrl, thumbnailUrl].filter((u): u is string => !!u && u.trim().length > 0);
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    setIndex(0);
+  }, [previewUrl, thumbnailUrl]);
+
+  const currentSrc = candidates[index];
+  if (!currentSrc) return null;
+
+  return (
+    <img
+      src={currentSrc}
+      alt={alt}
+      style={style}
+      loading="lazy"
+      onError={() => {
+        if (index < candidates.length - 1) {
+          setIndex(prev => prev + 1);
+        }
+      }}
+    />
+  );
+};
 
 /**
  * 首页 - 拼豆工坊
@@ -26,6 +59,7 @@ const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const { isLoggedIn } = useUserStore();
   const [localProjectCount, setLocalProjectCount] = useState(0);
+  const [communityDirectory, setCommunityDirectory] = useState<'pattern' | 'finished'>('pattern');
 
   // 社区作品数据
   const [communityPosts, setCommunityPosts] = useState<CommunityPostListItem[]>([]);
@@ -34,12 +68,17 @@ const HomePage: React.FC = () => {
   const [communityLoading, setCommunityLoading] = useState(false);
   const [communityTotal, setCommunityTotal] = useState(0);
   const [communityErrorText, setCommunityErrorText] = useState('');
-  const [selectedTag, setSelectedTag] = useState('全部');
-  const [sortBy, setSortBy] = useState('newest');
+  const [communityKeywordInput, setCommunityKeywordInput] = useState('');
+  const [communityKeyword, setCommunityKeyword] = useState('');
+  const [sortBy, setSortBy] = useState('recommended');
   const communityLoadingRef = useRef(false);
+  const [finishedWorks, setFinishedWorks] = useState<FinishedWorkItem[]>([]);
+  const [finishedLoading, setFinishedLoading] = useState(false);
+  const [finishedTotal, setFinishedTotal] = useState(0);
+  const [finishedErrorText, setFinishedErrorText] = useState('');
 
   // 加载社区作品
-  const loadCommunityPosts = useCallback(async (pageNum: number, append = false, tag?: string, sort?: string) => {
+  const loadCommunityPosts = useCallback(async (pageNum: number, append = false, sort?: string, keyword?: string) => {
     if (communityLoadingRef.current) return;
     communityLoadingRef.current = true;
     setCommunityLoading(true);
@@ -47,8 +86,8 @@ const HomePage: React.FC = () => {
       const res = await communityApi.getPosts({
         page: pageNum,
         pageSize: 20,
-        tag: tag === '全部' ? undefined : tag,
-        sort: sort === 'newest' ? undefined : sort,
+        keyword: keyword?.trim() || undefined,
+        sort: sort && sort !== 'newest' ? sort : undefined,
       });
       if (res.code === 0 && res.data) {
         const newList = res.data.list || [];
@@ -71,14 +110,28 @@ const HomePage: React.FC = () => {
     }
   }, []);
 
-  // 切换标签
-  const handleTagChange = (tag: string) => {
-    if (tag === selectedTag) return;
-    setSelectedTag(tag);
-    setCommunityPage(1);
-    setCommunityPosts([]);
-    setCommunityHasMore(true);
-  };
+  const loadFinishedWorks = useCallback(async () => {
+    setFinishedLoading(true);
+    try {
+      const res = await finishedWorkApi.listPublic(1, 20);
+      if (res.code === 0 && res.data) {
+        setFinishedWorks(res.data.list || []);
+        setFinishedTotal(res.data.total || 0);
+        setFinishedErrorText('');
+      } else {
+        setFinishedWorks([]);
+        setFinishedTotal(0);
+        setFinishedErrorText(res.msg || '成品社区暂时不可用，请稍后重试');
+      }
+    } catch (err) {
+      console.error('加载成品社区失败:', err);
+      setFinishedWorks([]);
+      setFinishedTotal(0);
+      setFinishedErrorText('成品社区暂时不可用，请稍后重试');
+    } finally {
+      setFinishedLoading(false);
+    }
+  }, []);
 
   // 切换排序
   const handleSortChange = (sort: string) => {
@@ -89,6 +142,18 @@ const HomePage: React.FC = () => {
     setCommunityHasMore(true);
   };
 
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const nextKeyword = communityKeywordInput.trim();
+      if (nextKeyword === communityKeyword) return;
+      setCommunityKeyword(nextKeyword);
+      setCommunityPage(1);
+      setCommunityPosts([]);
+      setCommunityHasMore(true);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [communityKeywordInput, communityKeyword]);
+
   // 加载数据
   useEffect(() => {
     // 加载本地方案数量
@@ -96,8 +161,9 @@ const HomePage: React.FC = () => {
     setLocalProjectCount(localResult.total);
 
     // 加载社区作品
-    loadCommunityPosts(1, false, selectedTag, sortBy);
-  }, [loadCommunityPosts, selectedTag, sortBy]);
+    loadCommunityPosts(1, false, sortBy, communityKeyword);
+    loadFinishedWorks();
+  }, [loadCommunityPosts, loadFinishedWorks, sortBy, communityKeyword]);
 
   // 滚动加载更多社区作品
   useEffect(() => {
@@ -107,12 +173,12 @@ const HomePage: React.FC = () => {
       if (scrollHeight - scrollTop - clientHeight < 200) {
         const nextPage = communityPage + 1;
         setCommunityPage(nextPage);
-        loadCommunityPosts(nextPage, true, selectedTag, sortBy);
+        loadCommunityPosts(nextPage, true, sortBy, communityKeyword);
       }
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [communityPage, communityHasMore, loadCommunityPosts, selectedTag, sortBy]);
+  }, [communityPage, communityHasMore, loadCommunityPosts, sortBy, communityKeyword]);
 
   // 难度工具
   const getDifficultyColor = (d: string) => {
@@ -159,168 +225,268 @@ const HomePage: React.FC = () => {
       <div style={styles.content}>
         {/* 快捷操作栏 - 紧凑横向 */}
         <div style={styles.quickBar}>
-          <button style={styles.quickBtn} onClick={() => navigate('/mobile/create', { state: { source: 'camera' } })}>
-            <Camera size={18} weight="fill" style={{ color: '#fff' }} />
-            <span style={styles.quickBtnText}>拍照创作</span>
-          </button>
-          <button style={styles.quickBtn2} onClick={() => navigate('/mobile/create', { state: { source: 'album' } })}>
-            <Image size={18} weight="duotone" style={{ color: colors.bead.pink }} />
-            <span style={styles.quickBtnText2}>相册选择</span>
+          <button style={styles.quickBtn} onClick={() => navigate('/mobile/create')}>
+            <Sparkle size={18} weight="fill" style={{ color: '#fff' }} />
+            <span style={styles.quickBtnText}>开始创作</span>
           </button>
           <button style={styles.quickBtn3} onClick={() => navigate('/mobile/profile')}>
             <FolderOpen size={18} weight="duotone" style={{ color: colors.bead.purple }} />
             <span style={styles.quickBtnText2}>我的方案{localProjectCount > 0 ? ` (${localProjectCount})` : ''}</span>
           </button>
-          <button style={styles.quickBtn4} onClick={() => navigate('/mobile/finished')}>
-            <Images size={18} weight="duotone" style={{ color: colors.bead.orange }} />
-            <span style={styles.quickBtnText2}>成品社区</span>
-          </button>
         </div>
 
-        {/* 社区作品瀑布流 */}
+        {/* 社区作品 */}
         <div style={styles.communitySection}>
           <div style={styles.sectionHeader}>
             <span style={styles.sectionIcon}>🌟</span>
             <span style={styles.sectionTitle}>社区作品</span>
           </div>
-
-          {/* 标签筛选栏 */}
-          <div style={styles.tagBar}>
-            <div style={styles.tagScroll}>
-              {TAG_OPTIONS.map(tag => (
-                <button
-                  key={tag}
-                  style={{
-                    ...styles.tagButton,
-                    ...(selectedTag === tag ? styles.tagButtonActive : {}),
-                  }}
-                  onClick={() => handleTagChange(tag)}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
+          <div style={styles.directoryTabs}>
+            <button
+              style={{
+                ...styles.directoryTab,
+                ...(communityDirectory === 'pattern' ? styles.directoryTabActive : {}),
+              }}
+              onClick={() => setCommunityDirectory('pattern')}
+            >
+              图纸社区
+            </button>
+            <button
+              style={{
+                ...styles.directoryTab,
+                ...(communityDirectory === 'finished' ? styles.directoryTabActive : {}),
+              }}
+              onClick={() => setCommunityDirectory('finished')}
+            >
+              成品社区
+            </button>
           </div>
 
-          {/* 排序栏 + 统计 */}
-          <div style={styles.sortBar}>
-            <span style={styles.sortStatsText}>共 {communityTotal} 个作品</span>
-            <div style={styles.sortOptions}>
-              {SORT_OPTIONS.map(opt => {
-                const Icon = opt.icon;
-                return (
-                  <button
-                    key={opt.key}
-                    style={{
-                      ...styles.sortButton,
-                      ...(sortBy === opt.key ? styles.sortButtonActive : {}),
-                    }}
-                    onClick={() => handleSortChange(opt.key)}
-                  >
-                    <Icon size={13} weight={sortBy === opt.key ? 'bold' : 'regular'} />
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {communityErrorText ? (
-            <div style={styles.communityError}>
-              <span style={styles.communityErrorText}>{communityErrorText}</span>
-            </div>
-          ) : null}
-          {communityPosts.length > 0 ? (
-            <div style={styles.waterfall}>
-              <div style={styles.waterfallCol}>
-                {communityPosts.filter((_, i) => i % 2 === 0).map(post => (
-                  <div key={post.id} style={styles.postCard} onClick={() => navigate(`/mobile/community/${post.id}`)}>
-                    <div style={styles.postImageWrap}>
-                      {post.thumbnail_url ? (
-                        <img src={post.thumbnail_url} alt={sanitizeDisplayTitle(post.title)} style={styles.postImage} loading="lazy" />
-                      ) : (
-                        <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>🧩</span></div>
-                      )}
-                      <div style={{ ...styles.postDiffBadge, background: `${getDifficultyColor(post.difficulty)}cc` }}>
-                        {getDifficultyLabel(post.difficulty)}
-                      </div>
-                    </div>
-                    <div style={styles.postInfo}>
-                      <div style={styles.postTitle}>{sanitizeDisplayTitle(post.title)}</div>
-                      <div style={styles.postMeta}>
-                        <span style={{ color: colors.bead.cyan }}>{post.grid_width}×{post.grid_height}</span>
-                        <span style={{ color: colors.text.muted }}>·</span>
-                        <span style={{ color: colors.bead.orange }}>{post.color_count}色</span>
-                      </div>
-                      <div style={styles.postFooter}>
-                        <div style={styles.postStat}>
-                          <Heart size={12} weight="fill" color={colors.bead.red} />
-                          <span>{post.like_count}</span>
-                        </div>
-                        <div style={styles.postStat}>
-                          <Eye size={12} color={colors.text.muted} />
-                          <span>{post.view_count}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+          {communityDirectory === 'pattern' ? (
+            <>
+              <div style={styles.searchBar}>
+                <MagnifyingGlass size={16} color={colors.text.muted} />
+                <input
+                  value={communityKeywordInput}
+                  onChange={e => setCommunityKeywordInput(e.target.value)}
+                  placeholder="搜索作品名 / 标签 / 作者"
+                  style={styles.searchInput}
+                />
               </div>
-              <div style={styles.waterfallCol}>
-                {communityPosts.filter((_, i) => i % 2 === 1).map(post => (
-                  <div key={post.id} style={styles.postCard} onClick={() => navigate(`/mobile/community/${post.id}`)}>
-                    <div style={styles.postImageWrap}>
-                      {post.thumbnail_url ? (
-                        <img src={post.thumbnail_url} alt={sanitizeDisplayTitle(post.title)} style={styles.postImage} loading="lazy" />
-                      ) : (
-                        <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>🧩</span></div>
-                      )}
-                      <div style={{ ...styles.postDiffBadge, background: `${getDifficultyColor(post.difficulty)}cc` }}>
-                        {getDifficultyLabel(post.difficulty)}
-                      </div>
-                    </div>
-                    <div style={styles.postInfo}>
-                      <div style={styles.postTitle}>{sanitizeDisplayTitle(post.title)}</div>
-                      <div style={styles.postMeta}>
-                        <span style={{ color: colors.bead.cyan }}>{post.grid_width}×{post.grid_height}</span>
-                        <span style={{ color: colors.text.muted }}>·</span>
-                        <span style={{ color: colors.bead.orange }}>{post.color_count}色</span>
-                      </div>
-                      <div style={styles.postFooter}>
-                        <div style={styles.postStat}>
-                          <Heart size={12} weight="fill" color={colors.bead.red} />
-                          <span>{post.like_count}</span>
-                        </div>
-                        <div style={styles.postStat}>
-                          <Eye size={12} color={colors.text.muted} />
-                          <span>{post.view_count}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div style={styles.sortBar}>
+                <span style={styles.sortStatsText}>共 {communityTotal} 个图纸</span>
+                <div style={styles.sortOptions}>
+                  {SORT_OPTIONS.map(opt => {
+                    const Icon = opt.icon;
+                    return (
+                      <button
+                        key={opt.key}
+                        style={{
+                          ...styles.sortButton,
+                          ...(sortBy === opt.key ? styles.sortButtonActive : {}),
+                        }}
+                        onClick={() => handleSortChange(opt.key)}
+                      >
+                        <Icon size={13} weight={sortBy === opt.key ? 'bold' : 'regular'} />
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ) : !communityLoading ? (
-            <div style={styles.communityEmpty}>
-              <span style={{ fontSize: '36px' }}>🎨</span>
-              <span style={{ fontSize: typography.fontSize.sm, color: colors.text.muted }}>暂无社区作品</span>
-            </div>
-          ) : null}
 
-          {/* 加载中 */}
-          {communityLoading && (
-            <div style={styles.communityLoading}>
-              <div style={styles.communitySpinner} />
-              <span style={{ fontSize: typography.fontSize.sm, color: colors.text.muted }}>加载中...</span>
-            </div>
-          )}
+              {communityErrorText ? (
+                <div style={styles.communityError}>
+                  <span style={styles.communityErrorText}>{communityErrorText}</span>
+                </div>
+              ) : null}
+              {communityPosts.length > 0 ? (
+                <div style={styles.waterfall}>
+                  <div style={styles.waterfallCol}>
+                    {communityPosts.filter((_, i) => i % 2 === 0).map(post => (
+                      <div key={post.id} style={styles.postCard} onClick={() => navigate(`/mobile/community/${post.id}`)}>
+                        <div style={styles.postImageWrap}>
+                          {post.preview_url || post.thumbnail_url ? (
+                            <CommunityCardImage
+                              previewUrl={post.preview_url}
+                              thumbnailUrl={post.thumbnail_url}
+                              alt={sanitizeDisplayTitle(post.title)}
+                              style={styles.postImage}
+                            />
+                          ) : (
+                            <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>🧩</span></div>
+                          )}
+                          <div style={{ ...styles.postDiffBadge, background: `${getDifficultyColor(post.difficulty)}cc` }}>
+                            {getDifficultyLabel(post.difficulty)}
+                          </div>
+                        </div>
+                        <div style={styles.postInfo}>
+                          <div style={styles.postTitle}>{sanitizeDisplayTitle(post.title)}</div>
+                          <div style={styles.postMeta}>
+                            <span style={{ color: colors.bead.cyan }}>{post.grid_width}×{post.grid_height}</span>
+                            <span style={{ color: colors.text.muted }}>·</span>
+                            <span style={{ color: colors.bead.orange }}>{post.color_count}色</span>
+                          </div>
+                          <div style={styles.postFooter}>
+                            <div style={styles.postStat}>
+                              <Heart size={12} weight="fill" color={colors.bead.red} />
+                              <span>{post.like_count}</span>
+                            </div>
+                            <div style={styles.postStat}>
+                              <Eye size={12} color={colors.text.muted} />
+                              <span>{post.view_count}</span>
+                            </div>
+                            <span style={styles.postTime}>{formatRelativeTime(post.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={styles.waterfallCol}>
+                    {communityPosts.filter((_, i) => i % 2 === 1).map(post => (
+                      <div key={post.id} style={styles.postCard} onClick={() => navigate(`/mobile/community/${post.id}`)}>
+                        <div style={styles.postImageWrap}>
+                          {post.preview_url || post.thumbnail_url ? (
+                            <CommunityCardImage
+                              previewUrl={post.preview_url}
+                              thumbnailUrl={post.thumbnail_url}
+                              alt={sanitizeDisplayTitle(post.title)}
+                              style={styles.postImage}
+                            />
+                          ) : (
+                            <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>🧩</span></div>
+                          )}
+                          <div style={{ ...styles.postDiffBadge, background: `${getDifficultyColor(post.difficulty)}cc` }}>
+                            {getDifficultyLabel(post.difficulty)}
+                          </div>
+                        </div>
+                        <div style={styles.postInfo}>
+                          <div style={styles.postTitle}>{sanitizeDisplayTitle(post.title)}</div>
+                          <div style={styles.postMeta}>
+                            <span style={{ color: colors.bead.cyan }}>{post.grid_width}×{post.grid_height}</span>
+                            <span style={{ color: colors.text.muted }}>·</span>
+                            <span style={{ color: colors.bead.orange }}>{post.color_count}色</span>
+                          </div>
+                          <div style={styles.postFooter}>
+                            <div style={styles.postStat}>
+                              <Heart size={12} weight="fill" color={colors.bead.red} />
+                              <span>{post.like_count}</span>
+                            </div>
+                            <div style={styles.postStat}>
+                              <Eye size={12} color={colors.text.muted} />
+                              <span>{post.view_count}</span>
+                            </div>
+                            <span style={styles.postTime}>{formatRelativeTime(post.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : !communityLoading ? (
+                <div style={styles.communityEmpty}>
+                  <span style={{ fontSize: '36px' }}>🎨</span>
+                  <span style={{ fontSize: typography.fontSize.sm, color: colors.text.muted }}>暂无图纸作品</span>
+                </div>
+              ) : null}
 
-          {/* 已到底 */}
-          {!communityHasMore && communityPosts.length > 0 && (
-            <div style={styles.communityEnd}>
-              <span style={{ fontSize: typography.fontSize.xs, color: colors.text.muted }}>— 已经到底了 —</span>
-            </div>
+              {communityLoading && (
+                <div style={styles.communityLoading}>
+                  <div style={styles.communitySpinner} />
+                  <span style={{ fontSize: typography.fontSize.sm, color: colors.text.muted }}>加载中...</span>
+                </div>
+              )}
+
+              {!communityHasMore && communityPosts.length > 0 && (
+                <div style={styles.communityEnd}>
+                  <span style={{ fontSize: typography.fontSize.xs, color: colors.text.muted }}>— 图纸已经到底了 —</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div style={styles.sortBar}>
+                <span style={styles.sortStatsText}>共 {finishedTotal} 个成品</span>
+                <button style={styles.viewAllBtn} onClick={() => navigate('/mobile/finished')}>查看全部</button>
+              </div>
+
+              {finishedErrorText ? (
+                <div style={styles.communityError}>
+                  <span style={styles.communityErrorText}>{finishedErrorText}</span>
+                </div>
+              ) : null}
+
+              {finishedWorks.length > 0 ? (
+                <div style={styles.waterfall}>
+                  <div style={styles.waterfallCol}>
+                    {finishedWorks.filter((_, i) => i % 2 === 0).map(item => (
+                      <div key={item.id} style={styles.postCard} onClick={() => navigate(`/mobile/finished/${item.id}`)}>
+                        <div style={styles.postImageWrap}>
+                          {item.cover_url ? (
+                            <img src={item.cover_url} alt={sanitizeDisplayTitle(item.title)} style={styles.postImage} loading="lazy" />
+                          ) : (
+                            <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>📷</span></div>
+                          )}
+                        </div>
+                        <div style={styles.postInfo}>
+                          <div style={styles.postTitle}>{sanitizeDisplayTitle(item.title)}</div>
+                          <div style={styles.postMeta}>
+                            <span style={{ color: colors.bead.cyan }}>{item.user?.nickname || '用户'}</span>
+                            <span style={{ color: colors.text.muted }}>·</span>
+                            <span style={{ color: colors.bead.orange }}>{item.image_count}张</span>
+                          </div>
+                          <div style={styles.postFooter}>
+                            <div style={styles.postStat}>
+                              <Heart size={12} weight="fill" color={colors.bead.red} />
+                              <span>{item.like_count || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={styles.waterfallCol}>
+                    {finishedWorks.filter((_, i) => i % 2 === 1).map(item => (
+                      <div key={item.id} style={styles.postCard} onClick={() => navigate(`/mobile/finished/${item.id}`)}>
+                        <div style={styles.postImageWrap}>
+                          {item.cover_url ? (
+                            <img src={item.cover_url} alt={sanitizeDisplayTitle(item.title)} style={styles.postImage} loading="lazy" />
+                          ) : (
+                            <div style={styles.postPlaceholder}><span style={{ fontSize: '32px' }}>📷</span></div>
+                          )}
+                        </div>
+                        <div style={styles.postInfo}>
+                          <div style={styles.postTitle}>{sanitizeDisplayTitle(item.title)}</div>
+                          <div style={styles.postMeta}>
+                            <span style={{ color: colors.bead.cyan }}>{item.user?.nickname || '用户'}</span>
+                            <span style={{ color: colors.text.muted }}>·</span>
+                            <span style={{ color: colors.bead.orange }}>{item.image_count}张</span>
+                          </div>
+                          <div style={styles.postFooter}>
+                            <div style={styles.postStat}>
+                              <Heart size={12} weight="fill" color={colors.bead.red} />
+                              <span>{item.like_count || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : !finishedLoading ? (
+                <div style={styles.communityEmpty}>
+                  <span style={{ fontSize: '36px' }}>📷</span>
+                  <span style={{ fontSize: typography.fontSize.sm, color: colors.text.muted }}>暂无成品作品</span>
+                </div>
+              ) : null}
+
+              {finishedLoading && (
+                <div style={styles.communityLoading}>
+                  <div style={styles.communitySpinner} />
+                  <span style={{ fontSize: typography.fontSize.sm, color: colors.text.muted }}>加载中...</span>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -571,6 +737,33 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 10px 24px rgba(0,0,0,0.14)',
   },
 
+  directoryTabs: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '8px',
+    marginBottom: '10px',
+  },
+
+  directoryTab: {
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: radius.button,
+    padding: '7px 10px',
+    background: colors.bg.card,
+    color: colors.text.secondary,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+    transition: animation.transition.fast,
+  },
+
+  directoryTabActive: {
+    border: `1px solid ${colors.bead.cyan}`,
+    color: colors.bead.cyan,
+    background: `${colors.bead.cyan}1c`,
+    boxShadow: `0 6px 16px ${colors.bead.cyan}22`,
+  },
+
   tagBar: {
     marginBottom: '8px',
     overflow: 'hidden',
@@ -608,6 +801,27 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: typography.fontWeight.bold,
   },
 
+  searchBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 10px',
+    marginBottom: '10px',
+    borderRadius: radius.lg,
+    border: `1px solid ${colors.border.soft}`,
+    background: `${colors.bg.card}e6`,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    color: colors.text.primary,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamilyAlt,
+  },
+
   sortBar: {
     display: 'flex',
     alignItems: 'center',
@@ -631,6 +845,17 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
     minWidth: 0,
+  },
+
+  viewAllBtn: {
+    border: `1px solid ${colors.bead.purple}70`,
+    color: colors.bead.purple,
+    background: `${colors.bead.purple}1a`,
+    borderRadius: radius.full,
+    padding: '4px 10px',
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
   },
 
   sortButton: {
@@ -755,6 +980,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11px',
     color: colors.text.muted,
   },
+  postTime: {
+    marginLeft: 'auto',
+    fontSize: '10px',
+    color: colors.text.muted,
+    fontFamily: typography.fontFamilyAlt,
+    whiteSpace: 'nowrap',
+  },
 
   communityEmpty: {
     display: 'flex',
@@ -781,7 +1013,6 @@ const styles: Record<string, React.CSSProperties> = {
     animation: 'spin 0.8s linear infinite',
   },
 
-  
   communityError: {
     padding: '8px 10px',
     borderRadius: radius.sm,
@@ -794,6 +1025,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.xs,
     color: colors.bead.red,
     fontFamily: typography.fontFamilyAlt,
+  },
+
+  communityEnd: {
+    textAlign: 'center',
+    paddingTop: '12px',
   },
 
   rainbowBar: {

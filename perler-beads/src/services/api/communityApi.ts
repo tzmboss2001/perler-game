@@ -186,6 +186,15 @@ export interface CreatePostData {
   palette_name?: string;
 }
 
+export interface CreatePostResponse {
+  id: number;
+  title: string;
+  category?: string;
+  thumbnail_url?: string;
+  preview_url?: string;
+  updated_existing?: boolean;
+}
+
 // 鐐硅禐鍝嶅簲
 export interface LikeResponse {
   liked: boolean;
@@ -206,6 +215,7 @@ export interface CommunityListParams {
   pageSize?: number;
   tag?: string;
   category?: string;
+  keyword?: string;
   sort?: string;
 }
 
@@ -264,6 +274,7 @@ export const communityApi = {
     if (params.pageSize) searchParams.set('pageSize', params.pageSize.toString());
     if (params.tag) searchParams.set('tag', params.tag);
     if (params.category) searchParams.set('category', params.category);
+    if (params.keyword) searchParams.set('keyword', params.keyword);
     if (params.sort) searchParams.set('sort', params.sort);
 
     const url = `/api/v1/community/posts?${searchParams.toString()}`;
@@ -291,7 +302,7 @@ export const communityApi = {
   /**
    * 鍙戝竷浣滃搧鍒扮ぞ鍖?
    */
-  createPost: async (data: CreatePostData): Promise<ApiResponse<CommunityPostDetail>> => {
+  createPost: async (data: CreatePostData): Promise<ApiResponse<CreatePostResponse>> => {
     return request('/api/v1/community/posts', {
       method: 'POST',
       body: JSON.stringify(data),

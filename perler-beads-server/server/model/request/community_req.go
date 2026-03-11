@@ -6,7 +6,8 @@ type CommunityPostListRequest struct {
 	PageSize int    `form:"pageSize"`
 	Tag      string `form:"tag"`
 	Category string `form:"category"`
-	Sort     string `form:"sort"` // newest / popular / most_made
+	Keyword  string `form:"keyword"`
+	Sort     string `form:"sort"` // newest / popular / most_made / recommended
 }
 
 // CommunityMyPostListRequest 我的社区发布列表请求

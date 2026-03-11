@@ -97,18 +97,19 @@ func (co *CommunityApi) CreatePost(c *gin.Context) {
 		return
 	}
 
-	post, err := communityService.CreatePost(&req, userID)
+	post, updatedExisting, err := communityService.CreatePost(&req, userID)
 	if err != nil {
 		response.FailWithMessage("publish failed: "+err.Error(), c)
 		return
 	}
 
 	response.OkWithDetailed(gin.H{
-		"id":            post.ID,
-		"title":         post.Title,
-		"category":      post.Category,
-		"thumbnail_url": post.ThumbnailURL,
-		"preview_url":   post.PreviewURL,
+		"id":               post.ID,
+		"title":            post.Title,
+		"category":         post.Category,
+		"thumbnail_url":    post.ThumbnailURL,
+		"preview_url":      post.PreviewURL,
+		"updated_existing": updatedExisting,
 	}, "ok", c)
 }
 

@@ -29,6 +29,7 @@ func Routers() *gin.Engine {
 	router.InitUploadRouter(publicGroup)
 	router.InitFeedbackRouter(publicGroup)
 	router.InitDepthRouter(publicGroup)
+	router.InitAiRouter(publicGroup)
 
 	// Private APIs
 	router.InitAuthPrivateRouter(privateGroup)
@@ -67,10 +68,18 @@ func resolveStaticDir(envKey string, subDir string) string {
 
 	wd, _ := os.Getwd()
 	candidates := []string{
+		filepath.Join("/www", "wwwroot", "perler-beads", subDir),
+		filepath.Join("/www", "wwwroot", "perler-beads", "public", subDir),
 		filepath.Join(wd, "..", "..", "perler-beads", "public", subDir),
 		filepath.Join(wd, "..", "perler-beads", "public", subDir),
 		filepath.Join(wd, "perler-beads", "public", subDir),
 		filepath.Join(wd, subDir),
+	}
+
+	for _, dir := range candidates {
+		if st, err := os.Stat(dir); err == nil && st.IsDir() {
+			return dir
+		}
 	}
 
 	for _, dir := range candidates {
@@ -82,4 +91,3 @@ func resolveStaticDir(envKey string, subDir string) string {
 
 	return filepath.Join(wd, subDir)
 }
-
