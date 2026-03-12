@@ -47,6 +47,7 @@ import { getToken } from "../../services/api/authApi";
 import BannerAd from "../../components/ads/BannerAd";
 import RewardedUnlockModal from "../../components/ads/RewardedUnlockModal";
 import { adService } from "../../services/adService";
+import BoardVisionAssistModal from "../../components/BoardVisionAssistModal";
 
 const COMMUNITY_MAKING_DRAFT_KEY = "community_making_bead_data";
 type CommunityMakingDraftPayload =
@@ -219,6 +220,7 @@ const MakingPage: React.FC = () => {
   const [showRewardedUnlockModal, setShowRewardedUnlockModal] = useState(false);
   const pendingExportAfterRewardRef = useRef<(() => void) | null>(null);
   const [showReplaceModal, setShowReplaceModal] = useState(false);
+  const [showVisionAssist, setShowVisionAssist] = useState(false);
   const [scale, setScale] = useState(1);
   const [translateX, setTranslateX] = useState(0);
   const [translateY, setTranslateY] = useState(0);
@@ -409,6 +411,24 @@ const MakingPage: React.FC = () => {
     if (!selection.colorId) return null;
     return allBeadColors.find((c) => c.id === selection.colorId) || null;
   }, [selection.colorId]);
+
+  const visionBoardRecommendation = useMemo(
+    () => (beadData ? recommendBoard(beadData.width, beadData.height) : null),
+    [beadData],
+  );
+
+  const visionInitialBoardIndex = useMemo(() => {
+    if (!beadData || !visionBoardRecommendation) {
+      return 0;
+    }
+    const boardSize = visionBoardRecommendation.boardSize;
+    const boardCol = Math.floor((selection.blockX * BLOCK_SIZE) / boardSize);
+    const boardRow = Math.floor((selection.blockY * BLOCK_SIZE) / boardSize);
+    return boardRow * visionBoardRecommendation.cols + boardCol;
+  }, [beadData, selection.blockX, selection.blockY, visionBoardRecommendation]);
+
+  const visionInitialColorId =
+    selection.type === "color" ? selection.colorId ?? null : null;
 
   // 计算合适缩放（仅首次加载执行，换色等不重置）
   const initialScaleSetRef = useRef(false);
@@ -1486,6 +1506,18 @@ const MakingPage: React.FC = () => {
                     {voiceEnabled ? <SpeakerHigh size={16} /> : <SpeakerSlash size={16} />}
                   </button>
                 </div>
+                <div style={styles.settingRow}>
+                  <span style={styles.settingLabel}>视觉辅助</span>
+                  <button
+                    style={{ ...styles.actionBtn, padding: "8px 12px", fontSize: "12px" }}
+                    onClick={() => {
+                      setShowSettings(false);
+                      setShowVisionAssist(true);
+                    }}
+                  >
+                    打开
+                  </button>
+                </div>
                 <div style={styles.settingHint}>
                   <p style={styles.hintText}>
                     <strong>操作说明：</strong>
@@ -1632,6 +1664,17 @@ const MakingPage: React.FC = () => {
           currentColor={selectedBeadColor}
           totalCount={colorCountTotal}
           onReplace={handleColorReplace}
+        />
+      )}
+
+      {beadData && visionBoardRecommendation && (
+        <BoardVisionAssistModal
+          visible={showVisionAssist}
+          onClose={() => setShowVisionAssist(false)}
+          beadData={beadData}
+          boardSize={visionBoardRecommendation.boardSize}
+          initialBoardIndex={visionInitialBoardIndex}
+          initialColorId={visionInitialColorId}
         />
       )}
 
