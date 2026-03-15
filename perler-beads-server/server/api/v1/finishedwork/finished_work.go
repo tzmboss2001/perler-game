@@ -118,6 +118,39 @@ func (a *FinishedWorkApi) ListPublic(c *gin.Context) {
 	}, "ok", c)
 }
 
+func (a *FinishedWorkApi) ListPublicByUser(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("userId"), 10, 32)
+	if err != nil {
+		response.FailWithMessage("invalid user id", c)
+		return
+	}
+
+	var req request.ListFinishedWorkRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.FailWithMessage("invalid params", c)
+		return
+	}
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+
+	list, total, err := finishedWorkService.ListPublicByUser(uint(userID), &req)
+	if err != nil {
+		response.FailWithMessage("failed to fetch user finished works", c)
+		return
+	}
+
+	response.OkWithDetailed(response.PageResult{
+		List:     list,
+		Total:    total,
+		Page:     req.Page,
+		PageSize: req.PageSize,
+	}, "ok", c)
+}
+
 func (a *FinishedWorkApi) GetPublicByID(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)

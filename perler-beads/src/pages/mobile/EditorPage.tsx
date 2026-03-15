@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 
-import { ArrowLeft, GridFour, Palette, ListBullets, ArrowClockwise, ArrowCounterClockwise, Play, PencilSimple, ArrowsClockwise, ShareNetwork, ShoppingCart, Prohibit, CheckCircle } from '@phosphor-icons/react';
+import { ArrowLeft, GridFour, Palette, ListBullets, ArrowClockwise, ArrowCounterClockwise, Play, ArrowsClockwise, ShareNetwork, ShoppingCart, Prohibit, CheckCircle } from '@phosphor-icons/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 import { colors, radius, typography, shadows, animation, mixins } from '../../styles/designSystem';
@@ -54,7 +54,7 @@ import { getAiCutoutAvailability, requestAiCutout } from '../../services/aiCutou
 
 /**
  * 移动端编辑图案页面。
- * 支持预览、调参、色系设置、豆子统计、局部编辑、背景处理和智能抠图。
+ * 支持预览、调参、色系设置、豆子统计、背景处理和智能抠图。
  */
 
 export interface EditorStateData {
@@ -153,8 +153,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       if (stored) {
 
-        sessionStorage.removeItem('editorData');
-
         return JSON.parse(stored);
 
       }
@@ -174,6 +172,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const [gridSize, setGridSize] = useState(normalizeGridSize(initialGridWidth || 52));
   const [currentImageData, setCurrentImageData] = useState(imageData);
   const [lastAiCutoutImageData, setLastAiCutoutImageData] = useState<string | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window !== 'undefined' ? window.innerWidth : 390
+  );
 
   const [gridSizeInput, setGridSizeInput] = useState(String(normalizeGridSize(initialGridWidth || 52)));
 
@@ -238,6 +239,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const [bgProtectSubject, setBgProtectSubject] = useState(true);
   const [bgLastRemoval, setBgLastRemoval] = useState<RemovedBackgroundCell[]>([]);
   const [bgCandidateOnly, setBgCandidateOnly] = useState(false);
+  const [showBgAdvanced, setShowBgAdvanced] = useState(false);
   const [bgBaselineData, setBgBaselineData] = useState<BeadPixelData | null>(null);
   const [bgCompareMode, setBgCompareMode] = useState<'current' | 'before'>('current');
   const [isBgAiCutoutLoading, setIsBgAiCutoutLoading] = useState(false);
@@ -910,6 +912,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setBgAutoStrength(55);
     setBgProtectSubject(true);
     setBgCandidateOnly(false);
+    setShowBgAdvanced(false);
     setBgCompareMode('current');
 
     setBgViewMode('select'); // 婵犵數濮甸鏍窗濡ゅ啯鏆滄俊銈呭暟閻瑩鏌熼悜姗嗘畷闁哄懏绻堥弻鏇＄疀鐎ｎ亖鍋撻弴銏犲嚑濞撴埃鍋撻柡宀€鍠栭獮鎴﹀箛闂堟稒顔勬繝纰樻閸嬪懘鏁冮姀銈呰摕闁哄洢鍨归柋鍥ㄧ節闂堟稒绁╂俊顐ゅ仜椤啴濡堕崨顖滎唶闂佺粯鐗滈崢褔锝炶箛鎾佹椽顢斿鍡樻珖闂備線娼х换鍡涘疾濠婂牆鐓濋柛顐犲劜閳锋垿寮堕悙鏉戭棆闁告柨绉归弻鐔兼偡閻楀牊鎮欏銈嗘穿缂嶄線銆佸Δ鍛妞ゆ劕鐟崶銊у幈闂佹枼鏅涢崰姘枔閵忕妴褰掑礂閸忕厧纰嶉梺瀹狀潐閸ㄥ潡宕洪妷鈺佸耿婵°倕鍟╃划鎾⒒娓氣偓閳ь剛鍋涢懟顖涙櫠椤斿墽妫紓浣靛灩楠炴ɑ绻涢幋鐘虫毈闁糕斁鍋?
@@ -1063,6 +1066,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const handleBgSwitchMode = useCallback((mode: BackgroundEditMode) => {
     const nextMode = bgViewMode === mode ? 'select' : mode;
+    if (nextMode !== 'select') {
+      setShowBgAdvanced(true);
+    }
     setBgViewMode(nextMode);
 
     if (nextMode === 'erase') {
@@ -1292,6 +1298,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const isBgComparingBefore = bgCompareMode === 'before' && !!bgBaselineData;
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
     if (!beadData || !isBackgroundMode || bgSelectionSource !== 'auto') {
       return;
     }
@@ -1477,7 +1491,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     if (!beadData) {
 
-      toast.error('娌℃湁鍙繚瀛樼殑鍥炬鏁版嵁');
+      toast.error('没有可保存的图案数据');
 
       return;
 
@@ -2013,7 +2027,72 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   }, [beadData]);
 
-
+  const isNarrowEditorControls = viewportWidth <= 390;
+  const isCompactEditorControls = viewportWidth <= 360;
+  const editorControlRowStyle: React.CSSProperties = {
+    ...styles.previewZoomRow,
+    gap: isCompactEditorControls ? '6px' : '8px',
+  };
+  const editorSliderStyle: React.CSSProperties = {
+    ...styles.previewZoomSlider,
+    minWidth: isNarrowEditorControls ? '100%' : styles.previewZoomSlider.minWidth,
+    order: isNarrowEditorControls ? 3 : 0,
+  };
+  const editorStepButtonStyle: React.CSSProperties = {
+    ...styles.previewZoomButton,
+    width: isCompactEditorControls ? '30px' : styles.previewZoomButton.width,
+    height: isCompactEditorControls ? '30px' : styles.previewZoomButton.height,
+  };
+  const editorChipStyle: React.CSSProperties = {
+    ...styles.previewZoomChip,
+    padding: isCompactEditorControls ? '7px 8px' : styles.previewZoomChip.padding,
+  };
+  const editorGridInputStyle: React.CSSProperties = {
+    ...styles.gridSizeNumberInput,
+    width: isNarrowEditorControls ? '72px' : styles.gridSizeNumberInput.width,
+    marginLeft: isNarrowEditorControls ? 'auto' : 0,
+  };
+  const editorPresetRowStyle: React.CSSProperties = {
+    ...styles.gridPresetRow,
+    gap: isCompactEditorControls ? '6px' : '8px',
+  };
+  const isNarrowFloatingPanel = viewportWidth <= 390;
+  const isCompactFloatingPanel = viewportWidth <= 360;
+  const floatingUtilityStackStyle: React.CSSProperties = {
+    ...styles.floatingUtilityStack,
+    top: isCompactFloatingPanel ? '124px' : styles.floatingUtilityStack.top,
+    left: isCompactFloatingPanel ? '6px' : styles.floatingUtilityStack.left,
+    gap: isCompactFloatingPanel ? '6px' : styles.floatingUtilityStack.gap,
+  };
+  const floatingEditBtnStyle: React.CSSProperties = {
+    ...styles.floatingEditBtn,
+    width: isCompactFloatingPanel ? '40px' : styles.floatingEditBtn.width,
+    minHeight: isCompactFloatingPanel ? '40px' : styles.floatingEditBtn.minHeight,
+    left: isCompactFloatingPanel ? '6px' : styles.floatingEditBtn.left,
+    top: isCompactFloatingPanel ? '72px' : styles.floatingEditBtn.top,
+  };
+  const floatingUtilityBtnStyle: React.CSSProperties = {
+    ...styles.floatingUtilityBtn,
+    width: isCompactFloatingPanel ? '40px' : styles.floatingUtilityBtn.width,
+    minHeight: isCompactFloatingPanel ? '40px' : styles.floatingUtilityBtn.minHeight,
+  };
+  const floatingPanelStyle: React.CSSProperties = {
+    ...styles.floatingPanel,
+    top: isCompactFloatingPanel ? '6px' : styles.floatingPanel.top,
+    left: isNarrowFloatingPanel ? (isCompactFloatingPanel ? '46px' : '50px') : styles.floatingPanel.left,
+    right: isCompactFloatingPanel ? '6px' : styles.floatingPanel.right,
+    padding: isCompactFloatingPanel ? '10px' : styles.floatingPanel.padding,
+    gap: isCompactFloatingPanel ? '10px' : styles.floatingPanel.gap,
+  };
+  const floatingPanelHeaderStyle: React.CSSProperties = {
+    ...styles.floatingPanelHeader,
+    flexWrap: isCompactFloatingPanel ? 'wrap' : 'nowrap',
+  };
+  const floatingPanelActionsStyle: React.CSSProperties = {
+    ...styles.floatingPanelActions,
+    width: isCompactFloatingPanel ? '100%' : undefined,
+    justifyContent: isCompactFloatingPanel ? 'flex-end' : undefined,
+  };
 
   return (
 
@@ -2090,40 +2169,30 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噸缁卞爼姊洪棃娑辨▓闁搞劌纾划鍫ュ焵椤掑嫭鈷掑ù锝呮啞閹牊銇勯敂璇茬仸闁诡啫鍕瘈闁搞儜鍐偓顓㈡⒑缁夊棗瀚峰▓鏃堟煛鐎ｂ晝绐旈柡宀€鍠栭獮鎴﹀箛闂堟稒顔勬繝纰樻閸嬪懘鏁冮姀銈呰摕闁哄洢鍨归柋鍥ㄧ節闂堟稒绁╂俊顐ゅ仜椤啴濡堕崨顖滎唶闂佺粯鐗滈崢褔锝?- 婵犵數濮烽。钘壩ｉ崨鏉戠；闁告侗鍙庨悢鍡樹繆椤栨氨姣為柛瀣尭椤繈顢曢姀鐘点偖闁诲孩顔栭崳顕€宕戞繝鍥╁祦婵☆垰鍚嬬€氭岸鏌涘▎蹇ｆ▓婵☆偆鍠栧缁樼瑹閳ь剙顭囪閹囧幢濡炪垺绋戣灃闁告粈鐒﹂弲婊堟⒑閸撴彃浜濇繛鍙夛耿閸╂盯骞嬮敂钘変化闂佽鍘界敮鎺撲繆婵傚憡鐓涢悗锝庡亜閻忔挳鏌″畝瀣？闁逞屽墾缂嶅棙绂嶉崼鏇熷亗闁稿繒鈷堝▓浠嬫煟閹邦垰鐨虹紒鐘差煼閺岀喖顢欓悾宀€鐓夐梺鐟扮－閸嬨倖淇婇悜鑺ユ櫆缂佹稑顑勯幋鐑芥⒒閸屾艾鈧绮堟笟鈧獮鏍敃閿曗偓绾惧綊鏌涢锝嗙缁炬儳缍婇弻鈥愁吋鎼粹€茬爱闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇濞堛儵姊洪棃娑氬婵炲眰鍔岄悾宄懊洪鍛嫽婵炶揪绲介幉锟犲箚閸儲鐓曞┑鐘插€婚崺锝団偓瑙勬礃閸旀瑥顕ｆ禒瀣垫晝闁绘棁娓规竟?*/}
 
-          {beadData && !isEditMode && (
-
+          {beadData && !isBackgroundMode && (
             <button
-
-              style={styles.floatingEditBtn}
-
-              onClick={() => {
-
+              type="button"
+              style={floatingEditBtnStyle}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
                 setShowPaletteSettings(false);
-
                 setShowStats(false);
-
-                setIsEditMode(true);
-
+                handleEnterBackgroundMode();
               }}
-
+              aria-label="进入去背景工具"
+              title="进入去背景工具"
             >
-
-              <PencilSimple size={18} weight="fill" />
-
+              <span style={styles.floatingEditBtnPrimary}>抠图</span>
+              <span style={styles.floatingEditBtnSecondary}>去背景</span>
             </button>
-
           )}
-
-
-
-          {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊﹀▕閸┾偓妞ゆ帒鍊归崵鈧柣搴㈠嚬閸犳寮茬捄浣曟棃宕ラ挊澶嬪枠濠碘剝鎮傞弫鍌涙姜閹殿喚娉块梻鍌欑濠€閬嶅磿閵堝鏄ュ┑鐘叉搐缂佲晛鈹戦悩宕囶暡闁稿﹤鐏氶幈銊ヮ潨閸℃顫紓浣割槹濡炰粙寮婚敍鍕勃閻犲洦褰冮～鍥⒑鐠団€虫灁闁搞劏妫勯悾鐑藉Ω閿斿墽鐦堥梺鍛婃处娴滅偟澹曢崸妤佲拻闁稿本鐟ㄩ崗宀勬煙閾忣偅宕岀€规洘鐓″濠氬Ψ閵夈儳鍝庨梻浣告贡缁垰鐣烽悷鎵虫闁靛繒濮烽ˇ鏉款渻閵堝棛澹勭紒鏌ョ畺瀵煡鏁愭径瀣ф嫼闂傚倸鐗婃笟妤呮偂椤撶姷纾奸柣妯哄暱閻忓瓨銇勯姀鈩冾棃鐎规洖銈稿鎾偄閸欏顏归梻浣藉吹婵灚绂嶆禒瀣鐎光偓閸曨偄鍤戦梺纭呮彧闂勫嫰鎮″☉銏″€甸柨婵嗙凹閹查箖鏌ｉ幘鍐叉倯妞?*/}
-
-          {beadData && !isEditMode && (
+          {beadData && !isBackgroundMode && (
             <>
-              <div style={styles.floatingUtilityStack}>
+              <div style={floatingUtilityStackStyle}>
                 <button
                   style={{
-                    ...styles.floatingUtilityBtn,
+                    ...floatingUtilityBtnStyle,
                     ...(showPaletteSettings ? styles.floatingUtilityBtnActive : {}),
                   }}
                   onClick={() => {
@@ -2135,13 +2204,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                   }}
                   aria-label="打开色系设置"
                 >
-                  <Palette size={16} weight="fill" />
-                  <span style={styles.floatingUtilityLabel}>色系</span>
+                  <span style={styles.floatingUtilityPrimary}>色系</span>
+                  <span style={styles.floatingUtilitySecondary}>配色</span>
                 </button>
 
                 <button
                   style={{
-                    ...styles.floatingUtilityBtn,
+                    ...floatingUtilityBtnStyle,
                     ...(showStats ? styles.floatingUtilityBtnActive : {}),
                   }}
                   onClick={() => {
@@ -2153,14 +2222,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                   }}
                   aria-label="打开豆子统计"
                 >
-                  <ListBullets size={16} weight="fill" />
-                  <span style={styles.floatingUtilityLabel}>统计</span>
+                  <span style={styles.floatingUtilityPrimary}>统计</span>
+                  <span style={styles.floatingUtilitySecondary}>用量</span>
                 </button>
               </div>
 
               {showPaletteSettings && (
-                <div style={styles.floatingPanel}>
-                  <div style={styles.floatingPanelHeader}>
+                <div style={floatingPanelStyle}>
+                  <div style={floatingPanelHeaderStyle}>
                     <div style={styles.floatingPanelTitleGroup}>
                       <Palette size={18} weight="fill" color={colors.bead.cyan} />
                       <div style={styles.floatingPanelTextGroup}>
@@ -2170,7 +2239,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                         </span>
                       </div>
                     </div>
-                    <div style={styles.floatingPanelActions}>
+                    <div style={floatingPanelActionsStyle}>
                       <button style={styles.floatingPanelCloseBtn} onClick={() => setShowPaletteSettings(false)}>
                         ×
                       </button>
@@ -2193,7 +2262,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                   </div>
 
                   <div style={styles.paletteSettingsHint}>
-                    {currentColorOption?.description} ? {currentColorOption?.detailDesc}
+                    {currentColorOption?.description} · {currentColorOption?.detailDesc}
                   </div>
 
                   <div style={styles.paletteSwitchRow}>
@@ -2214,20 +2283,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                         }}
                         onClick={handleToggleMyColors}
                       >
-                        {useMyColors ? '已启用' : '启用'}
+                        {useMyColors ? "已启用" : "启用"}
                       </button>
                     </div>
                   </div>
 
-                  <button style={styles.applyPaletteBtn} onClick={handleApplyCurrentColorSettings}>
+                  <button style={styles.applyPaletteBtn} onClick={handleApplyPaletteSettings}>
                     应用当前色系设置
                   </button>
                 </div>
               )}
 
               {showStats && (
-                <div style={styles.floatingPanel}>
-                  <div style={styles.floatingPanelHeader}>
+                <div style={floatingPanelStyle}>
+                  <div style={floatingPanelHeaderStyle}>
                     <div style={styles.floatingPanelTitleGroup}>
                       <ListBullets size={18} weight="fill" color={colors.bead.orange} />
                       <div style={styles.floatingPanelTextGroup}>
@@ -2235,7 +2304,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                         <span style={styles.floatingPanelSummary}>{statistics.length} 种颜色</span>
                       </div>
                     </div>
-                    <div style={styles.floatingPanelActions}>
+                    <div style={floatingPanelActionsStyle}>
                       <button style={styles.smartMergeBtn} onClick={() => setShowSmartMerge(true)}>
                         智能合并
                       </button>
@@ -2272,7 +2341,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                             ...(highlightedColorId === stat.color.id ? styles.statsItemHighlighted : {}),
                           }}
                           onClick={() => handleStatsColorClick(stat.color)}
-                          title={colorInfo.name + ' · ' + stat.color.id + ' · ' + stat.count + ' 颗豆'}
+                          title={colorInfo.name + " · " + stat.color.id + " · " + stat.count + " 颗豆"}
                         >
                           <span style={styles.statsRank}>{index + 1}</span>
                           <div style={{ ...styles.statsColorBox, backgroundColor: stat.color.hex }} />
@@ -2298,7 +2367,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                               e.stopPropagation();
                               handleToggleExcludeColor(stat.color.id);
                             }}
-                            title={excludedColorIds.has(stat.color.id) ? '已排除该颜色' : '排除该颜色'}
+                            title={excludedColorIds.has(stat.color.id) ? "已排除该颜色" : "排除该颜色"}
                           >
                             {excludedColorIds.has(stat.color.id) ? <CheckCircle size={12} /> : <Prohibit size={12} />}
                           </button>
@@ -2333,210 +2402,26 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               )}
             </>
           )}
-
-          {beadData && isEditMode && (
-
-            <div style={{
-
-              ...styles.slidePanel,
-
-              animation: isEditPanelClosing ? 'slideOutToLeft 0.2s ease-in forwards' : 'slideInFromLeft 0.25s ease-out',
-
-            }}>
-
-              <div style={styles.slidePanelHeader}>
-
-                <button
-
-                  style={styles.slidePanelClose}
-
-                  onClick={handleCloseEditPanel}
-
-                >
-
-                  完成
-                </button>
-
-              </div>
-
-              <div style={styles.slidePanelTools}>
-
-                {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊﹀▕閸┾偓妞ゆ帒鍊归崵鈧柣搴㈠嚬閸樺ジ鈥﹂崹顕呮建闁逞屽墲閻箖姊洪崨濠勨槈闁宦板姂閸╂盯骞嬮敂钘変化闂佽鍘界敮鎺撲繆婵傚憡鐓涢悗锝庡亜閻忔挳鏌″畝瀣？闁逞屽墾缂嶅棙绂嶉崼鏇熷亗闁稿繒鈷堝▓浠嬫煟閹邦垰鐨虹紒鐘差煼閺岀喖顢欓崗鐓庝淮濡炪們鍨虹粙鎴︼綖濠靛绀傜痪鎷岄哺椤?*/}
-
-                <button
-
-                  style={styles.slidePanelColorBtn}
-
-                  onClick={() => setShowColorPicker(true)}
-
-                >
-
-                  <div
-
-                    style={{
-
-                      ...styles.slidePanelColorPreview,
-
-                      backgroundColor: currentColor?.hex || '#ffffff',
-
-                    }}
-
-                  />
-
-                  <span style={styles.slidePanelColorLabel}>
-
-                    {currentColor?.id || '选色'}
-
-                  </span>
-
-                </button>
-
-
-
-                {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸樹粙骞夐崫銉х＜閺夊牄鍔屽ù顔锯偓娈垮櫘閸ｏ綁鐛€ｎ亖鏀介柛鈩冪懐閸熷洭姊绘担鍛婅础闁告鍥ㄥ仱闁靛ě鍐ㄧ亰闂佽宕樺畷闈涚暤娓氣偓閻擃偊宕堕妸褉濮囬梺绋匡工椤兘寮婚妶澶婄畳闁圭儤鍨垫慨搴ㄦ⒑?- 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ゅ嵆閳ユ棃宕橀浣镐壕闁挎繂绨肩花缁樸亜閹哄鐏紒杈ㄥ笧缁辨帡濮€閻樺吀妗撴繝娈垮枛閿曘劌鈻嶉敐澶婄闁告洦鍨版儫闂侀潧顧€婵″洭鍩€椤掑嫮鐣烘慨濠冩そ瀹曨偊宕熼棃娑樺婵＄偑鍊ら崢楣冨礂濮椻偓閹即顢欑捄銊ф澑濠电偞鍨堕悷銉╁焵椤掆偓椤兘寮婚妶澶婄畳闁圭儤鍨垫慨鏇炩攽閻愬弶鍣烽柛銊ㄦ椤繐煤椤忓嫪绱堕梺鍛婃处閸嬧偓闁稿鎹囧畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕?*/}
-
-                <div style={styles.slidePanelToolGroup}>
-
-                  {[
-                    { id: 'brush' as const, icon: '涂', label: '画笔' },
-                    { id: 'fill' as const, icon: '灌', label: '填充' },
-                    { id: 'eraser' as const, icon: '擦', label: '橡皮' },
-                    { id: 'picker' as const, icon: '取', label: '取色' },
-                  ].map((tool) => (
-
-                    <button
-
-                      key={tool.id}
-
-                      style={{
-
-                        ...styles.slidePanelToolBtn,
-
-                        ...(currentTool === tool.id ? styles.slidePanelToolBtnActive : {}),
-
-                      }}
-
-                      onClick={() => setCurrentTool(tool.id)}
-
-                    >
-
-                      <span style={styles.slidePanelToolIcon}>{tool.icon}</span>
-
-                      <span style={styles.slidePanelToolLabel}>{tool.label}</span>
-
-                    </button>
-
-                  ))}
-
-                </div>
-
-
-
-                {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂?闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂?*/}
-
-                <div style={styles.slidePanelHistoryGroup}>
-
-                  <button
-
-                    style={{
-
-                      ...styles.slidePanelHistoryBtn,
-
-                      opacity: canUndo ? 1 : 0.4,
-
-                    }}
-
-                    onClick={undo}
-
-                    disabled={!canUndo}
-
-                    title="撤销上一步修改"
-
-                  >
-
-                    <ArrowCounterClockwise size={12} weight="bold" />
-
-                  </button>
-
-                  <button
-
-                    style={{
-
-                      ...styles.slidePanelHistoryBtn,
-
-                      opacity: canRedo ? 1 : 0.4,
-
-                    }}
-
-                    onClick={redo}
-
-                    disabled={!canRedo}
-
-                    title="重做上一步修改"
-
-                  >
-
-                    <ArrowClockwise size={12} weight="bold" />
-
-                  </button>
-
-                </div>
-
-                {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗鐎氫即鏌熼搹顐ｅ暗缂侇喛顕ч埥澶娢熼柨瀣垫綌婵犵數鍋涘Λ娆撳礉閺嶎収鏁傞柣鏂垮悑閳锋帒霉閿濆懏鍟為柟顖氱墦閺屾稒绻濋崒婊冪厽閻庤娲橀崝娆忣嚕娴犲鏁冮柣鏃囨腹婢?*/}
-
-                <button
-
-                  style={styles.slidePanelMagicBtn}
-
-                  onClick={handleEnterBackgroundMode}
-
-                  title="进入背景处理模式"
-
-                >
-
-                  <span style={styles.slidePanelToolIcon}>抠</span>
-
-                  <span style={styles.slidePanelToolLabel}>背景</span>
-
-                </button>
-
-              </div>
-
-            </div>
-
-          )}
-
-
-
-      </div>
-
-
-
-      {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹芥粎绮旈悜妯镐簻闁靛闄勫畷宀€鈧娲橀〃鍛达綖濠婂牆鐒垫い鎺嗗亾妞ゆ洩缍侀、鏇㈡晝閳ь剛绮绘繝姘仯闁搞儜鍐獓濡炪們鍎茬换鍫濐潖濞差亝顥堟繛鎴炶壘椤ｅ搫鈹戦埥鍡椾簼妞ゃ劌锕妴?- 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖骞戦幇闈涙缂佺虎鍘搁崑鎾绘⒒娴ｇ瓔娼愰柛搴″悑閹便劑濡舵径濠勶紵閻庡厜鍋撻柛鏇ㄥ墰閸樺崬鈹戦悙鏉戠仸闁挎洦鍋勯蹇涘Ψ閿旇桨绨??*/}
-
-      <div style={styles.content}>
-
-        {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹芥粎绮旈悜妯镐簻闁靛闄勫畷宀€鈧娲橀〃鍛达綖濠婂牆鐒垫い鎺嗗亾妞?- 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘??*/}
         <div style={styles.controlPanel}>
           <div style={styles.controlItem}>
             <div style={styles.controlHeader}>
               <span style={styles.controlLabel}>预览缩放</span>
               <span style={styles.controlValue}>{Math.round(previewZoom.scale * 100)}%</span>
             </div>
-            <div style={styles.previewZoomRow}>
-              <button style={styles.previewZoomButton} onClick={() => interactiveCanvasRef.current?.zoomOut()} disabled={!beadData}>-</button>
+            <div style={editorControlRowStyle}>
+              <button style={editorStepButtonStyle} onClick={() => interactiveCanvasRef.current?.zoomOut()} disabled={!beadData}>-</button>
               <input
                 type="range"
                 min={Math.round(previewZoom.minScale * 100)}
                 max={Math.round(previewZoom.maxScale * 100)}
                 value={Math.round(previewZoom.scale * 100)}
-                onChange={(e) => interactiveCanvasRef.current?.setZoom(Number(e.target.value) / 100)}
-                style={styles.previewZoomSlider}
+                onChange={(e) => interactiveCanvasRef.current?.setZoomPercent(Number(e.target.value))}
+                style={editorSliderStyle}
                 disabled={!beadData}
               />
-              <button style={styles.previewZoomButton} onClick={() => interactiveCanvasRef.current?.zoomIn()} disabled={!beadData}>+</button>
-              <button style={styles.previewZoomChip} onClick={() => interactiveCanvasRef.current?.fitToViewport()} disabled={!beadData}>适配</button>
-              <button style={styles.previewZoomChip} onClick={() => interactiveCanvasRef.current?.resetToActualSize()} disabled={!beadData}>1:1</button>
+              <button style={editorStepButtonStyle} onClick={() => interactiveCanvasRef.current?.zoomIn()} disabled={!beadData}>+</button>
+              <button style={editorChipStyle} onClick={() => interactiveCanvasRef.current?.fitToViewport()} disabled={!beadData}>适配</button>
+              <button style={editorChipStyle} onClick={() => interactiveCanvasRef.current?.resetToActualSize()} disabled={!beadData}>1:1</button>
             </div>
           </div>
 
@@ -2545,8 +2430,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               <span style={styles.controlLabel}>作品宽度</span>
               <span style={styles.controlValue}>{gridSize} 颗</span>
             </div>
-            <div style={styles.previewZoomRow}>
-              <button style={styles.previewZoomButton} onClick={() => handleAdjustGridSize(-GRID_SIZE_STEP)} disabled={!beadData}>-</button>
+            <div style={editorControlRowStyle}>
+              <button style={editorStepButtonStyle} onClick={() => handleAdjustGridSize(-GRID_SIZE_STEP)} disabled={!beadData}>-</button>
               <input
                 type="range"
                 min={GRID_SIZE_MIN}
@@ -2556,10 +2441,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                 onChange={(e) => setGridSize(Number(e.target.value))}
                 onMouseUp={handleRegenerate}
                 onTouchEnd={handleRegenerate}
-                style={styles.previewZoomSlider}
+                style={editorSliderStyle}
                 disabled={!beadData}
               />
-              <button style={styles.previewZoomButton} onClick={() => handleAdjustGridSize(GRID_SIZE_STEP)} disabled={!beadData}>+</button>
+              <button style={editorStepButtonStyle} onClick={() => handleAdjustGridSize(GRID_SIZE_STEP)} disabled={!beadData}>+</button>
               <input
                 type="number"
                 id="editor-grid-size-input"
@@ -2577,11 +2462,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                     (e.currentTarget as HTMLInputElement).blur();
                   }
                 }}
-                style={styles.gridSizeNumberInput}
+                style={editorGridInputStyle}
                 aria-label="作品宽度输入"
               />
             </div>
-            <div style={styles.gridPresetRow}>
+            <div style={editorPresetRowStyle}>
               {COMMON_BOARD_WIDTHS.map((preset) => (
                 <button
                   key={preset}
@@ -2608,7 +2493,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               <span style={styles.controlLabel}>颜色风格</span>
               <span style={styles.controlValue}>{saturationBoost === 0 ? '原图' : saturationBoost + '%'}</span>
             </div>
-            <div style={styles.gridPresetRow}>
+            <div style={editorPresetRowStyle}>
               {SATURATION_PRESETS.map((preset) => (
                 <button
                   key={preset.label}
@@ -2888,102 +2773,137 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             </span>
           </div>
 
-          <div style={styles.bgModeStrengthSection}>
-            <div style={styles.bgModeStrengthHeader}>
-              <span style={styles.controlLabel}>识别强度</span>
-              <span style={styles.bgModeStrengthValue}>
-                {bgAutoStrength < 40 ? '保守' : bgAutoStrength > 70 ? '激进' : '推荐'} 档
-              </span>
+          <div style={styles.bgModeEntryCard}>
+            <div style={styles.bgModeEntryTextGroup}>
+              <span style={styles.bgModeEntryTitle}>去背景工具</span>
+              <span style={styles.bgModeEntryDesc}>先试一键去背景，不够理想再用智能抠图或高级微调。</span>
             </div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={bgAutoStrength}
-              onChange={(e) => setBgAutoStrength(Number(e.target.value))}
-              style={{
-                ...styles.slider,
-                background:
-                  'linear-gradient(to right, ' + colors.bead.cyan + ' 0%, ' + colors.bead.green + ' 45%, ' + colors.bead.yellow + ' 72%, ' + colors.bead.orange + ' 100%)',
-              }}
-            />
-            <div style={styles.bgModeStrengthLabels}>
-              <span>更保守</span>
-              <span>更激进</span>
-            </div>
+            <div style={styles.bgModeEntryBadge}>只保留拼豆强相关功能</div>
           </div>
 
-          <div style={styles.bgModeFilterRow}>
-            <button
-              style={{
-                ...styles.bgModeFilterBtn,
-                ...(bgProtectSubject ? styles.bgModeFilterBtnActive : {}),
-              }}
-              onClick={() => setBgProtectSubject((prev) => !prev)}
-            >
-              主体保护：{bgProtectSubject ? '已开启' : '已关闭'}
+          <div style={styles.bgModePrimaryActions}>
+            <button style={styles.bgModeQuickBtn} onClick={handleBgQuickRemove}>
+              一键去背景
+            </button>
+            <button style={styles.bgModeAiBtn} onClick={handleBgAiCutout} disabled={isBgAiCutoutLoading}>
+              {isBgAiCutoutLoading ? '智能抠图中...' : '智能抠图'}
             </button>
           </div>
 
-          <div style={styles.bgModeFilterRow}>
+          <div style={styles.bgModeAdvancedToggleRow}>
             <button
+              type="button"
               style={{
-                ...styles.bgModeFilterBtn,
-                ...(bgCandidateOnly ? styles.bgModeFilterBtnActive : {}),
+                ...styles.bgModeToggleBtn,
+                ...(showBgAdvanced ? styles.bgModeToggleBtnActive : {}),
               }}
-              onClick={() => setBgCandidateOnly((prev) => !prev)}
+              onClick={() => setShowBgAdvanced((prev) => !prev)}
             >
-              {bgCandidateOnly ? '显示全部区域' : '只看背景候选区'}
+              {showBgAdvanced ? '收起高级微调' : '打开高级微调'}
             </button>
+            <span style={styles.bgModeAdvancedHint}>默认先用上面的两个主按钮</span>
           </div>
 
-          <div style={styles.bgModeCompareRow}>
-            <button
-              style={{
-                ...styles.bgModeCompareBtn,
-                ...(isBgComparingBefore ? styles.bgModeCompareBtnActive : {}),
-                opacity: bgBaselineData ? 1 : 0.45,
-              }}
-              onClick={() => setBgCompareMode((prev) => (prev === 'before' ? 'current' : 'before'))}
-              disabled={!bgBaselineData}
-            >
-              {isBgComparingBefore ? '查看当前结果' : '查看去背景前'}
-            </button>
-          </div>
+          {showBgAdvanced && (
+            <>
+              <div style={styles.bgModeStrengthSection}>
+                <div style={styles.bgModeStrengthHeader}>
+                  <span style={styles.controlLabel}>识别强度</span>
+                  <span style={styles.bgModeStrengthValue}>
+                    {bgAutoStrength < 40 ? '保守' : bgAutoStrength > 70 ? '激进' : '推荐'} 档
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={bgAutoStrength}
+                  onChange={(e) => setBgAutoStrength(Number(e.target.value))}
+                  style={{
+                    ...styles.slider,
+                    background:
+                      'linear-gradient(to right, ' + colors.bead.cyan + ' 0%, ' + colors.bead.green + ' 45%, ' + colors.bead.yellow + ' 72%, ' + colors.bead.orange + ' 100%)',
+                  }}
+                />
+                <div style={styles.bgModeStrengthLabels}>
+                  <span>更保守</span>
+                  <span>更激进</span>
+                </div>
+              </div>
 
-          <div style={styles.bgModeFilterRow}>
-            <button
-              style={{
-                ...styles.bgModeFilterBtn,
-                ...(bgViewMode === 'view' ? styles.bgModeFilterBtnActive : {}),
-                flex: 1,
-              }}
-              onClick={() => handleBgSwitchMode('view')}
-            >
-              {bgViewMode === 'view' ? '重新选择' : '查看当前选择'}
-            </button>
-            <button
-              style={{
-                ...styles.bgModeFilterBtn,
-                ...(bgViewMode === 'erase' ? styles.bgModeFilterBtnActive : {}),
-                flex: 1,
-              }}
-              onClick={() => handleBgSwitchMode('erase')}
-            >
-              {bgViewMode === 'erase' ? '结束手动擦背景' : '手动擦背景'}
-            </button>
-            <button
-              style={{
-                ...styles.bgModeFilterBtn,
-                ...(bgViewMode === 'restore' ? styles.bgModeFilterBtnActive : {}),
-                flex: 1,
-              }}
-              onClick={() => handleBgSwitchMode('restore')}
-            >
-              {bgViewMode === 'restore' ? '结束手动补背景' : '手动补背景'}
-            </button>
-          </div>
+              <div style={styles.bgModeFilterRow}>
+                <button
+                  style={{
+                    ...styles.bgModeFilterBtn,
+                    ...(bgProtectSubject ? styles.bgModeFilterBtnActive : {}),
+                  }}
+                  onClick={() => setBgProtectSubject((prev) => !prev)}
+                >
+                  主体保护：{bgProtectSubject ? '已开启' : '已关闭'}
+                </button>
+              </div>
+
+              <div style={styles.bgModeFilterRow}>
+                <button
+                  style={{
+                    ...styles.bgModeFilterBtn,
+                    ...(bgCandidateOnly ? styles.bgModeFilterBtnActive : {}),
+                  }}
+                  onClick={() => setBgCandidateOnly((prev) => !prev)}
+                >
+                  {bgCandidateOnly ? '显示全部区域' : '只看背景候选区'}
+                </button>
+              </div>
+
+              <div style={styles.bgModeCompareRow}>
+                <button
+                  style={{
+                    ...styles.bgModeCompareBtn,
+                    ...(isBgComparingBefore ? styles.bgModeCompareBtnActive : {}),
+                    opacity: bgBaselineData ? 1 : 0.45,
+                  }}
+                  onClick={() => setBgCompareMode((prev) => (prev === 'before' ? 'current' : 'before'))}
+                  disabled={!bgBaselineData}
+                >
+                  {isBgComparingBefore ? '查看当前结果' : '查看去背景前'}
+                </button>
+              </div>
+
+              <div style={styles.bgModeFilterRow}>
+                <button
+                  style={{
+                    ...styles.bgModeFilterBtn,
+                    ...(bgViewMode === 'view' ? styles.bgModeFilterBtnActive : {}),
+                    flex: 1,
+                  }}
+                  onClick={() => handleBgSwitchMode('view')}
+                >
+                  {bgViewMode === 'view' ? '结束查看选择' : '手动选背景'}
+                </button>
+                <button
+                  style={{
+                    ...styles.bgModeFilterBtn,
+                    ...(bgViewMode === 'erase' ? styles.bgModeFilterBtnActive : {}),
+                    flex: 1,
+                  }}
+                  onClick={() => handleBgSwitchMode('erase')}
+                >
+                  {bgViewMode === 'erase' ? '结束手动擦除' : '手动擦除'}
+                </button>
+                <button
+                  style={{
+                    ...styles.bgModeFilterBtn,
+                    ...(bgViewMode === 'restore' ? styles.bgModeFilterBtnActive : {}),
+                    flex: 1,
+                  }}
+                  onClick={() => handleBgSwitchMode('restore')}
+                >
+                  {bgViewMode === 'restore' ? '结束手动补回' : '手动补回'}
+                </button>
+              </div>
+            </>
+          )}
 
           <div style={styles.bgModePreview}>
             <InteractiveCanvas
@@ -2991,7 +2911,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               cellSize={cellSize}
               currentTool="picker"
               currentColor={null}
-              isEditMode={!isBgComparingBefore && bgViewMode !== 'view'}
+              isEditMode={!isBgComparingBefore}
               highlightedColorId={isBgComparingBefore ? null : bgSelectedColorId}
               bgModeHighlightedIndices={isBgComparingBefore ? [] : getBgHighlightedIndices()}
               bgModeExcludedIndices={isBgComparingBefore ? new Set<number>() : bgExcludedIndices}
@@ -3024,44 +2944,40 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             )}
 
             {isBgComparingBefore ? (
-              <p>对比模式：这是去背景前的原始状态，只用于查看，不会修改图案。</p>
+              <p>这是去背景前的原图，只用于对比。</p>
             ) : bgViewMode === 'view' ? (
-              <p>查看模式下不会修改图案，切回选择模式可继续微调。</p>
+              <p>当前是查看模式，不会修改图案。</p>
             ) : bgViewMode === 'erase' ? (
-              <p>手动擦背景已开启，点击任意格子即可直接透明化。</p>
+              <p>已开启手动擦除，点击格子就会去掉背景。</p>
             ) : bgViewMode === 'restore' ? (
-              <p>手动补背景已开启，点击透明格即可从去背景前状态补回。</p>
+              <p>已开启手动补回，点击透明格即可恢复。</p>
             ) : !bgSelectedColorId ? (
-              <p>点击任意格子，选择要透明化的背景颜色。</p>
+              <p>点一下背景颜色，系统会帮你圈出同色区域。</p>
             ) : (
-              <p>再次点击可排除误选区域，确认无误后再透明化。</p>
+              <p>不对的地方再点一下排除，然后点“应用透明”。</p>
             )}
           </div>
 
           <div style={styles.bgModeActions}>
-            <button style={styles.bgModeQuickBtn} onClick={handleBgQuickRemove}>
-              一键去背景
-            </button>
-            <button style={styles.bgModeAiBtn} onClick={handleBgAiCutout} disabled={isBgAiCutoutLoading}>
-              {isBgAiCutoutLoading ? '智能抠图中...' : '智能抠图'}
-            </button>
             {bgLastRemoval.length > 0 && (
               <button style={styles.bgModeRestoreBtn} onClick={handleBgRestoreLastRemoval}>
                 恢复上次去背景
               </button>
             )}
-            <button style={styles.bgModeClearBtn} onClick={handleBgClearSelection}>
-              清空选择
-            </button>
+            {showBgAdvanced && (
+              <button style={styles.bgModeClearBtn} onClick={handleBgClearSelection}>
+                清空选择
+              </button>
+            )}
             <button
               style={styles.bgModeConfirmBtn}
               onClick={handleBgConfirmTransparent}
               disabled={getBgHighlightedIndices().length === 0}
             >
-              确认透明
+              应用透明
             </button>
             <button style={styles.bgModeExitBtn} onClick={handleExitBackgroundMode}>
-              退出
+              返回编辑
             </button>
           </div>
         </div>
@@ -3405,37 +3321,44 @@ const styles: Record<string, React.CSSProperties> = {
 
   floatingEditBtn: {
     position: 'absolute',
-    top: '8px',
+    top: '72px',
     left: '8px',
-    width: '36px',
-
-    height: '36px',
-
+    width: '48px',
+    minHeight: '48px',
+    padding: '6px 4px',
     display: 'flex',
-
+    flexDirection: 'column',
     alignItems: 'center',
-
     justifyContent: 'center',
-
-    background: "linear-gradient(145deg, " + colors.bead.cyan + ", " + colors.bead.purple + ")",
-
+    gap: '2px',
+    background: "linear-gradient(145deg, " + colors.bead.green + ", " + colors.bead.cyan + ")",
     border: 'none',
-
-    borderRadius: radius.bead,
-
+    borderRadius: radius.button,
     color: '#ffffff',
-
     cursor: 'pointer',
-
-    boxShadow: "0 2px 8px " + colors.bead.cyan + "50",
-
+    boxShadow: "0 4px 12px " + colors.bead.cyan + "45",
     zIndex: 10,
     transition: animation.transition.fast,
   },
 
+  floatingEditBtnPrimary: {
+    fontSize: '11px',
+    lineHeight: 1,
+    fontWeight: typography.fontWeight.bold,
+    fontFamily: typography.fontFamilyAlt,
+    color: '#ffffff',
+  },
+
+  floatingEditBtnSecondary: {
+    fontSize: '8px',
+    lineHeight: 1,
+    fontFamily: typography.fontFamilyAlt,
+    color: 'rgba(255,255,255,0.88)',
+  },
+
   floatingUtilityStack: {
     position: 'absolute',
-    top: '52px',
+    top: '128px',
     left: '8px',
     display: 'flex',
     flexDirection: 'column',
@@ -3444,33 +3367,41 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   floatingUtilityBtn: {
-    width: '36px',
-    height: '36px',
-    padding: 0,
+    width: '48px',
+    minHeight: '48px',
+    padding: '6px 4px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     gap: '2px',
-    background: "linear-gradient(145deg, " + colors.bead.cyan + ", " + colors.bead.purple + ")",
+    background: 'linear-gradient(145deg, rgba(76, 205, 255, 0.96), rgba(116, 131, 255, 0.96))',
     color: '#ffffff',
     border: 'none',
-    borderRadius: radius.bead,
-    boxShadow: "0 2px 8px " + colors.bead.cyan + "50",
+    borderRadius: radius.button,
+    boxShadow: '0 4px 12px rgba(76, 205, 255, 0.28)',
     cursor: 'pointer',
     transition: animation.transition.fast,
   },
 
   floatingUtilityBtnActive: {
-    background: "linear-gradient(145deg, " + colors.bead.orange + ", " + colors.bead.red + ")",
-    boxShadow: "0 2px 8px " + colors.bead.orange + "50",
+    background: 'linear-gradient(145deg, rgba(255, 176, 92, 0.98), rgba(255, 104, 139, 0.98))',
+    boxShadow: '0 4px 12px rgba(255, 132, 112, 0.32)',
   },
 
-  floatingUtilityLabel: {
-    fontSize: '7px',
+  floatingUtilityPrimary: {
+    fontSize: '11px',
     fontFamily: typography.fontFamilyAlt,
-    fontWeight: typography.fontWeight.semibold,
+    fontWeight: typography.fontWeight.bold,
     lineHeight: 1,
+    color: '#ffffff',
+  },
+
+  floatingUtilitySecondary: {
+    fontSize: '8px',
+    fontFamily: typography.fontFamilyAlt,
+    lineHeight: 1,
+    color: 'rgba(255,255,255,0.88)',
   },
 
   floatingPanel: {
@@ -5360,6 +5291,7 @@ const styles: Record<string, React.CSSProperties> = {
   bgModePreview: {
 
     flex: 1,
+    minHeight: 0,
 
     display: 'flex',
 
@@ -5382,6 +5314,8 @@ const styles: Record<string, React.CSSProperties> = {
     background: colors.bg.secondary,
 
     borderTop: '1px solid ' + colors.border.soft,
+    position: 'relative',
+    zIndex: 1,
 
     textAlign: 'center',
 
@@ -5427,6 +5361,50 @@ const styles: Record<string, React.CSSProperties> = {
 
     color: colors.bead.yellow,
 
+  },
+
+  bgModeEntryCard: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    padding: '12px 16px',
+    background: 'rgba(255,255,255,0.04)',
+    borderBottom: '1px solid ' + colors.border.soft,
+    flexWrap: 'wrap',
+  },
+
+  bgModeEntryTextGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    minWidth: 0,
+    flex: 1,
+  },
+
+  bgModeEntryTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text.primary,
+    fontFamily: typography.fontFamilyAlt,
+  },
+
+  bgModeEntryDesc: {
+    fontSize: typography.fontSize.xs,
+    color: colors.text.secondary,
+    fontFamily: typography.fontFamilyAlt,
+    lineHeight: 1.5,
+  },
+
+  bgModeEntryBadge: {
+    padding: '6px 10px',
+    background: 'rgba(92, 242, 207, 0.12)',
+    border: '1px solid rgba(92, 242, 207, 0.28)',
+    borderRadius: radius.full,
+    color: colors.bead.green,
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
   },
 
   bgModeStrengthSection: {
@@ -5585,6 +5563,34 @@ const styles: Record<string, React.CSSProperties> = {
 
   },
 
+  bgModePrimaryActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    padding: '12px 16px 8px',
+    background: colors.bg.secondary,
+    borderTop: '1px solid ' + colors.border.soft,
+  },
+
+  bgModeAdvancedToggleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '0 16px 12px',
+    background: colors.bg.secondary,
+    borderTop: '1px solid ' + colors.border.soft,
+    flexWrap: 'wrap',
+  },
+
+  bgModeAdvancedHint: {
+    flex: 1,
+    minWidth: '160px',
+    fontSize: typography.fontSize.xs,
+    lineHeight: 1.5,
+    color: colors.text.muted,
+    fontFamily: typography.fontFamilyAlt,
+  },
+
   aiCutoutStatusContent: {
     display: 'flex',
     flexDirection: 'column',
@@ -5646,11 +5652,15 @@ const styles: Record<string, React.CSSProperties> = {
 
     gap: '6px',
 
-    padding: '12px 16px',
+    padding: '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))',
 
     background: colors.bg.secondary,
 
     borderTop: '1px solid ' + colors.border.soft,
+    position: 'sticky',
+    bottom: 0,
+    zIndex: 2,
+    boxShadow: '0 -10px 24px rgba(6, 12, 24, 0.28)',
 
   },
 
@@ -5910,7 +5920,3 @@ if (!document.querySelector('#editor-styles')) {
 
 
 export default EditorPage;
-
-
-
-

@@ -104,13 +104,15 @@ func (s *CommunityService) GetPosts(req *request.CommunityPostListRequest) ([]re
 			p.PreviewURL = previewURL
 			posts[i].PreviewURL = previewURL
 		}
+		listThumbnailURL := pickExistingMediaURL(p.ThumbnailURL, p.PreviewURL)
+		listPreviewURL := pickExistingMediaURL(p.PreviewURL, p.ThumbnailURL)
 		result[i] = response.CommunityPostListItem{
 			ID:           p.ID,
 			Title:        p.Title,
 			Category:     p.Category,
 			Tags:         p.Tags,
-			ThumbnailURL: withMediaVersion(p.ThumbnailURL, p.UpdatedAt),
-			PreviewURL:   withMediaVersion(p.PreviewURL, p.UpdatedAt),
+			ThumbnailURL: withMediaVersion(listThumbnailURL, p.UpdatedAt),
+			PreviewURL:   withMediaVersion(listPreviewURL, p.UpdatedAt),
 			GridWidth:    p.GridWidth,
 			GridHeight:   p.GridHeight,
 			ColorCount:   p.ColorCount,
@@ -166,13 +168,15 @@ func (s *CommunityService) GetMyPosts(userID uint, req *request.CommunityMyPostL
 			p.PreviewURL = previewURL
 			posts[i].PreviewURL = previewURL
 		}
+		listThumbnailURL := pickExistingMediaURL(p.ThumbnailURL, p.PreviewURL)
+		listPreviewURL := pickExistingMediaURL(p.PreviewURL, p.ThumbnailURL)
 		result[i] = response.CommunityPostListItem{
 			ID:           p.ID,
 			Title:        p.Title,
 			Category:     p.Category,
 			Tags:         p.Tags,
-			ThumbnailURL: withMediaVersion(p.ThumbnailURL, p.UpdatedAt),
-			PreviewURL:   withMediaVersion(p.PreviewURL, p.UpdatedAt),
+			ThumbnailURL: withMediaVersion(listThumbnailURL, p.UpdatedAt),
+			PreviewURL:   withMediaVersion(listPreviewURL, p.UpdatedAt),
 			GridWidth:    p.GridWidth,
 			GridHeight:   p.GridHeight,
 			ColorCount:   p.ColorCount,
@@ -189,6 +193,89 @@ func (s *CommunityService) GetMyPosts(userID uint, req *request.CommunityMyPostL
 			CreatedAt:    p.CreatedAt,
 		}
 	}
+	return result, total, nil
+}
+
+func (s *CommunityService) GetPublicPostsByUser(userID uint, req *request.CommunityPostListRequest) ([]response.CommunityPostListItem, int64, error) {
+	if userID == 0 {
+		return []response.CommunityPostListItem{}, 0, nil
+	}
+
+	db := global.GVA_DB.Model(&entity.CommunityPost{}).
+		Where("community_posts.user_id = ? AND community_posts.status = ? AND community_posts.review_status = ?", userID, 1, 1)
+
+	if keyword := strings.TrimSpace(req.Keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		db = db.Where("(community_posts.title LIKE ? OR community_posts.tags LIKE ?)", like, like)
+	}
+
+	var total int64
+	db.Count(&total)
+
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+
+	orderClause := "community_posts.created_at DESC"
+	switch req.Sort {
+	case "recommended":
+		orderClause = "(community_posts.make_count * 4 + community_posts.like_count * 3 + community_posts.view_count * 0.2) DESC, community_posts.created_at DESC"
+	case "popular":
+		orderClause = "community_posts.like_count DESC, community_posts.created_at DESC"
+	case "most_made":
+		orderClause = "community_posts.make_count DESC, community_posts.created_at DESC"
+	}
+
+	var posts []entity.CommunityPost
+	offset := (req.Page - 1) * req.PageSize
+	if err := db.Order(orderClause).Offset(offset).Limit(req.PageSize).Find(&posts).Error; err != nil {
+		return nil, 0, err
+	}
+
+	userMap := s.getUserMap([]uint{userID})
+	result := make([]response.CommunityPostListItem, len(posts))
+	for i, p := range posts {
+		if s.ensurePostCategory(&p) {
+			posts[i].Category = p.Category
+		}
+		if s.ensurePostBeadHex(&p) {
+			posts[i].BeadData = p.BeadData
+			p.ThumbnailURL = ""
+			p.PreviewURL = ""
+		}
+		if fixedURL, fixed := s.ensurePostThumbnail(&p); fixed {
+			p.ThumbnailURL = fixedURL
+		}
+		if previewURL, fixed := s.ensurePostPreview(&p); fixed {
+			p.PreviewURL = previewURL
+		}
+		listThumbnailURL := pickExistingMediaURL(p.ThumbnailURL, p.PreviewURL)
+		listPreviewURL := pickExistingMediaURL(p.PreviewURL, p.ThumbnailURL)
+		result[i] = response.CommunityPostListItem{
+			ID:           p.ID,
+			Title:        p.Title,
+			Category:     p.Category,
+			Tags:         p.Tags,
+			ThumbnailURL: withMediaVersion(listThumbnailURL, p.UpdatedAt),
+			PreviewURL:   withMediaVersion(listPreviewURL, p.UpdatedAt),
+			GridWidth:    p.GridWidth,
+			GridHeight:   p.GridHeight,
+			ColorCount:   p.ColorCount,
+			Difficulty:   p.Difficulty,
+			PaletteBrand: p.PaletteBrand,
+			PaletteVer:   p.PaletteVer,
+			PaletteName:  p.PaletteName,
+			LikeCount:    p.LikeCount,
+			ViewCount:    p.ViewCount,
+			MakeCount:    p.MakeCount,
+			User:         userMap[p.UserID],
+			CreatedAt:    p.CreatedAt,
+		}
+	}
+
 	return result, total, nil
 }
 
@@ -273,6 +360,22 @@ func withMediaVersion(raw string, updatedAt time.Time) string {
 		sep = "&"
 	}
 	return fmt.Sprintf("%s%sv=%d", raw, sep, updatedAt.Unix())
+}
+
+func pickExistingMediaURL(urls ...string) string {
+	for _, raw := range urls {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") || strings.HasPrefix(trimmed, "data:") {
+			return trimmed
+		}
+		if thumbnailFileExists(trimmed) {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // CreatePost 闂傚倸鍊风粈渚€骞夐敓鐘冲仭闁挎洖鍊搁崹鍌炴煟閵忋垺鏆╅柛妤佽壘椤啰鈧綆浜濋幑锝夋煟椤撶偞顥㈤柡宀€鍠栭、娑㈠幢濡も偓閺嗭絾绻涢崼顐㈠缂佺粯绋掑蹇涘礈瑜忚摫缂傚倷绶￠崰鏍儗閸岀偟宓?

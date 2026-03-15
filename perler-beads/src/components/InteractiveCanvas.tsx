@@ -83,6 +83,7 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isInitialized, setIsInitialized] = useState(false); // 鏄惁宸插垵濮嬪寲閫傞厤缂╂斁
+  const previousPatternSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   // 鍙屾寚缂╂斁鐘舵€?
   const [isPinching, setIsPinching] = useState(false);
@@ -92,16 +93,16 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   const ABSOLUTE_MAX_SCALE = 6;
 
   // 璁＄畻閫傞厤棰勮鍖虹殑缂╂斁姣斾緥
-  const calculateFitScale = useCallback(() => {
-    if (!containerRef.current || !beadData) return 1;
+  const calculateFitScaleForSize = useCallback((patternWidth: number, patternHeight: number) => {
+    if (!containerRef.current) return 1;
 
     // 瀹瑰櫒鍙敤灏哄锛堝噺鍘?padding锛?
     const containerWidth = containerRef.current.clientWidth - 8; // padding: 4px * 2
     const containerHeight = containerRef.current.clientHeight - 8;
 
     // 鍥剧墖鍘熷灏哄
-    const imageWidth = beadData.width * cellSize;
-    const imageHeight = beadData.height * cellSize;
+    const imageWidth = patternWidth * cellSize;
+    const imageHeight = patternHeight * cellSize;
 
     // 璁＄畻姘村钩鍜屽瀭鐩存柟鍚戠殑缂╂斁姣斾緥
     const scaleX = containerWidth / imageWidth;
@@ -115,7 +116,12 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     fitScale = Math.max(ABSOLUTE_MIN_SCALE, Math.min(ABSOLUTE_MAX_SCALE, fitScale));
 
     return fitScale;
-  }, [beadData, cellSize]);
+  }, [cellSize]);
+
+  const calculateFitScale = useCallback(() => {
+    if (!beadData) return 1;
+    return calculateFitScaleForSize(beadData.width, beadData.height);
+  }, [beadData, calculateFitScaleForSize]);
 
   const getScaleBounds = useCallback(() => {
     const fitScale = calculateFitScale();
@@ -168,12 +174,29 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     if (beadData && containerRef.current) {
       // 浣跨敤 requestAnimationFrame 纭繚瀹瑰櫒灏哄宸叉洿鏂?
       requestAnimationFrame(() => {
-        const { fitScale } = getScaleBounds();
-        setScale(fitScale);
+        const { fitScale, minScale, maxScale } = getScaleBounds();
+        const previousPatternSize = previousPatternSizeRef.current;
+
+        setScale((currentScale) => {
+          if (!previousPatternSize || !isInitialized) {
+            return fitScale;
+          }
+
+          const previousFitScale = calculateFitScaleForSize(previousPatternSize.width, previousPatternSize.height);
+          if (!Number.isFinite(previousFitScale) || previousFitScale <= 0) {
+            return fitScale;
+          }
+
+          // Preserve the user's zoom intent relative to the previous fit scale.
+          const zoomRatio = currentScale / previousFitScale;
+          const targetScale = fitScale * zoomRatio;
+          return Math.min(maxScale, Math.max(minScale, targetScale));
+        });
+        previousPatternSizeRef.current = { width: beadData.width, height: beadData.height };
         setIsInitialized(true);
       });
     }
-  }, [beadData?.width, beadData?.height, getScaleBounds]);
+  }, [beadData?.width, beadData?.height, calculateFitScaleForSize, getScaleBounds, isInitialized]);
 
   useEffect(() => {
     const bounds = getScaleBounds();

@@ -18,3 +18,11 @@ func InitUserRouter(Router *gin.RouterGroup) {
 		userRouter.PUT("preferences", userApi.UpdatePreferences)
 	}
 }
+
+func InitUserPublicRouter(Router *gin.RouterGroup) {
+	userRouter := Router.Group("user")
+	userApi := v1.UserApi{}
+	{
+		userRouter.GET("public/:id", userApi.GetPublicProfile)
+	}
+}

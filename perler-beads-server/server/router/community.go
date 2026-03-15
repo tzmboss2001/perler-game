@@ -13,6 +13,7 @@ func InitCommunityPublicRouter(Router *gin.RouterGroup) {
 	{
 		communityRouter.GET("posts", communityApi.GetPosts)
 		communityRouter.GET("posts/:id", communityApi.GetPost)
+		communityRouter.GET("users/:userId/posts", communityApi.GetPostsByUser)
 		communityRouter.POST("posts/:id/make", communityApi.MakePost)
 	}
 }

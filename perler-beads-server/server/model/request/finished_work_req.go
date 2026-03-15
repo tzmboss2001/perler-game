@@ -10,8 +10,10 @@ type CreateFinishedWorkRequest struct {
 
 // ListFinishedWorkRequest 成品列表
 type ListFinishedWorkRequest struct {
-	Page     int `form:"page"`
-	PageSize int `form:"pageSize"`
+	Page     int    `form:"page"`
+	PageSize int    `form:"pageSize"`
+	Keyword  string `form:"keyword"`
+	Sort     string `form:"sort"`
 }
 
 // CreateFinishedWorkCommentRequest 创建成品评论

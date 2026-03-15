@@ -25,6 +25,7 @@ func Routers() *gin.Engine {
 	router.InitTemplatePublicRouter(publicGroup)
 	router.InitCommunityPublicRouter(publicGroup)
 	router.InitFinishedWorkPublicRouter(publicGroup)
+	router.InitUserPublicRouter(publicGroup)
 	router.InitProjectRouter(publicGroup)
 	router.InitUploadRouter(publicGroup)
 	router.InitFeedbackRouter(publicGroup)

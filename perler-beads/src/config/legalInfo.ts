@@ -9,16 +9,14 @@ export interface LegalInfo {
   updateDate: string;
 }
 
-// Legal/compliance profile used by About/Privacy/User Agreement pages.
-// Update these fields with real entity information before production release.
+// Update these fields with the real production entity information before release.
 export const LEGAL_INFO: LegalInfo = {
-  appName: '拼豆工坊',
+  appName: '\u62fc\u8c46\u5de5\u574a',
   version: '1.0.0',
-  developerName: '拼豆工坊运营团队',
+  developerName: '\u62fc\u8c46\u5de5\u574a\u8fd0\u8425\u56e2\u961f',
   contactEmail: 'support@perlerbeadscreator.com',
   website: '',
   icp: '',
-  effectiveDate: '2026年3月1日',
-  updateDate: '2026年3月5日',
+  effectiveDate: '2026-03-15',
+  updateDate: '2026-03-15',
 };
-

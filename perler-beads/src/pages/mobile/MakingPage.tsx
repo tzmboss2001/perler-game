@@ -231,6 +231,7 @@ const MakingPage: React.FC = () => {
   const [voiceEnabled, setVoiceEnabled] = useState(canSpeak());
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
 
   // 坐标提示框状态
   const [tooltipState, setTooltipState] = useState<{
@@ -347,10 +348,13 @@ const MakingPage: React.FC = () => {
 
   // 监听视口高度变化（处理移动端地址栏显示/隐藏）
   useEffect(() => {
-    const updateHeight = () => setViewportHeight(window.innerHeight);
-    window.addEventListener("resize", updateHeight);
-    updateHeight();
-    return () => window.removeEventListener("resize", updateHeight);
+    const updateViewport = () => {
+      setViewportHeight(window.innerHeight);
+      setViewportWidth(window.innerWidth);
+    };
+    window.addEventListener("resize", updateViewport);
+    updateViewport();
+    return () => window.removeEventListener("resize", updateViewport);
   }, []);
 
   useEffect(() => {
@@ -1355,6 +1359,52 @@ const MakingPage: React.FC = () => {
     );
   }
 
+  const isNarrowToolbar = viewportWidth <= 420;
+  const isCompactToolbar = viewportWidth <= 360;
+  const floatingControlsStyle: React.CSSProperties = {
+    ...styles.floatingControls,
+    flexWrap: isNarrowToolbar ? "wrap" : "nowrap",
+    alignItems: isNarrowToolbar ? "stretch" : "center",
+    gap: isNarrowToolbar ? "6px" : "8px",
+  };
+  const zoomControlsStyle: React.CSSProperties = {
+    ...styles.zoomControls,
+    width: isNarrowToolbar ? "100%" : undefined,
+    flexBasis: isNarrowToolbar ? "100%" : undefined,
+    order: isNarrowToolbar ? 1 : 0,
+    padding: isCompactToolbar ? "6px 8px" : styles.zoomControls.padding,
+    gap: isCompactToolbar ? "4px" : "6px",
+  };
+  const zoomRangeStyle: React.CSSProperties = {
+    ...styles.zoomRange,
+    width: isCompactToolbar
+      ? "clamp(48px, 22vw, 72px)"
+      : isNarrowToolbar
+        ? "clamp(56px, 24vw, 96px)"
+        : styles.zoomRange.width,
+  };
+  const zoomLabelStyle: React.CSSProperties = {
+    ...styles.zoomLabel,
+    minWidth: isCompactToolbar ? "38px" : styles.zoomLabel.minWidth,
+    padding: isCompactToolbar ? "0 4px" : styles.zoomLabel.padding,
+    fontSize: isCompactToolbar ? "10px" : styles.zoomLabel.fontSize,
+  };
+  const fitBtnStyle: React.CSSProperties = {
+    ...styles.fitBtn,
+    minWidth: isCompactToolbar ? "38px" : styles.fitBtn.minWidth,
+    padding: isCompactToolbar ? "0 6px" : styles.fitBtn.padding,
+  };
+  const controlBtnsStyle: React.CSSProperties = {
+    ...styles.controlBtns,
+    order: isNarrowToolbar ? 2 : 0,
+    marginLeft: isNarrowToolbar ? "auto" : 0,
+  };
+  const statusHintStyle: React.CSSProperties = {
+    ...styles.statusHint,
+    top: isNarrowToolbar ? "88px" : styles.statusHint.top,
+    maxWidth: isNarrowToolbar ? "calc(100vw - 32px)" : undefined,
+  };
+
   return (
     <div
       style={{ ...styles.container, height: viewportHeight }}
@@ -1373,9 +1423,9 @@ const MakingPage: React.FC = () => {
       <div style={styles.previewSection}>
         <div style={styles.canvasContainer}>
           {/* 浮动控制栏 */}
-          <div style={styles.floatingControls}>
+          <div style={floatingControlsStyle}>
             {/* 左侧：缩放 */}
-            <div style={styles.zoomControls}>
+            <div style={zoomControlsStyle}>
               <button
                 style={styles.miniBtn}
                 onClick={() => {
@@ -1397,7 +1447,7 @@ const MakingPage: React.FC = () => {
                 max={MAX_SCALE}
                 step={0.05}
                 value={scale}
-                style={styles.zoomRange}
+                style={zoomRangeStyle}
                 onChange={(e) => {
                   const wrapper = wrapperRef.current;
                   const focalX = wrapper ? wrapper.clientWidth / 2 : 0;
@@ -1406,7 +1456,7 @@ const MakingPage: React.FC = () => {
                 }}
                 aria-label="缩放倍率"
               />
-              <span style={styles.zoomLabel}>{Math.round(scale * 100)}%</span>
+              <span style={zoomLabelStyle}>{Math.round(scale * 100)}%</span>
               <button
                 style={styles.miniBtn}
                 onClick={() => {
@@ -1423,7 +1473,7 @@ const MakingPage: React.FC = () => {
                 +
               </button>
               <button
-                style={styles.fitBtn}
+                style={fitBtnStyle}
                 onClick={handleFitScreen}
                 title="适应屏幕宽度"
               >
@@ -1432,7 +1482,7 @@ const MakingPage: React.FC = () => {
             </div>
 
             {/* 右侧：功能按钮 */}
-            <div style={styles.controlBtns}>
+            <div style={controlBtnsStyle}>
               <button
                 style={styles.miniBtn}
                 onClick={handleOpenExport}
@@ -1531,7 +1581,7 @@ const MakingPage: React.FC = () => {
           )}
 
           {/* 状态提示 */}
-          <div style={styles.statusHint}>
+          <div style={statusHintStyle}>
             {selection.type === null && (
               <span>
                 {scale < ZOOM_THRESHOLD ? "点击选择区块" : "点击选择颜色"}

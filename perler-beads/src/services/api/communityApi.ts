@@ -288,6 +288,17 @@ export const communityApi = {
     return request(`/api/v1/community/posts/${id}`, { method: 'GET' });
   },
 
+  getPostsByUser: async (userId: number, params: CommunityListParams = {}): Promise<ApiResponse<PageResult<CommunityPostListItem>>> => {
+    const searchParams = new URLSearchParams();
+    if (params.page) searchParams.set('page', params.page.toString());
+    if (params.pageSize) searchParams.set('pageSize', params.pageSize.toString());
+    if (params.keyword) searchParams.set('keyword', params.keyword);
+    if (params.sort) searchParams.set('sort', params.sort);
+    const query = searchParams.toString();
+    const url = query ? `/api/v1/community/users/${userId}/posts?${query}` : `/api/v1/community/users/${userId}/posts`;
+    return request(url, { method: 'GET' });
+  },
+
   /**
    * 澧炲姞鍒朵綔娆℃暟
    */

@@ -6,8 +6,8 @@ function resolveAdMode(): AdMode {
   if (rawMode === 'adsense' || rawMode === 'mock' || rawMode === 'off' || rawMode === 'douyin') {
     return rawMode;
   }
-  // 未显式配置时，默认走 mock，保证真机测试能看到广告位节点。
-  return 'mock';
+  // 未显式配置时默认关闭广告，避免正式环境误落到模拟广告。
+  return 'off';
 }
 
 export const monetizationConfig = {
@@ -27,7 +27,7 @@ export const monetizationConfig = {
     },
   },
   rewardRules: {
-    hdExportFreePerDay: Number(import.meta.env.VITE_HD_EXPORT_FREE_PER_DAY || 1),
+    hdExportFreePerDay: Number(import.meta.env.VITE_HD_EXPORT_FREE_PER_DAY || 0),
   },
 } as const;
 

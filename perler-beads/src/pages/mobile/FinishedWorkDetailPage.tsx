@@ -17,6 +17,8 @@ const FinishedWorkDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [likeLoading, setLikeLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [authorMoreWorks, setAuthorMoreWorks] = useState<FinishedWorkItem[]>([]);
+  const [authorMoreLoading, setAuthorMoreLoading] = useState(false);
 
   const workId = Number(id || 0);
   const isOwner = useMemo(() => !!item?.user?.id && !!userInfo?.id && item.user.id === userInfo.id, [item?.user?.id, userInfo?.id]);
@@ -44,6 +46,35 @@ const FinishedWorkDetailPage: React.FC = () => {
     };
     load();
   }, [workId]);
+
+  useEffect(() => {
+    const authorId = Number(item?.user?.id || 0);
+    if (!authorId || !item?.id) {
+      setAuthorMoreWorks([]);
+      return;
+    }
+
+    let active = true;
+    setAuthorMoreLoading(true);
+
+    finishedWorkApi.listPublicByUser(authorId, 1, 6)
+      .then((res) => {
+        if (!active || res.code !== 0) return;
+        const rows = (res.data.list || []).filter((work) => work.id !== item.id).slice(0, 4);
+        setAuthorMoreWorks(rows);
+      })
+      .catch((error) => {
+        console.warn('[FinishedWorkDetailPage] load author more works failed:', error);
+        if (active) setAuthorMoreWorks([]);
+      })
+      .finally(() => {
+        if (active) setAuthorMoreLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [item]);
 
   const ensureLogin = () => {
     if (isLoggedIn) return true;
@@ -143,7 +174,13 @@ const FinishedWorkDetailPage: React.FC = () => {
         <>
           <div style={styles.infoCard}>
             <div style={styles.workTitle}>{item.title}</div>
-            <div style={styles.meta}>作者：{item.user?.nickname || '用户'} · {new Date(item.created_at).toLocaleString('zh-CN')}</div>
+            <button
+              type="button"
+              style={styles.authorLink}
+              onClick={() => item.user?.id && navigate(`/mobile/community/user/${item.user.id}`)}
+            >
+              作者：{item.user?.nickname || '用户'} · {new Date(item.created_at).toLocaleString('zh-CN')} · 查看主页
+            </button>
             {item.description ? <div style={styles.desc}>{item.description}</div> : null}
 
             <div style={styles.actionRow}>
@@ -171,6 +208,55 @@ const FinishedWorkDetailPage: React.FC = () => {
               </div>
             ))}
           </div>
+
+          {item.user?.id ? (
+            <div style={styles.moreSection}>
+              <div style={styles.moreSectionHead}>
+                <div style={styles.moreSectionTitle}>作者的其他成品</div>
+                <button
+                  type="button"
+                  style={styles.moreLinkBtn}
+                  onClick={() => navigate(`/mobile/community/user/${item.user?.id}`)}
+                >
+                  查看全部
+                </button>
+              </div>
+
+              {authorMoreLoading ? (
+                <div style={styles.moreLoading}>正在加载作者的更多成品...</div>
+              ) : authorMoreWorks.length > 0 ? (
+                <div style={styles.moreGrid}>
+                  {authorMoreWorks.map((work) => {
+                    const cover = work.cover_url || work.image_urls?.[0] || '';
+                    return (
+                      <button
+                        key={work.id}
+                        type="button"
+                        style={styles.moreCard}
+                        onClick={() => navigate(`/mobile/finished/${work.id}`)}
+                      >
+                        <div style={styles.moreThumbWrap}>
+                          {cover ? (
+                            <img src={cover} alt={work.title} style={styles.moreThumb} />
+                          ) : (
+                            <div style={styles.moreThumbEmpty}>暂无图片</div>
+                          )}
+                        </div>
+                        <div style={styles.moreCardBody}>
+                          <div style={styles.moreCardTitle}>{work.title}</div>
+                          <div style={styles.moreCardMeta}>
+                            {work.like_count || 0} 赞 · {new Date(work.created_at).toLocaleDateString('zh-CN')}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={styles.moreEmpty}>这个作者暂时还没有其他公开成品</div>
+              )}
+            </div>
+          ) : null}
         </>
       )}
 
@@ -237,6 +323,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.text.muted,
     marginBottom: '6px',
   },
+  authorLink: {
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    fontSize: typography.fontSize.xs,
+    color: colors.bead.cyan,
+    marginBottom: '6px',
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
   desc: {
     fontSize: typography.fontSize.sm,
     color: colors.text.secondary,
@@ -275,6 +371,91 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     display: 'block',
     objectFit: 'contain',
+  },
+  moreSection: {
+    background: colors.bg.card,
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: radius.card,
+    boxShadow: shadows.sm,
+    padding: '12px',
+    marginTop: '12px',
+  },
+  moreSectionHead: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+    marginBottom: '10px',
+  },
+  moreSectionTitle: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text.primary,
+  },
+  moreLinkBtn: {
+    border: 'none',
+    background: 'transparent',
+    color: colors.bead.cyan,
+    fontSize: typography.fontSize.sm,
+    cursor: 'pointer',
+    padding: 0,
+  },
+  moreLoading: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.muted,
+  },
+  moreEmpty: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.muted,
+  },
+  moreGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '10px',
+  },
+  moreCard: {
+    border: `1px solid ${colors.border.soft}`,
+    background: colors.bg.secondary,
+    borderRadius: radius.card,
+    padding: 0,
+    overflow: 'hidden',
+    cursor: 'pointer',
+    textAlign: 'left',
+    color: colors.text.primary,
+  },
+  moreThumbWrap: {
+    width: '100%',
+    aspectRatio: '1 / 1',
+    background: colors.bg.tertiary,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreThumb: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+  },
+  moreThumbEmpty: {
+    fontSize: typography.fontSize.xs,
+    color: colors.text.muted,
+  },
+  moreCardBody: {
+    padding: '8px',
+    display: 'grid',
+    gap: '4px',
+  },
+  moreCardTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.text.primary,
+    lineHeight: 1.4,
+    wordBreak: 'break-word',
+  },
+  moreCardMeta: {
+    fontSize: typography.fontSize.xs,
+    color: colors.text.muted,
   },
 };
 

@@ -5,12 +5,16 @@ import (
 	"perler-beads-server/global"
 	"perler-beads-server/model/entity"
 	"perler-beads-server/model/response"
+	"perler-beads-server/service"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type UserApi struct{}
+
+var userPublicService = service.UserPublicService{}
 
 // GetProfile 获取用户信息
 func (u *UserApi) GetProfile(c *gin.Context) {
@@ -38,6 +42,30 @@ func (u *UserApi) GetProfile(c *gin.Context) {
 		"last_login_at":  user.LastLoginAt,
 		"last_login_ip":  user.LastLoginIP,
 	}, c)
+}
+
+func (u *UserApi) GetPublicProfile(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		response.FailWithMessage("invalid user id", c)
+		return
+	}
+
+	profile, err := userPublicService.GetPublicProfile(uint(userID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.FailWithMessage("user not found", c)
+			return
+		}
+		response.FailWithMessage("failed to fetch user profile", c)
+		return
+	}
+	if profile == nil {
+		response.FailWithMessage("user not found", c)
+		return
+	}
+
+	response.OkWithDetailed(profile, "ok", c)
 }
 
 // UpdateProfile 更新用户信息

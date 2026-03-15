@@ -22,6 +22,7 @@ const CommunityPage: React.FC = () => {
   const [feedTab, setFeedTab] = useState('recommended');
   const [keywordInput, setKeywordInput] = useState('');
   const [keyword, setKeyword] = useState('');
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const loadingRef = useRef(false);
   const pageSize = 20;
 
@@ -67,6 +68,12 @@ const CommunityPage: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [keywordInput]);
 
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleFeedChange = (next: string) => {
     if (next === feedTab) return;
     setFeedTab(next);
@@ -107,6 +114,40 @@ const CommunityPage: React.FC = () => {
     }
   };
 
+  const isNarrowPhone = viewportWidth <= 390;
+  const isCompactPhone = viewportWidth <= 360;
+
+  const searchBarStyle: React.CSSProperties = {
+    ...styles.searchBar,
+    padding: isCompactPhone ? '8px 9px' : styles.searchBar.padding,
+    marginBottom: isCompactPhone ? '8px' : styles.searchBar.marginBottom,
+  };
+
+  const sortBarStyle: React.CSSProperties = {
+    ...styles.sortBar,
+    alignItems: isNarrowPhone ? 'flex-start' : styles.sortBar.alignItems,
+    justifyContent: isNarrowPhone ? 'flex-start' : styles.sortBar.justifyContent,
+    gap: isCompactPhone ? '6px' : styles.sortBar.gap,
+  };
+
+  const sortOptionsStyle: React.CSSProperties = {
+    ...styles.sortOptions,
+    width: isNarrowPhone ? '100%' : undefined,
+    justifyContent: isNarrowPhone ? 'flex-start' : styles.sortOptions.justifyContent,
+    gap: isCompactPhone ? '6px' : styles.sortOptions.gap,
+  };
+
+  const waterfallStyle: React.CSSProperties = {
+    ...styles.waterfall,
+    flexDirection: isCompactPhone ? 'column' : 'row',
+    gap: isCompactPhone ? '8px' : styles.waterfall.gap,
+  };
+
+  const columnStyle: React.CSSProperties = {
+    ...styles.column,
+    gap: isCompactPhone ? '8px' : styles.column.gap,
+  };
+
   return (
     <div style={styles.container}>
       {/* 头部 */}
@@ -116,7 +157,7 @@ const CommunityPage: React.FC = () => {
 
       {/* 内容区 */}
       <div style={styles.scrollArea}>
-        <div style={styles.searchBar}>
+        <div style={searchBarStyle}>
           <MagnifyingGlass size={16} color={colors.text.muted} />
           <input
             value={keywordInput}
@@ -127,9 +168,9 @@ const CommunityPage: React.FC = () => {
         </div>
 
         {/* 内容流 + 统计 */}
-        <div style={styles.sortBar}>
+        <div style={sortBarStyle}>
           <span style={styles.statsText}>共 {total} 个作品</span>
-          <div style={styles.sortOptions}>
+          <div style={sortOptionsStyle}>
             {FEED_OPTIONS.map(opt => {
               const Icon = opt.icon;
               return (
@@ -150,26 +191,30 @@ const CommunityPage: React.FC = () => {
         </div>
 
         {/* 双列瀑布流 */}
-        <div style={styles.waterfall}>
-          <div style={styles.column}>
+        <div style={waterfallStyle}>
+          <div style={columnStyle}>
             {posts.filter((_, i) => i % 2 === 0).map(post => (
               <PostCard
                 key={post.id}
                 post={post}
+                isCompactPhone={isCompactPhone}
                 getDifficultyColor={getDifficultyColor}
                 getDifficultyLabel={getDifficultyLabel}
                 onClick={() => navigate(`/mobile/community/${post.id}`)}
+                onAuthorClick={(userId) => navigate(`/mobile/community/user/${userId}`)}
               />
             ))}
           </div>
-          <div style={styles.column}>
+          <div style={columnStyle}>
             {posts.filter((_, i) => i % 2 === 1).map(post => (
               <PostCard
                 key={post.id}
                 post={post}
+                isCompactPhone={isCompactPhone}
                 getDifficultyColor={getDifficultyColor}
                 getDifficultyLabel={getDifficultyLabel}
                 onClick={() => navigate(`/mobile/community/${post.id}`)}
+                onAuthorClick={(userId) => navigate(`/mobile/community/user/${userId}`)}
               />
             ))}
           </div>
@@ -213,9 +258,11 @@ const CommunityPage: React.FC = () => {
 // 作品卡片组件
 interface PostCardProps {
   post: CommunityPostListItem;
+  isCompactPhone?: boolean;
   getDifficultyColor: (d: string) => string;
   getDifficultyLabel: (d: string) => string;
   onClick: () => void;
+  onAuthorClick: (userId: number) => void;
 }
 
 interface CommunityCardImageProps {
@@ -225,34 +272,91 @@ interface CommunityCardImageProps {
   style: React.CSSProperties;
 }
 
+const communityImageAvailabilityCache = new Map<string, boolean>();
+
 const CommunityCardImage: React.FC<CommunityCardImageProps> = ({ previewUrl, thumbnailUrl, alt, style }) => {
-  const candidates = [previewUrl, thumbnailUrl].filter((u): u is string => !!u && u.trim().length > 0);
-  const [index, setIndex] = useState(0);
+  const candidates = [thumbnailUrl, previewUrl].filter((u): u is string => !!u && u.trim().length > 0);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
 
   useEffect(() => {
-    setIndex(0);
+    let active = true;
+
+    const resolveImage = async () => {
+      for (const candidate of candidates) {
+        const cached = communityImageAvailabilityCache.get(candidate);
+        if (cached === true) {
+          if (active) setResolvedSrc(candidate);
+          return;
+        }
+        if (cached === false) {
+          continue;
+        }
+        try {
+          const response = await fetch(candidate, {
+            method: 'HEAD',
+            cache: 'force-cache',
+          });
+          communityImageAvailabilityCache.set(candidate, response.ok);
+          if (response.ok) {
+            if (active) setResolvedSrc(candidate);
+            return;
+          }
+        } catch {
+          communityImageAvailabilityCache.set(candidate, false);
+        }
+      }
+
+      if (active) setResolvedSrc(null);
+    };
+
+    setResolvedSrc(null);
+    resolveImage();
+
+    return () => {
+      active = false;
+    };
   }, [previewUrl, thumbnailUrl]);
 
-  const currentSrc = candidates[index];
-  if (!currentSrc) return null;
+  if (!resolvedSrc) return null;
 
   return (
     <img
-      src={currentSrc}
+      src={resolvedSrc}
       alt={alt}
       style={style}
       loading="lazy"
-      onError={() => {
-        if (index < candidates.length - 1) {
-          setIndex(prev => prev + 1);
-        }
-      }}
     />
   );
 };
 
-const PostCard: React.FC<PostCardProps> = ({ post, getDifficultyColor, getDifficultyLabel, onClick }) => {
+const PostCard: React.FC<PostCardProps> = ({
+  post,
+  isCompactPhone = false,
+  getDifficultyColor,
+  getDifficultyLabel,
+  onClick,
+  onAuthorClick,
+}) => {
   const safeTitle = sanitizeDisplayTitle(post.title);
+  const titleStyle: React.CSSProperties = {
+    ...cardStyles.title,
+    whiteSpace: isCompactPhone ? 'normal' : cardStyles.title.whiteSpace,
+    display: isCompactPhone ? '-webkit-box' : undefined,
+    WebkitLineClamp: isCompactPhone ? 2 : undefined,
+    WebkitBoxOrient: isCompactPhone ? 'vertical' : undefined,
+    minHeight: isCompactPhone ? '34px' : undefined,
+  };
+
+  const infoStyle: React.CSSProperties = {
+    ...cardStyles.info,
+    padding: isCompactPhone ? '8px 9px 9px' : cardStyles.info.padding,
+  };
+
+  const footerStyle: React.CSSProperties = {
+    ...cardStyles.footer,
+    gap: isCompactPhone ? '10px' : cardStyles.footer.gap,
+    flexWrap: isCompactPhone ? 'wrap' : undefined,
+  };
   return (
     <div style={cardStyles.card} onClick={onClick}>
       {/* 缩略图 */}
@@ -279,14 +383,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, getDifficultyColor, getDiffic
       </div>
 
       {/* 信息 */}
-      <div style={cardStyles.info}>
-        <div style={cardStyles.title}>{safeTitle}</div>
+      <div style={infoStyle}>
+        <div style={titleStyle}>{safeTitle}</div>
         <div style={cardStyles.meta}>
           <span style={cardStyles.size}>{post.grid_width}×{post.grid_height}</span>
           <span style={cardStyles.dot}>·</span>
           <span style={cardStyles.colorCount}>{post.color_count}色</span>
         </div>
-        <div style={cardStyles.footer}>
+        <div style={footerStyle}>
           <div style={cardStyles.stat}>
             <Heart size={12} weight="fill" color={colors.bead.red} />
             <span>{post.like_count}</span>
@@ -295,6 +399,18 @@ const PostCard: React.FC<PostCardProps> = ({ post, getDifficultyColor, getDiffic
             <Eye size={12} color={colors.text.muted} />
             <span>{post.view_count}</span>
           </div>
+          {post.user?.id ? (
+            <button
+              type="button"
+              style={cardStyles.authorBtn}
+              onClick={(event) => {
+                event.stopPropagation();
+                onAuthorClick(post.user.id);
+              }}
+            >
+              @{post.user.nickname || '用户'}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -538,6 +654,16 @@ const cardStyles: Record<string, React.CSSProperties> = {
     gap: '3px',
     fontSize: '11px',
     color: colors.text.muted,
+  },
+  authorBtn: {
+    marginLeft: 'auto',
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    color: colors.bead.cyan,
+    fontSize: '11px',
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
   },
 };
 

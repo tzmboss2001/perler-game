@@ -17,6 +17,7 @@ const UserAgreementPage = lazy(() => import('../pages/mobile/UserAgreementPage')
 const FeedbackPage = lazy(() => import('../pages/mobile/FeedbackPage'));
 const TemplateDetailPage = lazy(() => import('../pages/mobile/TemplateDetailPage'));
 const CommunityDetailPage = lazy(() => import('../pages/mobile/CommunityDetailPage'));
+const CommunityUserPage = lazy(() => import('../pages/mobile/CommunityUserPage'));
 const CommunityModerationPage = lazy(() => import('../pages/mobile/CommunityModerationPage'));
 const FinishedWorksPage = lazy(() => import('../pages/mobile/FinishedWorksPage'));
 const FinishedWorkDetailPage = lazy(() => import('../pages/mobile/FinishedWorkDetailPage'));
@@ -30,6 +31,8 @@ const TemplateTestPage = lazy(() => import('../pages/mobile/3d/TemplateTestPage'
 const TemplateFlowPage = lazy(() => import('../pages/mobile/3d/TemplateFlowPage'));
 const DepthTo3DPage = lazy(() => import('../pages/mobile/3d/DepthTo3DPage'));
 const ModelTo3DPage = lazy(() => import('../pages/mobile/3d/ModelTo3DPage'));
+
+const enable3DExperimental = String(import.meta.env.VITE_ENABLE_3D_EXPERIMENTAL || '').trim().toLowerCase() === 'true';
 
 // Loading fallback component
 const LoadingFallback: React.FC = () => (
@@ -111,19 +114,20 @@ const AppRouter: React.FC = () => {
 
           {/* Community detail page（社区详情页，独立页面） */}
           <Route path="/mobile/community/:id" element={<CommunityDetailPage />} />
+          <Route path="/mobile/community/user/:userId" element={<CommunityUserPage />} />
           <Route path="/mobile/community/moderation" element={<Navigate to="/admin" replace />} />
           <Route path="/mobile/finished" element={<FinishedWorksPage />} />
           <Route path="/mobile/finished/:id" element={<FinishedWorkDetailPage />} />
           <Route path="/admin" element={<AdminConsolePage />} />
 
-          {/* 3D 功能页面 */}
-          <Route path="/mobile/3d" element={<Home3DPage />} />
-          <Route path="/mobile/3d/upload" element={<Upload3DPage />} />
-          <Route path="/mobile/3d/preview" element={<Preview3DPage />} />
-          <Route path="/mobile/3d/template-test" element={<TemplateTestPage />} />
-          <Route path="/mobile/3d/template-flow" element={<TemplateFlowPage />} />
-          <Route path="/mobile/3d/depth-to-3d" element={<DepthTo3DPage />} />
-          <Route path="/mobile/3d/model-to-slices" element={<ModelTo3DPage />} />
+          {/* 3D 功能页面：默认关闭，避免实验性能力在正式环境误暴露 */}
+          <Route path="/mobile/3d" element={enable3DExperimental ? <Home3DPage /> : <Navigate to="/mobile/home" replace />} />
+          <Route path="/mobile/3d/upload" element={enable3DExperimental ? <Upload3DPage /> : <Navigate to="/mobile/home" replace />} />
+          <Route path="/mobile/3d/preview" element={enable3DExperimental ? <Preview3DPage /> : <Navigate to="/mobile/home" replace />} />
+          <Route path="/mobile/3d/template-test" element={enable3DExperimental ? <TemplateTestPage /> : <Navigate to="/mobile/home" replace />} />
+          <Route path="/mobile/3d/template-flow" element={enable3DExperimental ? <TemplateFlowPage /> : <Navigate to="/mobile/home" replace />} />
+          <Route path="/mobile/3d/depth-to-3d" element={enable3DExperimental ? <DepthTo3DPage /> : <Navigate to="/mobile/home" replace />} />
+          <Route path="/mobile/3d/model-to-slices" element={enable3DExperimental ? <ModelTo3DPage /> : <Navigate to="/mobile/home" replace />} />
 
           {/* Catch all: redirect to root */}
           <Route path="*" element={<Navigate to="/" replace />} />

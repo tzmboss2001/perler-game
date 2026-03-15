@@ -10,6 +10,18 @@ export interface UserPreferencesResp {
   my_color_ids: string[];
 }
 
+export interface UserPublicProfileResp {
+  id: number;
+  nickname: string;
+  avatar: string;
+  bio: string;
+  community_post_count: number;
+  finished_work_count: number;
+  total_like_count: number;
+  total_make_count: number;
+  joined_at: string;
+}
+
 async function request<T>(url: string, options: RequestInit = {}, timeout = 30000): Promise<ApiResponse<T>> {
   const token = getToken();
   const headers: HeadersInit = {
@@ -39,6 +51,10 @@ async function request<T>(url: string, options: RequestInit = {}, timeout = 3000
 }
 
 export const userApi = {
+  getPublicProfile: async (userId: number): Promise<ApiResponse<UserPublicProfileResp>> => {
+    return request<UserPublicProfileResp>(`/api/v1/user/public/${userId}`, { method: 'GET' });
+  },
+
   getPreferences: async (): Promise<ApiResponse<UserPreferencesResp>> => {
     return request<UserPreferencesResp>('/api/v1/user/preferences', { method: 'GET' });
   },

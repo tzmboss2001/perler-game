@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Trash, ShieldCheck, Info, UserMinus, ChatCircle, Spinner } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, mixins } from '../../styles/designSystem';
@@ -8,13 +8,20 @@ import Modal, { useModal } from '../../components/Modal';
 
 const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const { isLoggedIn, userInfo, deleteAccount } = useUserStore();
   const [isDeleting, setIsDeleting] = useState(false);
   const { modalProps, showConfirm, showPrompt, showSuccess, showError, showAlert } = useModal();
 
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleClearData = () => {
     showConfirm(
-      '清除后：\n• 所有方案的制作进度将丢失\n• 需要重新选择制作位置\n\n不受影响：\n• 已保存的方案数据（云端）\n• 当前登录状态',
+      '清除后会影响：\n• 所有方案的制作进度缓存会被移除\n• 需要重新选择制作位置\n\n不会影响：\n• 已保存的方案数据（云端）\n• 当前登录状态',
       {
         title: '确定要清除本地缓存吗？',
         type: 'warning',
@@ -80,6 +87,48 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const isNarrowPhone = viewportWidth <= 390;
+  const isCompactPhone = viewportWidth <= 360;
+
+  const sectionStyle: React.CSSProperties = {
+    ...styles.section,
+    margin: isCompactPhone ? '0 12px 14px' : styles.section.margin,
+  };
+
+  const linkItemStyle: React.CSSProperties = {
+    ...styles.linkItem,
+    padding: isCompactPhone ? '11px' : styles.linkItem.padding,
+  };
+
+  const cardStyle: React.CSSProperties = {
+    ...styles.card,
+    flexDirection: isNarrowPhone ? 'column' : 'row',
+    alignItems: isNarrowPhone ? 'stretch' : 'center',
+  };
+
+  const actionBtnStyle: React.CSSProperties = {
+    ...styles.actionBtn,
+    width: isNarrowPhone ? '100%' : undefined,
+  };
+
+  const dangerBtnStyle: React.CSSProperties = {
+    ...styles.dangerBtn,
+    width: isNarrowPhone ? '100%' : undefined,
+  };
+
+  const accountCardStyle: React.CSSProperties = {
+    ...styles.accountCard,
+    flexDirection: isNarrowPhone ? 'column' : 'row',
+    alignItems: isNarrowPhone ? 'flex-start' : 'center',
+    gap: isNarrowPhone ? '6px' : undefined,
+  };
+
+  const accountValueStyle: React.CSSProperties = {
+    ...styles.accountValue,
+    maxWidth: isNarrowPhone ? '100%' : styles.accountValue.maxWidth,
+    textAlign: isNarrowPhone ? 'left' : 'right',
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -91,37 +140,37 @@ const SettingsPage: React.FC = () => {
       </div>
       <div style={styles.headerSpacer} />
 
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h2 style={styles.sectionTitle}>帮助与反馈</h2>
-        <button style={styles.linkItem} onClick={() => navigate('/mobile/feedback')}>
+        <button style={linkItemStyle} onClick={() => navigate('/mobile/feedback')}>
           <ChatCircle size={18} style={{ color: colors.bead.cyan }} />
           <span style={styles.linkLabel}>意见反馈</span>
           <span style={styles.linkArrow}>{'>'}</span>
         </button>
       </div>
 
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h2 style={styles.sectionTitle}>数据管理</h2>
-        <div style={styles.card}>
+        <div style={cardStyle}>
           <div style={styles.cardMain}>
             <Trash size={20} style={{ color: colors.bead.orange }} />
             <div style={styles.cardTextWrap}>
               <span style={styles.cardTitle}>清除制作进度缓存</span>
-              <span style={styles.cardDesc}>清除后需重新选择制作位置，方案数据不受影响</span>
+              <span style={styles.cardDesc}>清除后需重新选择制作位置，但不会删除方案数据</span>
             </div>
           </div>
-          <button style={styles.actionBtn} onClick={handleClearData}>清除</button>
+          <button style={actionBtnStyle} onClick={handleClearData}>清除</button>
         </div>
       </div>
 
       {isLoggedIn && (
-        <div style={styles.section}>
+        <div style={sectionStyle}>
           <h2 style={styles.sectionTitle}>账号管理</h2>
-          <div style={styles.accountCard}>
+          <div style={accountCardStyle}>
             <span style={styles.accountLabel}>当前账号</span>
-            <span style={styles.accountValue}>{userInfo?.email || userInfo?.username || '未知用户'}</span>
+            <span style={accountValueStyle}>{userInfo?.email || userInfo?.username || '未知用户'}</span>
           </div>
-          <div style={{ ...styles.card, marginTop: 12 }}>
+          <div style={{ ...cardStyle, marginTop: 12 }}>
             <div style={styles.cardMain}>
               <UserMinus size={20} style={{ color: colors.bead.red }} />
               <div style={styles.cardTextWrap}>
@@ -129,22 +178,22 @@ const SettingsPage: React.FC = () => {
                 <span style={styles.cardDesc}>永久删除账号及数据，操作不可恢复</span>
               </div>
             </div>
-            <button style={styles.dangerBtn} onClick={handleDeleteAccount} disabled={isDeleting}>
+            <button style={dangerBtnStyle} onClick={handleDeleteAccount} disabled={isDeleting}>
               {isDeleting ? <Spinner size={14} style={{ animation: 'spin 1s linear infinite' }} /> : '注销'}
             </button>
           </div>
         </div>
       )}
 
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h2 style={styles.sectionTitle}>法律信息</h2>
         <div style={styles.linkList}>
-          <button style={styles.linkItem} onClick={() => navigate('/mobile/privacy-policy')}>
+          <button style={linkItemStyle} onClick={() => navigate('/mobile/privacy-policy')}>
             <ShieldCheck size={18} style={{ color: colors.bead.green }} />
             <span style={styles.linkLabel}>隐私政策</span>
             <span style={styles.linkArrow}>{'>'}</span>
           </button>
-          <button style={styles.linkItem} onClick={() => navigate('/mobile/user-agreement')}>
+          <button style={linkItemStyle} onClick={() => navigate('/mobile/user-agreement')}>
             <Info size={18} style={{ color: colors.bead.blue }} />
             <span style={styles.linkLabel}>用户协议</span>
             <span style={styles.linkArrow}>{'>'}</span>

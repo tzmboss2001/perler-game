@@ -21,6 +21,7 @@ import { convertBeadPixelDataToCommunityFormat, generateThumbnailFromBeadData, c
  */
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [localProjects, setLocalProjects] = useState<LocalProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +35,12 @@ const ProfilePage: React.FC = () => {
   useEffect(() => {
     initUser();
   }, [initUser]);
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // 加载方案列表
   useEffect(() => {
@@ -485,6 +492,118 @@ const ProfilePage: React.FC = () => {
     });
   }
 
+  const isNarrowPhone = viewportWidth <= 390;
+  const isCompactPhone = viewportWidth <= 360;
+
+  const userCardStyle: React.CSSProperties = {
+    ...styles.userCard,
+    alignItems: isNarrowPhone ? 'flex-start' : styles.userCard.alignItems,
+    padding: isCompactPhone ? '14px' : styles.userCard.padding,
+    gap: isNarrowPhone ? '10px' : undefined,
+    flexWrap: isNarrowPhone ? 'wrap' : undefined,
+  };
+
+  const avatarBoxStyle: React.CSSProperties = {
+    ...styles.avatarBox,
+    marginRight: isNarrowPhone ? '0' : styles.avatarBox.marginRight,
+  };
+
+  const userDescStyle: React.CSSProperties = {
+    ...styles.userDesc,
+    whiteSpace: isNarrowPhone ? 'normal' : styles.userDesc.whiteSpace,
+    overflow: isNarrowPhone ? 'visible' : styles.userDesc.overflow,
+    textOverflow: isNarrowPhone ? 'clip' : styles.userDesc.textOverflow,
+    alignItems: isNarrowPhone ? 'flex-start' : styles.userDesc.alignItems,
+    lineHeight: isNarrowPhone ? 1.4 : undefined,
+  };
+
+  const authButtonStyle: React.CSSProperties = isLoggedIn
+    ? {
+        ...styles.logoutBtn,
+        width: isNarrowPhone ? '100%' : undefined,
+        justifyContent: isNarrowPhone ? 'center' : undefined,
+      }
+    : {
+        ...styles.loginBtn,
+        width: isNarrowPhone ? '100%' : undefined,
+        justifyContent: isNarrowPhone ? 'center' : undefined,
+      };
+
+  const projectCardStyle: React.CSSProperties = {
+    ...styles.projectCard,
+    alignItems: isNarrowPhone ? 'flex-start' : styles.projectCard.alignItems,
+    gap: isNarrowPhone ? '10px' : undefined,
+  };
+
+  const projectNameStyle: React.CSSProperties = {
+    ...styles.projectName,
+    whiteSpace: isCompactPhone ? 'normal' : styles.projectName.whiteSpace,
+    display: isCompactPhone ? '-webkit-box' : undefined,
+    WebkitLineClamp: isCompactPhone ? 2 : undefined,
+    WebkitBoxOrient: isCompactPhone ? 'vertical' : undefined,
+  };
+
+  const projectMetaStyle: React.CSSProperties = {
+    ...styles.projectMeta,
+    flexWrap: isNarrowPhone ? 'wrap' : undefined,
+    gap: isCompactPhone ? '6px' : styles.projectMeta.gap,
+  };
+
+  const projectActionsStyle: React.CSSProperties = {
+    ...styles.projectActions,
+    marginLeft: isNarrowPhone ? '0' : styles.projectActions.marginLeft,
+    width: isNarrowPhone ? '100%' : undefined,
+    justifyContent: isNarrowPhone ? 'flex-end' : undefined,
+    paddingTop: isNarrowPhone ? '2px' : undefined,
+  };
+
+  const albumHeaderStyle: React.CSSProperties = {
+    ...styles.albumHeader,
+    alignItems: isNarrowPhone ? 'stretch' : styles.albumHeader.alignItems,
+    flexDirection: isCompactPhone ? 'column' : undefined,
+  };
+
+  const uploadFinishedBtnStyle: React.CSSProperties = {
+    ...styles.uploadFinishedBtn,
+    width: isCompactPhone ? '100%' : undefined,
+  };
+
+  const publishCardStyle: React.CSSProperties = {
+    ...styles.publishCard,
+    alignItems: isNarrowPhone ? 'flex-start' : styles.publishCard.alignItems,
+  };
+
+  const publishMetaStyle: React.CSSProperties = {
+    ...styles.publishMeta,
+    flexWrap: isNarrowPhone ? 'wrap' : undefined,
+    gap: isCompactPhone ? '6px' : styles.publishMeta.gap,
+  };
+
+  const publishTitleStyle: React.CSSProperties = {
+    ...styles.publishTitle,
+    whiteSpace: isCompactPhone ? 'normal' : styles.publishTitle.whiteSpace,
+    display: isCompactPhone ? '-webkit-box' : undefined,
+    WebkitLineClamp: isCompactPhone ? 2 : undefined,
+    WebkitBoxOrient: isCompactPhone ? 'vertical' : undefined,
+  };
+
+  const publishReasonStyle: React.CSSProperties = {
+    ...styles.publishReason,
+    whiteSpace: isCompactPhone ? 'normal' : styles.publishReason.whiteSpace,
+    overflow: isCompactPhone ? 'visible' : styles.publishReason.overflow,
+    textOverflow: isCompactPhone ? 'clip' : styles.publishReason.textOverflow,
+  };
+
+  const menuItemStyle: React.CSSProperties = {
+    ...styles.menuItem,
+    padding: isCompactPhone ? '13px 14px' : styles.menuItem.padding,
+  };
+
+  const menuLabelStyle: React.CSSProperties = {
+    ...styles.menuLabel,
+    fontSize: isCompactPhone ? typography.fontSize.sm : styles.menuLabel.fontSize,
+  };
+
   useEffect(() => {
     if (!isLoggedIn) {
       setMyCommunityPosts([]);
@@ -534,8 +653,8 @@ const ProfilePage: React.FC = () => {
       </div>
 
       {/* 用户卡片 */}
-      <div style={styles.userCard}>
-        <div style={styles.avatarBox}>
+      <div style={userCardStyle}>
+        <div style={avatarBoxStyle}>
           <div style={{
             ...styles.avatar,
             background: isLoggedIn
@@ -571,7 +690,7 @@ const ProfilePage: React.FC = () => {
           <span style={styles.userName}>
             {isLoggedIn ? (userInfo?.nickname || userInfo?.username || '用户') : '游客用户'}
           </span>
-          <span style={styles.userDesc}>
+          <span style={userDescStyle}>
             <Heart size={12} weight="fill" style={{ color: colors.bead.pink }} />
             {isLoggedIn
               ? userInfo?.email || '方案已同步到云端'
@@ -580,7 +699,7 @@ const ProfilePage: React.FC = () => {
         </div>
         {/* 登录/登出按钮 */}
         <button
-          style={isLoggedIn ? styles.logoutBtn : styles.loginBtn}
+          style={authButtonStyle}
           onClick={isLoggedIn ? handleLogout : handleLogin}
         >
           {isLoggedIn ? (
@@ -623,7 +742,7 @@ const ProfilePage: React.FC = () => {
               {localProjects.map((project) => (
                 <div
                   key={project.id}
-                  style={styles.projectCard}
+                  style={projectCardStyle}
                   onClick={() => handleContinueLocal(project)}
                 >
                   <div style={styles.thumbnailBox}>
@@ -640,8 +759,8 @@ const ProfilePage: React.FC = () => {
                     )}
                   </div>
                   <div style={styles.projectInfo}>
-                    <span style={styles.projectName}>{project.name}</span>
-                    <div style={styles.projectMeta}>
+                    <span style={projectNameStyle}>{project.name}</span>
+                    <div style={projectMetaStyle}>
                       <span style={styles.projectSize}>
                         {project.beadData?.width || 32}×{project.beadData?.height || 32}
                       </span>
@@ -651,7 +770,7 @@ const ProfilePage: React.FC = () => {
                       {new Date(project.updatedAt).toLocaleDateString('zh-CN')}
                     </span>
                   </div>
-                  <div style={styles.projectActions}>
+                  <div style={projectActionsStyle}>
                     {isLoggedIn && (
                       <button
                         style={styles.shareBtn}
@@ -702,7 +821,7 @@ const ProfilePage: React.FC = () => {
                 {projects.map((project) => (
                   <div
                     key={project.id}
-                    style={styles.projectCard}
+                    style={projectCardStyle}
                     onClick={() => handleContinue(project)}
                   >
                     {/* 缩略图 */}
@@ -722,8 +841,8 @@ const ProfilePage: React.FC = () => {
 
                     {/* 信息 */}
                     <div style={styles.projectInfo}>
-                      <span style={styles.projectName}>{project.name}</span>
-                      <div style={styles.projectMeta}>
+                      <span style={projectNameStyle}>{project.name}</span>
+                      <div style={projectMetaStyle}>
                         <span style={styles.projectSize}>
                           {project.settings?.gridSize || 32}×{project.settings?.gridHeight || project.settings?.gridSize || 32}
                         </span>
@@ -739,7 +858,7 @@ const ProfilePage: React.FC = () => {
                     </div>
 
                     {/* 操作按钮 */}
-                    <div style={styles.projectActions}>
+                    <div style={projectActionsStyle}>
                       <button
                         style={styles.shareBtn}
                         onClick={(e) => handleShare(project, e)}
@@ -779,7 +898,7 @@ const ProfilePage: React.FC = () => {
                   {localProjects.map((project) => (
                     <div
                       key={`local_${project.id}`}
-                      style={styles.projectCard}
+                      style={projectCardStyle}
                       onClick={() => handleContinueLocal(project)}
                     >
                       <div style={styles.thumbnailBox}>
@@ -796,8 +915,8 @@ const ProfilePage: React.FC = () => {
                         )}
                       </div>
                       <div style={styles.projectInfo}>
-                        <span style={styles.projectName}>{project.name}</span>
-                        <div style={styles.projectMeta}>
+                        <span style={projectNameStyle}>{project.name}</span>
+                        <div style={projectMetaStyle}>
                           <span style={styles.projectSize}>
                             {project.beadData?.width || 32}×{project.beadData?.height || 32}
                           </span>
@@ -807,7 +926,7 @@ const ProfilePage: React.FC = () => {
                           {new Date(project.updatedAt).toLocaleDateString('zh-CN')}
                         </span>
                       </div>
-                      <div style={styles.projectActions}>
+                      <div style={projectActionsStyle}>
                         <button
                           style={styles.shareBtn}
                           onClick={(e) => handleShareLocal(project, e)}
@@ -859,12 +978,12 @@ const ProfilePage: React.FC = () => {
               {myCommunityPosts.map((post) => (
                 <div
                   key={post.id}
-                  style={styles.publishCard}
+                  style={publishCardStyle}
                   onClick={() => navigate(`/mobile/community/${post.id}`)}
                 >
                   <div style={styles.publishMain}>
-                    <div style={styles.publishTitle}>{post.title}</div>
-                    <div style={styles.publishMeta}>
+                    <div style={publishTitleStyle}>{post.title}</div>
+                    <div style={publishMetaStyle}>
                       <span style={{ ...styles.publishStatus, color: reviewStatusColor(post.review_status) }}>
                         {reviewStatusText(post.review_status)}
                       </span>
@@ -873,7 +992,7 @@ const ProfilePage: React.FC = () => {
                       </span>
                     </div>
                     {post.review_status === 2 && post.review_reason ? (
-                      <div style={styles.publishReason}>驳回原因：{post.review_reason}</div>
+                      <div style={publishReasonStyle}>驳回原因：{post.review_reason}</div>
                     ) : null}
                   </div>
                   <span style={styles.menuArrow}>→</span>
@@ -886,13 +1005,13 @@ const ProfilePage: React.FC = () => {
 
       {isLoggedIn && (
         <div style={styles.section}>
-          <div style={styles.albumHeader}>
+          <div style={albumHeaderStyle}>
             <h2 style={styles.sectionTitle}>
               <span style={styles.sectionIcon}>{pixelIcons.star}</span>
               我的成品相册
               <span style={styles.projectCount}>({finishedWorks.length})</span>
             </h2>
-            <button style={styles.uploadFinishedBtn} onClick={handleUploadFinishedClick} disabled={finishedUploading}>
+            <button style={uploadFinishedBtnStyle} onClick={handleUploadFinishedClick} disabled={finishedUploading}>
               {finishedUploading ? '上传中...' : '上传成品'}
             </button>
           </div>
@@ -909,7 +1028,7 @@ const ProfilePage: React.FC = () => {
           ) : (
             <div style={styles.albumList}>
               {finishedWorks.map((item) => (
-                <div key={item.id} style={styles.albumCard}>
+                <div key={item.id} style={publishCardStyle}>
                   <div style={styles.albumThumbWrap}>
                     {item.cover_url ? (
                       <img src={item.cover_url} alt={item.title} style={styles.albumThumb} />
@@ -918,12 +1037,12 @@ const ProfilePage: React.FC = () => {
                     )}
                   </div>
                   <div style={styles.albumMain}>
-                    <div style={styles.publishTitle}>{item.title}</div>
-                    <div style={styles.publishMeta}>
+                    <div style={publishTitleStyle}>{item.title}</div>
+                    <div style={publishMetaStyle}>
                       <span style={styles.publishDate}>{new Date(item.created_at).toLocaleString('zh-CN')}</span>
                       <span style={styles.publishStatus}>共 {item.image_count} 张</span>
                     </div>
-                    {item.description ? <div style={styles.albumDesc}>{item.description}</div> : null}
+                    {item.description ? <div style={publishReasonStyle}>{item.description}</div> : null}
                   </div>
                   <button style={styles.deleteBtn} onClick={(e) => handleDeleteFinishedWork(item.id, e)}>
                     <Trash size={14} weight="fill" />
@@ -948,7 +1067,7 @@ const ProfilePage: React.FC = () => {
         {menuItems.map((item, index) => (
           <div
             key={index}
-            style={styles.menuItem}
+            style={menuItemStyle}
             onClick={() => item.action ? item.action() : item.path && navigate(item.path)}
           >
             <div style={{
@@ -958,7 +1077,7 @@ const ProfilePage: React.FC = () => {
             }}>
               <item.icon size={18} weight="fill" style={{ color: item.color }} />
             </div>
-            <span style={styles.menuLabel}>{item.label}</span>
+            <span style={menuLabelStyle}>{item.label}</span>
               <span style={styles.menuArrow}>→</span>
           </div>
         ))}

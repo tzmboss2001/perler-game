@@ -12,10 +12,6 @@ export default defineConfig({
         target: 'http://localhost:8012',
         changeOrigin: true,
       },
-      '/thumbnails': {
-        target: 'http://localhost:8012',
-        changeOrigin: true,
-      },
       '/finished-works': {
         target: 'http://localhost:8012',
         changeOrigin: true,
@@ -28,10 +24,6 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8012',
-        changeOrigin: true,
-      },
-      '/thumbnails': {
         target: 'http://localhost:8012',
         changeOrigin: true,
       },

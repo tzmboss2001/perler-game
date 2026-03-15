@@ -433,6 +433,9 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
   const [autoSwitchStatus, setAutoSwitchStatus] = useState<string | null>(null);
   const [hasRestoredState, setHasRestoredState] = useState(false);
   const [detectionSummary, setDetectionSummary] = useState<VisionAssistDetectionSummary | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1280,
+  );
 
   const selectedBoard = boardTiles[
     clamp(boardIndex, 0, Math.max(0, boardTiles.length - 1))
@@ -1113,6 +1116,16 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
   }, [boardSwitchNotice]);
 
   useEffect(() => {
+    if (!visible || typeof window === "undefined") {
+      return;
+    }
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [visible]);
+
+  useEffect(() => {
     return () => {
       if (autoSwitchStatusClearTimerRef.current) {
         window.clearTimeout(autoSwitchStatusClearTimerRef.current);
@@ -1234,13 +1247,84 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
     return null;
   }
 
+  const isCompactLayout = viewportWidth <= 920;
+  const isNarrowLayout = viewportWidth <= 560;
+  const overlayStyle: React.CSSProperties = {
+    ...styles.overlay,
+    padding: isNarrowLayout
+      ? "8px 8px calc(env(safe-area-inset-bottom, 0px) + 12px)"
+      : styles.overlay.padding,
+    alignItems: isCompactLayout ? "flex-start" : "center",
+  };
+  const modalStyle: React.CSSProperties = {
+    ...styles.modal,
+    borderRadius: isNarrowLayout ? 16 : 20,
+  };
+  const headerStyle: React.CSSProperties = {
+    ...styles.header,
+    flexWrap: isCompactLayout ? "wrap" : "nowrap",
+    alignItems: isCompactLayout ? "flex-start" : "center",
+    padding: isNarrowLayout ? "14px 14px 12px" : styles.header.padding,
+    gap: isNarrowLayout ? 10 : 16,
+  };
+  const titleStyle: React.CSSProperties = {
+    ...styles.title,
+    fontSize: isNarrowLayout ? 18 : 22,
+  };
+  const subTitleStyle: React.CSSProperties = {
+    ...styles.subTitle,
+    fontSize: isNarrowLayout ? 12 : 13,
+  };
+  const bodyStyle: React.CSSProperties = {
+    ...styles.body,
+    gridTemplateColumns: isCompactLayout
+      ? "minmax(0, 1fr)"
+      : "minmax(0, 1.45fr) minmax(300px, 0.95fr)",
+    padding: isNarrowLayout ? 12 : 16,
+    gap: isNarrowLayout ? 12 : 16,
+    maxHeight: isNarrowLayout ? "calc(100vh - 88px)" : "calc(100vh - 110px)",
+  };
+  const buttonRowStyle: React.CSSProperties = {
+    ...styles.buttonRow,
+    gap: isNarrowLayout ? 8 : 10,
+  };
+  const halfWidthButtonStyle: React.CSSProperties = {
+    minWidth: isNarrowLayout ? "calc(50% - 4px)" : styles.primaryButton.minWidth,
+    width: isNarrowLayout ? "calc(50% - 4px)" : undefined,
+  };
+  const fullWidthButtonStyle: React.CSSProperties | null = isNarrowLayout
+    ? { minWidth: "100%", width: "100%" }
+    : null;
+  const setupHeaderStyle: React.CSSProperties = {
+    ...styles.setupHeader,
+    flexWrap: isNarrowLayout ? "wrap" : "nowrap",
+    alignItems: isNarrowLayout ? "flex-start" : "center",
+  };
+  const metaGridStyle: React.CSSProperties = {
+    ...styles.metaGrid,
+    gridTemplateColumns: isNarrowLayout ? "minmax(0, 1fr)" : styles.metaGrid.gridTemplateColumns,
+  };
+  const inlineMetaStyle: React.CSSProperties = {
+    ...styles.inlineMeta,
+    flexWrap: isNarrowLayout ? "wrap" : "nowrap",
+  };
+  const summaryHeaderStyle: React.CSSProperties = {
+    ...styles.summaryHeader,
+    flexWrap: isNarrowLayout ? "wrap" : "nowrap",
+    alignItems: isNarrowLayout ? "flex-start" : "center",
+  };
+  const colorListStyle: React.CSSProperties = {
+    ...styles.colorList,
+    gridTemplateColumns: isNarrowLayout ? "minmax(0, 1fr)" : styles.colorList.gridTemplateColumns,
+  };
+
   return (
-    <div style={styles.overlay}>
-      <div style={styles.modal}>
-        <div style={styles.header}>
+    <div style={overlayStyle}>
+      <div style={modalStyle}>
+        <div style={headerStyle}>
           <div>
-            <h2 style={styles.title}>视觉辅助引导</h2>
-            <p style={styles.subTitle}>
+            <h2 style={titleStyle}>视觉辅助引导</h2>
+            <p style={subTitleStyle}>
               摄像头直接内置在制作页里，用户只需要完成一次四角校准，就能看到当前拼豆进度和下一步放豆位置。
             </p>
           </div>
@@ -1249,7 +1333,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
           </button>
         </div>
 
-        <div style={styles.body}>
+        <div style={bodyStyle}>
           <div style={styles.leftColumn}>
             <div style={styles.videoBox}>
               <div style={styles.videoLayer} onClick={handleOverlayClick}>
@@ -1393,10 +1477,11 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
             </div>
 
             <div style={styles.tipText}>{getStepText(corners, emptyReferenceRgb)}</div>
-            <div style={styles.buttonRow}>
+            <div style={buttonRowStyle}>
               <button
                 style={{
                   ...styles.secondaryButton,
+                  ...halfWidthButtonStyle,
                   ...(isAutoCalibrating ? styles.disabledButton : {}),
                 }}
                 onClick={() => {
@@ -1406,11 +1491,20 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
               >
                 {isAutoCalibrating ? "识别四角中..." : "自动识别四角"}
               </button>
-              <button style={styles.secondaryButton} onClick={resetCalibration}>
+              <button
+                style={{
+                  ...styles.secondaryButton,
+                  ...halfWidthButtonStyle,
+                }}
+                onClick={resetCalibration}
+              >
                 重置校准
               </button>
               <button
-                style={styles.secondaryButton}
+                style={{
+                  ...styles.secondaryButton,
+                  ...halfWidthButtonStyle,
+                }}
                 onClick={() => {
                   if (!emptyPoint) {
                     toast.info("请先点击空孔，记录空板参考色");
@@ -1433,6 +1527,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                 <button
                   style={{
                     ...styles.secondaryButton,
+                    ...halfWidthButtonStyle,
                     ...(!canAnalyze || isLocatingBoard ? styles.disabledButton : {}),
                   }}
                   onClick={() => {
@@ -1446,6 +1541,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
               <button
                 style={{
                   ...styles.primaryButton,
+                  ...(fullWidthButtonStyle || halfWidthButtonStyle),
                   ...(!canAnalyze || isAnalyzing ? styles.disabledButton : {}),
                 }}
                 onClick={() => {
@@ -1519,7 +1615,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                         {step.index}
                       </div>
                       <div style={styles.setupContent}>
-                        <div style={styles.setupHeader}>
+                        <div style={setupHeaderStyle}>
                           <strong>{step.title}</strong>
                           <span
                             style={{
@@ -1540,7 +1636,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                   ))}
                 </div>
               </div>
-              <div style={styles.metaGrid}>
+              <div style={metaGridStyle}>
                 <div style={styles.metaCard}>
                   <span style={styles.metaLabel}>当前板尺寸</span>
                   <strong>{selectedBoard.usedWidth} × {selectedBoard.usedHeight}</strong>
@@ -1551,7 +1647,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                 </div>
                 <div style={styles.metaCard}>
                   <span style={styles.metaLabel}>空板参考色</span>
-                  <div style={styles.inlineMeta}>
+                  <div style={inlineMetaStyle}>
                     <span
                       style={{
                         ...styles.colorSwatch,
@@ -1667,7 +1763,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                   )}
                   <div style={styles.activeCard}>
                     <div style={styles.metaLabel}>当前优先颜色</div>
-                    <div style={styles.inlineMeta}>
+                    <div style={inlineMetaStyle}>
                       <span
                         style={{
                           ...styles.colorSwatch,
@@ -1744,7 +1840,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                     <span>绿色圈：已放对</span>
                     <span>红叉：错放</span>
                   </div>
-                  <div style={styles.colorList}>
+                  <div style={colorListStyle}>
                     {detection.colors.slice(0, 8).map((item) => (
                       <button
                         key={item.color.id}
@@ -1773,7 +1869,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                 </>
               ) : detectionSummary ? (
                 <div style={styles.summaryCard}>
-                  <div style={styles.summaryHeader}>
+                  <div style={summaryHeaderStyle}>
                     <strong>上次识别摘要</strong>
                     <div style={styles.summaryBadgeRow}>
                       <span style={styles.summaryBadge}>历史结果</span>
@@ -1796,7 +1892,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                       <div style={styles.smallText}>识别板位：{detectionSummary.boardLabel}</div>
                     )}
                     <div style={styles.smallText}>上次容差：{detectionSummary.tolerance}</div>
-                    <div style={styles.inlineMeta}>
+                    <div style={inlineMetaStyle}>
                       <span style={styles.smallText}>上次环境：</span>
                       <span
                         style={{
@@ -1832,7 +1928,7 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                       </div>
                     )}
                     {detectionSummary.activeColorLabel && (
-                      <div style={styles.inlineMeta}>
+                      <div style={inlineMetaStyle}>
                         <span
                           style={{
                             ...styles.colorSwatch,
@@ -1857,9 +1953,12 @@ const BoardVisionAssistModal: React.FC<BoardVisionAssistModalProps> = ({
                       ))}
                     </div>
                   )}
-                  <div style={styles.buttonRow}>
+                  <div style={buttonRowStyle}>
                     <button
-                      style={styles.secondaryButton}
+                      style={{
+                        ...styles.secondaryButton,
+                        ...(fullWidthButtonStyle || halfWidthButtonStyle),
+                      }}
                       onClick={handleClearDetectionSummary}
                     >
                       清除历史摘要

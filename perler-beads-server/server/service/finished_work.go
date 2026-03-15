@@ -278,6 +278,31 @@ type finishedWorkWithUserRow struct {
 	UserAvatar   string `gorm:"column:user_avatar"`
 }
 
+func applyFinishedWorkPublicListFilters(db *gorm.DB, req *request.ListFinishedWorkRequest, includeAuthor bool) *gorm.DB {
+	keyword := strings.TrimSpace(req.Keyword)
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		if includeAuthor {
+			db = db.Where(
+				"(fw.title LIKE ? OR fw.description LIKE ? OR COALESCE(NULLIF(u.nickname, ''), NULLIF(u.username, ''), '用户') LIKE ?)",
+				like, like, like,
+			)
+		} else {
+			db = db.Where("(fw.title LIKE ? OR fw.description LIKE ?)", like, like)
+		}
+	}
+	return db
+}
+
+func finishedWorkPublicOrder(sort string) string {
+	switch strings.TrimSpace(strings.ToLower(sort)) {
+	case "hottest", "hot":
+		return "fw.like_count DESC, fw.created_at DESC"
+	default:
+		return "fw.created_at DESC"
+	}
+}
+
 func (s *FinishedWorkService) ListPublic(req *request.ListFinishedWorkRequest) ([]response.FinishedWorkItem, int64, error) {
 	db := global.GVA_DB.Table("finished_works fw").
 		Select(`fw.*,
@@ -285,6 +310,7 @@ func (s *FinishedWorkService) ListPublic(req *request.ListFinishedWorkRequest) (
 		COALESCE(u.avatar, '') as user_avatar`).
 		Joins("LEFT JOIN users u ON u.id = fw.user_id").
 		Where("fw.status = ? AND fw.is_public = ? AND fw.review_status = ?", finishedWorkStatusActive, true, finishedWorkReviewApproved)
+	db = applyFinishedWorkPublicListFilters(db, req, true)
 
 	if req.Page <= 0 {
 		req.Page = 1
@@ -303,7 +329,71 @@ func (s *FinishedWorkService) ListPublic(req *request.ListFinishedWorkRequest) (
 
 	var rows []finishedWorkWithUserRow
 	offset := (req.Page - 1) * req.PageSize
-	if err := db.Order("fw.created_at DESC").Offset(offset).Limit(req.PageSize).Find(&rows).Error; err != nil {
+	if err := db.Order(finishedWorkPublicOrder(req.Sort)).Offset(offset).Limit(req.PageSize).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]response.FinishedWorkItem, len(rows))
+	for i, row := range rows {
+		urls := make([]string, 0)
+		if strings.TrimSpace(row.ImageURLs) != "" {
+			_ = json.Unmarshal([]byte(row.ImageURLs), &urls)
+		}
+		result[i] = response.FinishedWorkItem{
+			ID:           row.ID,
+			Title:        row.Title,
+			Description:  row.Description,
+			CoverURL:     row.CoverURL,
+			ImageURLs:    urls,
+			ImageCount:   row.ImageCount,
+			Status:       row.Status,
+			IsPublic:     row.IsPublic,
+			ReviewStatus: row.ReviewStatus,
+			ReviewReason: row.ReviewReason,
+			LikeCount:    row.LikeCount,
+			CommentCount: row.CommentCount,
+			User: &response.FinishedWorkAuthor{
+				ID:       row.UserID,
+				Nickname: row.UserNickname,
+				Avatar:   row.UserAvatar,
+			},
+			CreatedAt: row.CreatedAt,
+		}
+	}
+	return result, total, nil
+}
+
+func (s *FinishedWorkService) ListPublicByUser(userID uint, req *request.ListFinishedWorkRequest) ([]response.FinishedWorkItem, int64, error) {
+	if userID == 0 {
+		return []response.FinishedWorkItem{}, 0, nil
+	}
+
+	db := global.GVA_DB.Table("finished_works fw").
+		Select(`fw.*,
+		COALESCE(NULLIF(u.nickname, ''), NULLIF(u.username, ''), '用户') as user_nickname,
+		COALESCE(u.avatar, '') as user_avatar`).
+		Joins("LEFT JOIN users u ON u.id = fw.user_id").
+		Where("fw.user_id = ? AND fw.status = ? AND fw.is_public = ? AND fw.review_status = ?", userID, finishedWorkStatusActive, true, finishedWorkReviewApproved)
+	db = applyFinishedWorkPublicListFilters(db, req, false)
+
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+	if req.PageSize > 50 {
+		req.PageSize = 50
+	}
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var rows []finishedWorkWithUserRow
+	offset := (req.Page - 1) * req.PageSize
+	if err := db.Order(finishedWorkPublicOrder(req.Sort)).Offset(offset).Limit(req.PageSize).Find(&rows).Error; err != nil {
 		return nil, 0, err
 	}
 

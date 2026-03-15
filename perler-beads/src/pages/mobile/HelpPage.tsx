@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { ArrowLeft, CaretDown, CaretUp, Camera, Palette, GridFour, Download, PencilSimple, ShoppingCart, Question } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, pixelIcons, mixins } from '../../styles/designSystem';
@@ -11,8 +11,14 @@ import BottomNav from '../../components/BottomNav';
 const HelpPage: React.FC = () => {
   const navigate = useNavigate();
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
 
-  // 使用教程步骤
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const tutorialSteps = [
     {
       icon: Camera,
@@ -52,7 +58,6 @@ const HelpPage: React.FC = () => {
     },
   ];
 
-  // 常见问题
   const faqItems = [
     {
       question: '当前支持哪个拼豆色系？',
@@ -88,9 +93,61 @@ const HelpPage: React.FC = () => {
     setExpandedFaq(expandedFaq === index ? null : index);
   };
 
+  const isNarrowPhone = viewportWidth <= 390;
+  const isCompactPhone = viewportWidth <= 360;
+
+  const sectionStyle: React.CSSProperties = {
+    ...styles.section,
+    margin: isCompactPhone ? '16px 12px' : styles.section.margin,
+  };
+
+  const tutorialItemStyle: React.CSSProperties = {
+    ...styles.tutorialItem,
+    gap: isCompactPhone ? '10px' : styles.tutorialItem.gap,
+  };
+
+  const stepContentStyle: React.CSSProperties = {
+    ...styles.stepContent,
+    padding: isCompactPhone ? '13px' : styles.stepContent.padding,
+  };
+
+  const stepHeaderStyle: React.CSSProperties = {
+    ...styles.stepHeader,
+    alignItems: isNarrowPhone ? 'flex-start' : 'center',
+  };
+
+  const stepTitleStyle: React.CSSProperties = {
+    ...styles.stepTitle,
+    lineHeight: isCompactPhone ? 1.4 : undefined,
+  };
+
+  const faqHeaderStyle: React.CSSProperties = {
+    ...styles.faqHeader,
+    padding: isCompactPhone ? '14px' : styles.faqHeader.padding,
+    alignItems: isNarrowPhone ? 'flex-start' : 'center',
+  };
+
+  const faqQuestionStyle: React.CSSProperties = {
+    ...styles.faqQuestion,
+    fontSize: isCompactPhone ? typography.fontSize.sm : styles.faqQuestion.fontSize,
+    paddingRight: isCompactPhone ? '8px' : styles.faqQuestion.paddingRight,
+    lineHeight: isCompactPhone ? 1.45 : undefined,
+  };
+
+  const contactSectionStyle: React.CSSProperties = {
+    ...styles.contactSection,
+    margin: isCompactPhone ? '24px 12px 0' : styles.contactSection.margin,
+    padding: isCompactPhone ? '16px' : styles.contactSection.padding,
+  };
+
+  const contactBtnStyle: React.CSSProperties = {
+    ...styles.contactBtn,
+    width: isCompactPhone ? '100%' : undefined,
+    padding: isCompactPhone ? '11px 16px' : styles.contactBtn.padding,
+  };
+
   return (
     <div style={styles.container}>
-      {/* 固定头部 */}
       <div style={styles.header}>
         <button style={styles.backBtn} onClick={() => navigate(-1)}>
           <ArrowLeft size={20} weight="bold" />
@@ -98,11 +155,9 @@ const HelpPage: React.FC = () => {
         <h1 style={styles.title}>帮助</h1>
         <div style={styles.placeholder} />
       </div>
-      {/* Header 占位 */}
       <div style={styles.headerSpacer} />
 
-      {/* 使用教程 */}
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h2 style={styles.sectionTitle}>
           <span style={styles.sectionIcon}>{pixelIcons.star}</span>
           使用教程
@@ -110,25 +165,29 @@ const HelpPage: React.FC = () => {
 
         <div style={styles.tutorialList}>
           {tutorialSteps.map((step, index) => (
-            <div key={index} style={styles.tutorialItem}>
+            <div key={index} style={tutorialItemStyle}>
               <div style={styles.stepNumber}>
-                <span style={{
-                  ...styles.stepBadge,
-                  background: `linear-gradient(145deg, ${step.color}, ${step.color}cc)`,
-                  boxShadow: `0 2px 8px ${step.color}40`,
-                }}>
+                <span
+                  style={{
+                    ...styles.stepBadge,
+                    background: `linear-gradient(145deg, ${step.color}, ${step.color}cc)`,
+                    boxShadow: `0 2px 8px ${step.color}40`,
+                  }}
+                >
                   {index + 1}
                 </span>
               </div>
-              <div style={styles.stepContent}>
-                <div style={styles.stepHeader}>
-                  <div style={{
-                    ...styles.stepIconBox,
-                    background: `linear-gradient(145deg, ${step.color}30, ${step.color}15)`,
-                  }}>
+              <div style={stepContentStyle}>
+                <div style={stepHeaderStyle}>
+                  <div
+                    style={{
+                      ...styles.stepIconBox,
+                      background: `linear-gradient(145deg, ${step.color}30, ${step.color}15)`,
+                    }}
+                  >
                     <step.icon size={18} weight="fill" style={{ color: step.color }} />
                   </div>
-                  <h3 style={styles.stepTitle}>{step.title}</h3>
+                  <h3 style={stepTitleStyle}>{step.title}</h3>
                 </div>
                 <p style={styles.stepDesc}>{step.description}</p>
               </div>
@@ -137,8 +196,7 @@ const HelpPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 常见问题 */}
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h2 style={styles.sectionTitle}>
           <Question size={20} weight="fill" style={{ color: colors.bead.yellow }} />
           常见问题
@@ -146,13 +204,9 @@ const HelpPage: React.FC = () => {
 
         <div style={styles.faqList}>
           {faqItems.map((item, index) => (
-            <div
-              key={index}
-              style={styles.faqItem}
-              onClick={() => toggleFaq(index)}
-            >
-              <div style={styles.faqHeader}>
-                <span style={styles.faqQuestion}>{item.question}</span>
+            <div key={index} style={styles.faqItem} onClick={() => toggleFaq(index)}>
+              <div style={faqHeaderStyle}>
+                <span style={faqQuestionStyle}>{item.question}</span>
                 {expandedFaq === index ? (
                   <CaretUp size={18} style={{ color: colors.bead.cyan }} />
                 ) : (
@@ -169,20 +223,13 @@ const HelpPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 联系我们 */}
-      <div style={styles.contactSection}>
-        <p style={styles.contactText}>
-          还有其他问题？请通过“关于”页面联系我们
-        </p>
-        <button
-          style={styles.contactBtn}
-          onClick={() => navigate('/mobile/about')}
-        >
+      <div style={contactSectionStyle}>
+        <p style={styles.contactText}>还有其他问题？请通过“关于”页面联系我们</p>
+        <button style={contactBtnStyle} onClick={() => navigate('/mobile/about')}>
           前往关于页面
         </button>
       </div>
 
-      {/* 底部导航栏 */}
       <BottomNav />
     </div>
   );
@@ -192,9 +239,8 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
     background: colors.bg.primary,
-    paddingBottom: '80px', // 为底部导航栏留出空间
+    paddingBottom: '80px',
   },
-
   header: {
     display: 'flex',
     alignItems: 'center',
@@ -208,15 +254,12 @@ const styles: Record<string, React.CSSProperties> = {
     right: 0,
     zIndex: 100,
   },
-
   headerSpacer: {
     height: '56px',
   },
-
   backBtn: {
     ...mixins.backButton,
   },
-
   title: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
@@ -227,15 +270,12 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundClip: 'text',
     margin: 0,
   },
-
   placeholder: {
     width: 40,
   },
-
   section: {
     margin: '20px 16px',
   },
-
   sectionTitle: {
     display: 'flex',
     alignItems: 'center',
@@ -249,23 +289,19 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundClip: 'text',
     margin: '0 0 16px',
   },
-
   sectionIcon: {
     color: colors.bead.yellow,
     WebkitTextFillColor: colors.bead.yellow,
   },
-
   tutorialList: {
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
   },
-
   tutorialItem: {
     display: 'flex',
     gap: '12px',
   },
-
   stepNumber: {
     flexShrink: 0,
     width: '32px',
@@ -273,7 +309,6 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
   },
-
   stepBadge: {
     width: '28px',
     height: '28px',
@@ -286,7 +321,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
   },
-
   stepContent: {
     flex: 1,
     background: colors.bg.card,
@@ -295,14 +329,12 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: shadows.sm,
     padding: '16px',
   },
-
   stepHeader: {
     display: 'flex',
     alignItems: 'center',
     gap: '10px',
     marginBottom: '8px',
   },
-
   stepIconBox: {
     width: '32px',
     height: '32px',
@@ -311,7 +343,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   stepTitle: {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
@@ -319,7 +350,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.text.primary,
     margin: 0,
   },
-
   stepDesc: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
@@ -327,7 +357,6 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     lineHeight: 1.6,
   },
-
   faqList: {
     background: colors.bg.card,
     borderRadius: radius.card,
@@ -335,12 +364,10 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: shadows.sm,
     overflow: 'hidden',
   },
-
   faqItem: {
     borderBottom: `1px solid ${colors.border.soft}`,
     cursor: 'pointer',
   },
-
   faqHeader: {
     display: 'flex',
     alignItems: 'center',
@@ -348,7 +375,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '16px',
     transition: animation.transition.fast,
   },
-
   faqQuestion: {
     flex: 1,
     fontSize: typography.fontSize.md,
@@ -357,14 +383,12 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.text.primary,
     paddingRight: '12px',
   },
-
   faqAnswer: {
     padding: '0 16px 16px',
     borderTop: `1px dashed ${colors.border.soft}`,
     marginTop: '-8px',
     paddingTop: '16px',
   },
-
   faqAnswerText: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
@@ -372,7 +396,6 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     lineHeight: 1.7,
   },
-
   contactSection: {
     margin: '32px 16px 0',
     padding: '20px',
@@ -382,14 +405,12 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: `${shadows.sm}, 0 4px 16px ${colors.bead.cyan}10`,
     textAlign: 'center',
   },
-
   contactText: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
     color: colors.text.muted,
     margin: '0 0 16px',
   },
-
   contactBtn: {
     padding: '12px 24px',
     background: `linear-gradient(145deg, ${colors.bead.cyan}20, ${colors.bead.cyan}10)`,
@@ -405,4 +426,3 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default HelpPage;
-

@@ -27,6 +27,7 @@ func InitFinishedWorkPublicRouter(Router *gin.RouterGroup) {
 	finishedWorkApi := v1.FinishedWorkApi{}
 	{
 		finishedWorkRouter.GET("public", finishedWorkApi.ListPublic)
+		finishedWorkRouter.GET("users/:userId/public", finishedWorkApi.ListPublicByUser)
 		finishedWorkRouter.GET(":id", finishedWorkApi.GetPublicByID)
 	}
 }

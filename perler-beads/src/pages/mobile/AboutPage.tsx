@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { ArrowLeft, EnvelopeSimple, FileText, ShieldCheck } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, pixelIcons, mixins } from '../../styles/designSystem';
@@ -7,6 +7,13 @@ import { LEGAL_INFO } from '../../config/legalInfo';
 
 const AboutPage: React.FC = () => {
   const navigate = useNavigate();
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const linkItems = [
     {
@@ -23,6 +30,32 @@ const AboutPage: React.FC = () => {
     },
   ];
 
+  const isNarrowPhone = viewportWidth <= 390;
+  const isCompactPhone = viewportWidth <= 360;
+
+  const appCardStyle: React.CSSProperties = {
+    ...styles.appCard,
+    margin: isCompactPhone ? '12px' : styles.appCard.margin,
+    padding: isCompactPhone ? '20px 14px' : styles.appCard.padding,
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    ...styles.section,
+    margin: isCompactPhone ? '0 12px 12px' : styles.section.margin,
+  };
+
+  const infoRowStyle: React.CSSProperties = {
+    ...styles.infoRow,
+    alignItems: isNarrowPhone ? 'flex-start' : styles.infoRow.alignItems,
+    flexDirection: isNarrowPhone ? 'column' : undefined,
+    gap: isNarrowPhone ? 4 : styles.infoRow.gap,
+  };
+
+  const linkItemStyle: React.CSSProperties = {
+    ...styles.linkItem,
+    padding: isCompactPhone ? '11px' : styles.linkItem.padding,
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -34,7 +67,7 @@ const AboutPage: React.FC = () => {
       </div>
       <div style={styles.headerSpacer} />
 
-      <div style={styles.appCard}>
+      <div style={appCardStyle}>
         <div style={styles.iconWrap}>
           <div style={styles.iconBox}>
             <span style={styles.iconText}>{pixelIcons.bead}</span>
@@ -42,28 +75,28 @@ const AboutPage: React.FC = () => {
         </div>
         <h2 style={styles.appName}>{LEGAL_INFO.appName}</h2>
         <p style={styles.appVersion}>版本 {LEGAL_INFO.version}</p>
-        <p style={styles.appDesc}>将照片转换为可制作的拼豆图案，帮助你更快完成创作与复刻。</p>
+        <p style={styles.appDesc}>把图片转换成可制作的拼豆图案，帮助你更快完成创作与制作。</p>
       </div>
 
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h3 style={styles.sectionTitle}>开发者信息</h3>
         <div style={styles.infoCard}>
-          <div style={styles.infoRow}>
+          <div style={infoRowStyle}>
             <span style={styles.infoLabel}>开发者</span>
             <span style={styles.infoValue}>{LEGAL_INFO.developerName}</span>
           </div>
-          <div style={styles.infoRow}>
+          <div style={infoRowStyle}>
             <EnvelopeSimple size={16} style={{ color: colors.bead.cyan }} />
             <span style={styles.infoValue}>{LEGAL_INFO.contactEmail}</span>
           </div>
           {!!LEGAL_INFO.website && (
-            <div style={styles.infoRow}>
+            <div style={infoRowStyle}>
               <span style={styles.infoLabel}>官网</span>
               <span style={styles.infoValue}>{LEGAL_INFO.website}</span>
             </div>
           )}
           {!!LEGAL_INFO.icp && (
-            <div style={styles.infoRow}>
+            <div style={infoRowStyle}>
               <span style={styles.infoLabel}>备案号</span>
               <span style={styles.infoValue}>{LEGAL_INFO.icp}</span>
             </div>
@@ -71,11 +104,11 @@ const AboutPage: React.FC = () => {
         </div>
       </div>
 
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h3 style={styles.sectionTitle}>法律信息</h3>
         <div style={styles.linkList}>
           {linkItems.map((item) => (
-            <button key={item.path} style={styles.linkItem} onClick={() => navigate(item.path)}>
+            <button key={item.path} style={linkItemStyle} onClick={() => navigate(item.path)}>
               <div style={{ ...styles.linkIcon, background: `${item.color}20` }}>
                 <item.icon size={18} weight="fill" style={{ color: item.color }} />
               </div>
@@ -252,4 +285,3 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default AboutPage;
-

@@ -2,7 +2,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Heart, Eye, Hammer, Palette, GridFour, Star, Flag } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation } from '../../styles/designSystem';
-import { communityApi, CommunityPostDetail } from '../../services/api/communityApi';
+import { communityApi, CommunityPostDetail, CommunityPostListItem } from '../../services/api/communityApi';
 import { allBeadColors, BeadColor } from '../../data/beadColors';
 import { BeadPixelData } from '../../services/colorMatchService';
 import { clearToken, getToken } from '../../services/api/authApi';
@@ -29,6 +29,8 @@ const CommunityDetailPage: React.FC = () => {
   const [reporting, setReporting] = useState(false);
   const [imageLoadError, setImageLoadError] = useState(false);
   const [fallbackPreviewUrl, setFallbackPreviewUrl] = useState<string>('');
+  const [authorMorePosts, setAuthorMorePosts] = useState<CommunityPostListItem[]>([]);
+  const [authorMoreLoading, setAuthorMoreLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -64,6 +66,35 @@ const CommunityDetailPage: React.FC = () => {
 
     const preview = generatePreviewFromCommunityData(post.bead_data);
     setFallbackPreviewUrl(preview);
+  }, [post]);
+
+  useEffect(() => {
+    const authorId = Number(post?.user?.id || 0);
+    if (!authorId || !post?.id) {
+      setAuthorMorePosts([]);
+      return;
+    }
+
+    let active = true;
+    setAuthorMoreLoading(true);
+
+    communityApi.getPostsByUser(authorId, { page: 1, pageSize: 6, sort: 'recommended' })
+      .then((res) => {
+        if (!active || res.code !== 0) return;
+        const rows = (res.data.list || []).filter((item) => item.id !== post.id).slice(0, 4);
+        setAuthorMorePosts(rows);
+      })
+      .catch((err) => {
+        console.warn('[CommunityDetailPage] load author more posts failed:', err);
+        if (active) setAuthorMorePosts([]);
+      })
+      .finally(() => {
+        if (active) setAuthorMoreLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [post]);
 
     // 将社区 bead_data 转换为 MakingPage 需要的 BeadPixelData
@@ -369,6 +400,7 @@ const CommunityDetailPage: React.FC = () => {
   const diffInfo = getDifficultyInfo(post.difficulty);
   const displayImageUrl = !imageLoadError ? (post.preview_url || post.thumbnail_url || '') : '';
   const safeTitle = sanitizeDisplayTitle(post.title);
+  const authorUserId = Number(post.user?.id || 0);
 
   return (
     <div style={styles.container}>
@@ -411,7 +443,11 @@ const CommunityDetailPage: React.FC = () => {
         </div>
 
         {/* 作者信息 */}
-        <div style={styles.authorSection}>
+        <button
+          type="button"
+          style={styles.authorSection}
+          onClick={() => authorUserId && navigate(`/mobile/community/user/${authorUserId}`)}
+        >
           <div style={styles.avatar}>
             {post.user.avatar ? (
               <img src={post.user.avatar} alt={post.user.nickname} style={styles.avatarImg} />
@@ -421,9 +457,9 @@ const CommunityDetailPage: React.FC = () => {
           </div>
           <div style={styles.authorMeta}>
             <span style={styles.authorName}>{post.user.nickname || '匿名用户'}</span>
-            <span style={styles.publishTime}>发布于 {formatAbsoluteTime(post.created_at)}</span>
+            <span style={styles.publishTime}>发布于 {formatAbsoluteTime(post.created_at)} · 查看主页</span>
           </div>
-        </div>
+        </button>
 
         {/* 信息标签 */}
         <div style={styles.tagsRow}>
@@ -474,6 +510,55 @@ const CommunityDetailPage: React.FC = () => {
             <span style={styles.statLabel}>制作</span>
           </div>
         </div>
+
+        {(authorMoreLoading || authorMorePosts.length > 0) && (
+          <div style={styles.moreSection}>
+            <div style={styles.moreSectionHead}>
+              <span style={styles.moreSectionTitle}>作者的其他作品</span>
+              {authorUserId ? (
+                <button
+                  type="button"
+                  style={styles.moreLinkBtn}
+                  onClick={() => navigate(`/mobile/community/user/${authorUserId}`)}
+                >
+                  查看全部
+                </button>
+              ) : null}
+            </div>
+
+            {authorMoreLoading ? (
+              <div style={styles.moreLoading}>加载中...</div>
+            ) : (
+              <div style={styles.moreGrid}>
+                {authorMorePosts.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    style={styles.moreCard}
+                    onClick={() => navigate(`/mobile/community/${item.id}`)}
+                  >
+                    <div style={styles.moreThumbWrap}>
+                      {item.thumbnail_url || item.preview_url ? (
+                        <img
+                          src={item.thumbnail_url || item.preview_url}
+                          alt={sanitizeDisplayTitle(item.title)}
+                          style={styles.moreThumb}
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div style={styles.moreThumbEmpty}>🧩</div>
+                      )}
+                    </div>
+                    <div style={styles.moreCardBody}>
+                      <div style={styles.moreCardTitle}>{sanitizeDisplayTitle(item.title)}</div>
+                      <div style={styles.moreCardMeta}>{item.grid_width}×{item.grid_height} · {item.color_count}色</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 底部操作栏 */}
@@ -679,10 +764,15 @@ const styles: Record<string, React.CSSProperties> = {
 
   // 作者
   authorSection: {
+    width: '100%',
+    border: 'none',
+    background: 'transparent',
     display: 'flex',
     alignItems: 'center',
     gap: '10px',
     padding: '8px 16px 12px',
+    cursor: 'pointer',
+    textAlign: 'left',
   },
   avatar: {
     width: '28px',
@@ -750,6 +840,87 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.sm,
     color: colors.text.secondary,
     lineHeight: 1.6,
+  },
+  moreSection: {
+    margin: '18px 16px 0',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  moreSectionHead: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+  },
+  moreSectionTitle: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text.primary,
+  },
+  moreLinkBtn: {
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    color: colors.bead.cyan,
+    cursor: 'pointer',
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamilyAlt,
+  },
+  moreLoading: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text.muted,
+  },
+  moreGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '10px',
+  },
+  moreCard: {
+    border: `1px solid ${colors.border.soft}`,
+    background: colors.bg.card,
+    borderRadius: radius.card,
+    overflow: 'hidden',
+    padding: 0,
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+  moreThumbWrap: {
+    width: '100%',
+    aspectRatio: '1',
+    background: colors.bg.elevated,
+  },
+  moreThumb: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+  },
+  moreThumbEmpty: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '32px',
+  },
+  moreCardBody: {
+    padding: '8px',
+  },
+  moreCardTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.text.primary,
+    marginBottom: '4px',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    minHeight: '34px',
+  },
+  moreCardMeta: {
+    fontSize: typography.fontSize.xs,
+    color: colors.text.muted,
   },
 
   // 互动数据

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { ArrowLeft, PaperPlaneTilt, Spinner, CheckCircle, EnvelopeSimple, Bug, Lightbulb, Heart } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, mixins } from '../../styles/designSystem';
@@ -6,20 +6,15 @@ import { useUserStore } from '../../store/userStore';
 import BottomNav from '../../components/BottomNav';
 import Modal, { useModal } from '../../components/Modal';
 
-/**
- * 意见反馈页面
- * 支持选择反馈类型、输入内容、联系方式
- */
-
-// 反馈类型
 const feedbackTypes = [
-  { id: 'bug', label: '问题反馈', icon: Bug, color: colors.bead.red, desc: '遇到了Bug或功能异常' },
+  { id: 'bug', label: '问题反馈', icon: Bug, color: colors.bead.red, desc: '遇到了 Bug 或功能异常' },
   { id: 'suggestion', label: '功能建议', icon: Lightbulb, color: colors.bead.yellow, desc: '希望增加新功能或改进' },
   { id: 'other', label: '其他反馈', icon: Heart, color: colors.bead.pink, desc: '表扬、吐槽、随便聊聊' },
 ];
 
 const FeedbackPage: React.FC = () => {
   const navigate = useNavigate();
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const { userInfo, isLoggedIn } = useUserStore();
   const { modalProps, showAlert, showError } = useModal();
 
@@ -29,7 +24,12 @@ const FeedbackPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // 提交反馈
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleSubmit = async () => {
     if (!content.trim()) {
       showAlert('请输入反馈内容', { type: 'warning', title: '提示' });
@@ -37,7 +37,7 @@ const FeedbackPage: React.FC = () => {
     }
 
     if (content.trim().length < 10) {
-      showAlert('反馈内容至少需要10个字符', { type: 'warning', title: '提示' });
+      showAlert('反馈内容至少需要 10 个字符', { type: 'warning', title: '提示' });
       return;
     }
 
@@ -63,18 +63,59 @@ const FeedbackPage: React.FC = () => {
       } else {
         showError(result.msg || '提交失败，请稍后重试');
       }
-    } catch (error) {
+    } catch {
       showError('提交失败，请检查网络连接');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // 成功页面
+  const isNarrowPhone = viewportWidth <= 390;
+  const isCompactPhone = viewportWidth <= 360;
+
+  const sectionStyle: React.CSSProperties = {
+    ...styles.section,
+    margin: isCompactPhone ? '16px 12px' : styles.section.margin,
+  };
+
+  const typeItemStyle = (selected: boolean, color: string): React.CSSProperties => ({
+    ...styles.typeItem,
+    padding: isCompactPhone ? '12px 13px' : styles.typeItem.padding,
+    borderColor: selected ? color : colors.border.soft,
+    background: selected ? `${color}10` : colors.bg.card,
+    alignItems: isNarrowPhone ? 'flex-start' : styles.typeItem.alignItems,
+  });
+
+  const typeIconBoxStyle: React.CSSProperties = {
+    ...styles.typeIconBox,
+    marginRight: isCompactPhone ? '10px' : styles.typeIconBox.marginRight,
+  };
+
+  const textareaStyle: React.CSSProperties = {
+    ...styles.textarea,
+    minHeight: isCompactPhone ? '136px' : styles.textarea.minHeight,
+    padding: isCompactPhone ? '14px' : styles.textarea.padding,
+  };
+
+  const inputWrapperStyle: React.CSSProperties = {
+    ...styles.inputWrapper,
+    padding: isCompactPhone ? '12px 14px' : styles.inputWrapper.padding,
+  };
+
+  const submitSectionStyle: React.CSSProperties = {
+    ...styles.submitSection,
+    margin: isCompactPhone ? '24px 12px' : styles.submitSection.margin,
+  };
+
+  const successBoxStyle: React.CSSProperties = {
+    ...styles.successBox,
+    margin: isCompactPhone ? '24px 12px' : styles.successBox.margin,
+    padding: isCompactPhone ? '28px 16px' : styles.successBox.padding,
+  };
+
   if (isSuccess) {
     return (
       <div style={styles.container}>
-        {/* 固定头部 */}
         <div style={styles.header}>
           <button style={styles.backBtn} onClick={() => navigate(-1)}>
             <ArrowLeft size={20} weight="bold" />
@@ -84,24 +125,19 @@ const FeedbackPage: React.FC = () => {
         </div>
         <div style={styles.headerSpacer} />
 
-        <div style={styles.successBox}>
+        <div style={successBoxStyle}>
           <div style={styles.successIcon}>
             <CheckCircle size={64} weight="fill" style={{ color: colors.bead.green }} />
           </div>
-          <h2 style={styles.successTitle}>感谢您的反馈！</h2>
-          <p style={styles.successDesc}>
-            我们已收到您的意见，会认真阅读并不断改进产品。
-          </p>
+          <h2 style={styles.successTitle}>感谢你的反馈</h2>
+          <p style={styles.successDesc}>我们已收到你的意见，会认真阅读并持续改进产品。</p>
           <p style={styles.successHint}>
             如有紧急问题，请发送邮件至：<br />
             <a href="mailto:support@example.com" style={styles.emailLink}>
               support@example.com
             </a>
           </p>
-          <button
-            style={styles.backHomeBtn}
-            onClick={() => navigate('/mobile/home')}
-          >
+          <button style={styles.backHomeBtn} onClick={() => navigate('/mobile/home')}>
             返回首页
           </button>
         </div>
@@ -114,7 +150,6 @@ const FeedbackPage: React.FC = () => {
 
   return (
     <div style={styles.container}>
-      {/* 固定头部 */}
       <div style={styles.header}>
         <button style={styles.backBtn} onClick={() => navigate(-1)}>
           <ArrowLeft size={20} weight="bold" />
@@ -124,33 +159,23 @@ const FeedbackPage: React.FC = () => {
       </div>
       <div style={styles.headerSpacer} />
 
-      {/* 反馈类型选择 */}
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h2 style={styles.sectionTitle}>反馈类型</h2>
         <div style={styles.typeList}>
           {feedbackTypes.map((type) => {
             const isSelected = selectedType === type.id;
             return (
-              <div
-                key={type.id}
-                style={{
-                  ...styles.typeItem,
-                  borderColor: isSelected ? type.color : colors.border.soft,
-                  background: isSelected ? `${type.color}10` : colors.bg.card,
-                }}
-                onClick={() => setSelectedType(type.id)}
-              >
-                <div style={{
-                  ...styles.typeIconBox,
-                  background: `linear-gradient(145deg, ${type.color}30, ${type.color}15)`,
-                }}>
+              <div key={type.id} style={typeItemStyle(isSelected, type.color)} onClick={() => setSelectedType(type.id)}>
+                <div
+                  style={{
+                    ...typeIconBoxStyle,
+                    background: `linear-gradient(145deg, ${type.color}30, ${type.color}15)`,
+                  }}
+                >
                   <type.icon size={20} weight="fill" style={{ color: type.color }} />
                 </div>
                 <div style={styles.typeContent}>
-                  <span style={{
-                    ...styles.typeLabel,
-                    color: isSelected ? type.color : colors.text.primary,
-                  }}>
+                  <span style={{ ...styles.typeLabel, color: isSelected ? type.color : colors.text.primary }}>
                     {type.label}
                   </span>
                   <span style={styles.typeDesc}>{type.desc}</span>
@@ -166,41 +191,38 @@ const FeedbackPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 反馈内容 */}
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h2 style={styles.sectionTitle}>反馈内容 *</h2>
         <textarea
-          style={styles.textarea}
-          placeholder="请详细描述您的问题或建议，我们会认真阅读每一条反馈..."
+          id="feedback-content"
+          name="feedback-content"
+          style={textareaStyle}
+          placeholder="请详细描述你的问题或建议，我们会认真阅读每一条反馈..."
           value={content}
           onChange={(e) => setContent(e.target.value)}
           maxLength={500}
         />
-        <div style={styles.charCount}>
-          {content.length}/500
-        </div>
+        <div style={styles.charCount}>{content.length}/500</div>
       </div>
 
-      {/* 联系方式 */}
-      <div style={styles.section}>
+      <div style={sectionStyle}>
         <h2 style={styles.sectionTitle}>联系方式（选填）</h2>
-        <div style={styles.inputWrapper}>
+        <div style={inputWrapperStyle}>
           <EnvelopeSimple size={18} style={{ color: colors.text.muted }} />
           <input
+            id="feedback-contact"
+            name="feedback-contact"
             type="email"
             style={styles.input}
-            placeholder="您的邮箱，方便我们回复您"
+            placeholder="你的邮箱，方便我们回复你"
             value={contact}
             onChange={(e) => setContact(e.target.value)}
           />
         </div>
-        <p style={styles.inputHint}>
-          留下联系方式，我们可能会就您的反馈进行回访
-        </p>
+        <p style={styles.inputHint}>留下联系方式后，我们可能会就你的反馈进行回访。</p>
       </div>
 
-      {/* 提交按钮 */}
-      <div style={styles.submitSection}>
+      <div style={submitSectionStyle}>
         <button
           style={{
             ...styles.submitBtn,
@@ -223,10 +245,7 @@ const FeedbackPage: React.FC = () => {
         </button>
       </div>
 
-      {/* 底部导航栏 */}
       <BottomNav />
-
-      {/* 统一弹框 */}
       <Modal {...modalProps} />
     </div>
   );
@@ -238,7 +257,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: colors.bg.primary,
     paddingBottom: '100px',
   },
-
   header: {
     display: 'flex',
     alignItems: 'center',
@@ -252,15 +270,12 @@ const styles: Record<string, React.CSSProperties> = {
     right: 0,
     zIndex: 100,
   },
-
   headerSpacer: {
     height: '56px',
   },
-
   backBtn: {
     ...mixins.backButton,
   },
-
   title: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
@@ -271,15 +286,12 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundClip: 'text',
     margin: 0,
   },
-
   placeholder: {
     width: 40,
   },
-
   section: {
     margin: '20px 16px',
   },
-
   sectionTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
@@ -288,24 +300,21 @@ const styles: Record<string, React.CSSProperties> = {
     margin: '0 0 12px',
     paddingLeft: '4px',
   },
-
   typeList: {
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
   },
-
   typeItem: {
     display: 'flex',
     alignItems: 'center',
     padding: '14px 16px',
     borderRadius: radius.card,
-    border: `2px solid`,
+    border: '2px solid',
     cursor: 'pointer',
     transition: animation.transition.fast,
     position: 'relative',
   },
-
   typeIconBox: {
     width: '40px',
     height: '40px',
@@ -315,26 +324,24 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     marginRight: '12px',
   },
-
   typeContent: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
+    minWidth: 0,
   },
-
   typeLabel: {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
     marginBottom: '2px',
   },
-
   typeDesc: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
     color: colors.text.muted,
+    lineHeight: 1.5,
   },
-
   checkMark: {
     width: '24px',
     height: '24px',
@@ -343,7 +350,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   textarea: {
     width: '100%',
     minHeight: '150px',
@@ -358,7 +364,6 @@ const styles: Record<string, React.CSSProperties> = {
     outline: 'none',
     boxSizing: 'border-box',
   },
-
   charCount: {
     textAlign: 'right',
     fontSize: typography.fontSize.xs,
@@ -366,7 +371,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.text.muted,
     marginTop: '8px',
   },
-
   inputWrapper: {
     display: 'flex',
     alignItems: 'center',
@@ -376,7 +380,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: `1px solid ${colors.border.soft}`,
     borderRadius: radius.card,
   },
-
   input: {
     flex: 1,
     background: 'transparent',
@@ -385,19 +388,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: typography.fontFamilyAlt,
     color: colors.text.primary,
     outline: 'none',
+    minWidth: 0,
   },
-
   inputHint: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
     color: colors.text.muted,
     margin: '8px 0 0 4px',
   },
-
   submitSection: {
     margin: '32px 16px',
   },
-
   submitBtn: {
     width: '100%',
     padding: '16px',
@@ -416,74 +417,50 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: `0 4px 16px ${colors.bead.cyan}40`,
     transition: animation.transition.fast,
   },
-
-  // 成功状态样式
   successBox: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '60px 32px',
+    margin: '32px 16px',
+    padding: '32px 20px',
+    background: colors.bg.card,
+    borderRadius: radius.card,
+    border: `1px solid ${colors.border.soft}`,
+    boxShadow: shadows.md,
     textAlign: 'center',
   },
-
   successIcon: {
-    marginBottom: '24px',
+    marginBottom: '16px',
   },
-
   successTitle: {
+    margin: '0 0 10px',
+    color: colors.text.primary,
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.bold,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
-    margin: '0 0 12px',
   },
-
   successDesc: {
-    fontSize: typography.fontSize.md,
-    fontFamily: typography.fontFamilyAlt,
+    margin: '0 0 12px',
     color: colors.text.secondary,
-    margin: '0 0 24px',
-    lineHeight: 1.6,
-  },
-
-  successHint: {
     fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
-    margin: '0 0 32px',
-    lineHeight: 1.6,
+    lineHeight: 1.7,
   },
-
+  successHint: {
+    margin: '0 0 18px',
+    color: colors.text.muted,
+    fontSize: typography.fontSize.xs,
+    lineHeight: 1.7,
+  },
   emailLink: {
     color: colors.bead.cyan,
     textDecoration: 'none',
   },
-
   backHomeBtn: {
-    padding: '14px 32px',
-    background: `linear-gradient(145deg, ${colors.bead.cyan}20, ${colors.bead.cyan}10)`,
-    border: `1px solid ${colors.bead.cyan}40`,
+    padding: '12px 20px',
+    background: `linear-gradient(145deg, ${colors.bead.green}, ${colors.bead.green}cc)`,
+    border: 'none',
     borderRadius: radius.button,
-    color: colors.bead.cyan,
-    fontSize: typography.fontSize.md,
+    color: '#fff',
+    fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
-    fontFamily: typography.fontFamilyAlt,
     cursor: 'pointer',
-    transition: animation.transition.fast,
   },
 };
-
-// CSS动画
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-`;
-if (!document.querySelector('#feedback-styles')) {
-  styleSheet.id = 'feedback-styles';
-  document.head.appendChild(styleSheet);
-}
 
 export default FeedbackPage;

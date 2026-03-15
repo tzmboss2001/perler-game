@@ -41,6 +41,13 @@ interface PageResult<T> {
   pageSize: number;
 }
 
+export interface FinishedWorkListParams {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  sort?: 'latest' | 'hottest';
+}
+
 export interface FinishedWorkReportItem {
   id: number;
   work_id: number;
@@ -120,11 +127,40 @@ export const finishedWorkApi = {
   },
 
   listPublic: async (
-    page = 1,
+    pageOrParams: number | FinishedWorkListParams = 1,
     pageSize = 20,
   ): Promise<ApiResponse<PageResult<FinishedWorkItem>>> => {
+    const params = typeof pageOrParams === 'number'
+      ? { page: pageOrParams, pageSize }
+      : { page: 1, pageSize: 20, ...pageOrParams };
+    const query = new URLSearchParams({
+      page: String(params.page || 1),
+      pageSize: String(params.pageSize || 20),
+    });
+    if (params.keyword?.trim()) query.set('keyword', params.keyword.trim());
+    if (params.sort) query.set('sort', params.sort);
     return request(
-      `/api/v1/finished-works/public?page=${page}&pageSize=${pageSize}`,
+      `/api/v1/finished-works/public?${query.toString()}`,
+      { method: "GET" },
+    );
+  },
+
+  listPublicByUser: async (
+    userId: number,
+    pageOrParams: number | FinishedWorkListParams = 1,
+    pageSize = 20,
+  ): Promise<ApiResponse<PageResult<FinishedWorkItem>>> => {
+    const params = typeof pageOrParams === 'number'
+      ? { page: pageOrParams, pageSize }
+      : { page: 1, pageSize: 20, ...pageOrParams };
+    const query = new URLSearchParams({
+      page: String(params.page || 1),
+      pageSize: String(params.pageSize || 20),
+    });
+    if (params.keyword?.trim()) query.set('keyword', params.keyword.trim());
+    if (params.sort) query.set('sort', params.sort);
+    return request(
+      `/api/v1/finished-works/users/${userId}/public?${query.toString()}`,
       { method: "GET" },
     );
   },

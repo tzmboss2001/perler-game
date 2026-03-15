@@ -25,28 +25,59 @@ interface CommunityCardImageProps {
   style: React.CSSProperties;
 }
 
+const communityImageAvailabilityCache = new Map<string, boolean>();
+
 const CommunityCardImage: React.FC<CommunityCardImageProps> = ({ previewUrl, thumbnailUrl, alt, style }) => {
-  const candidates = [previewUrl, thumbnailUrl].filter((u): u is string => !!u && u.trim().length > 0);
-  const [index, setIndex] = useState(0);
+  const candidates = [thumbnailUrl, previewUrl].filter((u): u is string => !!u && u.trim().length > 0);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
 
   useEffect(() => {
-    setIndex(0);
+    let active = true;
+
+    const resolveImage = async () => {
+      for (const candidate of candidates) {
+        const cached = communityImageAvailabilityCache.get(candidate);
+        if (cached === true) {
+          if (active) setResolvedSrc(candidate);
+          return;
+        }
+        if (cached === false) {
+          continue;
+        }
+        try {
+          const response = await fetch(candidate, {
+            method: 'HEAD',
+            cache: 'force-cache',
+          });
+          communityImageAvailabilityCache.set(candidate, response.ok);
+          if (response.ok) {
+            if (active) setResolvedSrc(candidate);
+            return;
+          }
+        } catch {
+          communityImageAvailabilityCache.set(candidate, false);
+        }
+      }
+
+      if (active) setResolvedSrc(null);
+    };
+
+    setResolvedSrc(null);
+    resolveImage();
+
+    return () => {
+      active = false;
+    };
   }, [previewUrl, thumbnailUrl]);
 
-  const currentSrc = candidates[index];
-  if (!currentSrc) return null;
+  if (!resolvedSrc) return null;
 
   return (
     <img
-      src={currentSrc}
+      src={resolvedSrc}
       alt={alt}
       style={style}
       loading="lazy"
-      onError={() => {
-        if (index < candidates.length - 1) {
-          setIndex(prev => prev + 1);
-        }
-      }}
     />
   );
 };
@@ -76,6 +107,9 @@ const HomePage: React.FC = () => {
   const [finishedLoading, setFinishedLoading] = useState(false);
   const [finishedTotal, setFinishedTotal] = useState(0);
   const [finishedErrorText, setFinishedErrorText] = useState('');
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window !== 'undefined' ? window.innerWidth : 390
+  );
 
   // 加载社区作品
   const loadCommunityPosts = useCallback(async (pageNum: number, append = false, sort?: string, keyword?: string) => {
@@ -154,6 +188,14 @@ const HomePage: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [communityKeywordInput, communityKeyword]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // 加载数据
   useEffect(() => {
     // 加载本地方案数量
@@ -196,6 +238,48 @@ const HomePage: React.FC = () => {
     }
   };
 
+  const isNarrowHome = viewportWidth <= 390;
+  const isCompactHome = viewportWidth <= 360;
+  const headerMetaStyle: React.CSSProperties = {
+    ...styles.headerMeta,
+    flexWrap: isNarrowHome ? 'wrap' : 'nowrap',
+    gap: isCompactHome ? '6px' : '8px',
+  };
+  const quickBarStyle: React.CSSProperties = {
+    ...styles.quickBar,
+    gridTemplateColumns: isCompactHome ? 'minmax(0, 1fr)' : styles.quickBar.gridTemplateColumns,
+  };
+  const quickBtnTextStyle: React.CSSProperties = {
+    ...styles.quickBtnText,
+    whiteSpace: isCompactHome ? 'normal' : 'nowrap',
+    textAlign: 'center',
+    lineHeight: isCompactHome ? 1.25 : undefined,
+  };
+  const quickBtnText2Style: React.CSSProperties = {
+    ...styles.quickBtnText2,
+    whiteSpace: isCompactHome ? 'normal' : 'nowrap',
+    textAlign: 'center',
+    lineHeight: isCompactHome ? 1.25 : undefined,
+  };
+  const directoryTabsStyle: React.CSSProperties = {
+    ...styles.directoryTabs,
+    gridTemplateColumns: isCompactHome ? 'minmax(0, 1fr)' : styles.directoryTabs.gridTemplateColumns,
+  };
+  const sortBarStyle: React.CSSProperties = {
+    ...styles.sortBar,
+    alignItems: isNarrowHome ? 'flex-start' : 'center',
+  };
+  const sortOptionsStyle: React.CSSProperties = {
+    ...styles.sortOptions,
+    width: isNarrowHome ? '100%' : undefined,
+    justifyContent: isNarrowHome ? 'flex-start' : 'flex-end',
+  };
+  const waterfallStyle: React.CSSProperties = {
+    ...styles.waterfall,
+    flexDirection: 'row',
+    gap: isCompactHome ? '8px' : '10px',
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.bgGlowTop} />
@@ -215,7 +299,7 @@ const HomePage: React.FC = () => {
           {' '}把图片快速变成可制作的拼豆图纸{' '}
           <Sparkle size={10} weight="fill" style={{ color: colors.bead.yellow }} />
         </p>
-        <div style={styles.headerMeta}>
+        <div style={headerMetaStyle}>
           <span style={styles.metaPill}>{isLoggedIn ? '已登录' : '游客模式'}</span>
           <span style={styles.metaPill}>本地方案 {localProjectCount}</span>
         </div>
@@ -224,14 +308,14 @@ const HomePage: React.FC = () => {
       {/* 主内容区域 */}
       <div style={styles.content}>
         {/* 快捷操作栏 - 紧凑横向 */}
-        <div style={styles.quickBar}>
+        <div style={quickBarStyle}>
           <button style={styles.quickBtn} onClick={() => navigate('/mobile/create')}>
             <Sparkle size={18} weight="fill" style={{ color: '#fff' }} />
-            <span style={styles.quickBtnText}>开始创作</span>
+            <span style={quickBtnTextStyle}>开始创作</span>
           </button>
           <button style={styles.quickBtn3} onClick={() => navigate('/mobile/profile')}>
             <FolderOpen size={18} weight="duotone" style={{ color: colors.bead.purple }} />
-            <span style={styles.quickBtnText2}>我的方案{localProjectCount > 0 ? ` (${localProjectCount})` : ''}</span>
+            <span style={quickBtnText2Style}>我的方案{localProjectCount > 0 ? ` (${localProjectCount})` : ''}</span>
           </button>
         </div>
 
@@ -241,7 +325,7 @@ const HomePage: React.FC = () => {
             <span style={styles.sectionIcon}>🌟</span>
             <span style={styles.sectionTitle}>社区作品</span>
           </div>
-          <div style={styles.directoryTabs}>
+          <div style={directoryTabsStyle}>
             <button
               style={{
                 ...styles.directoryTab,
@@ -273,9 +357,9 @@ const HomePage: React.FC = () => {
                   style={styles.searchInput}
                 />
               </div>
-              <div style={styles.sortBar}>
+              <div style={sortBarStyle}>
                 <span style={styles.sortStatsText}>共 {communityTotal} 个图纸</span>
-                <div style={styles.sortOptions}>
+                <div style={sortOptionsStyle}>
                   {SORT_OPTIONS.map(opt => {
                     const Icon = opt.icon;
                     return (
@@ -301,7 +385,7 @@ const HomePage: React.FC = () => {
                 </div>
               ) : null}
               {communityPosts.length > 0 ? (
-                <div style={styles.waterfall}>
+                <div style={waterfallStyle}>
                   <div style={styles.waterfallCol}>
                     {communityPosts.filter((_, i) => i % 2 === 0).map(post => (
                       <div key={post.id} style={styles.postCard} onClick={() => navigate(`/mobile/community/${post.id}`)}>
@@ -336,6 +420,18 @@ const HomePage: React.FC = () => {
                               <Eye size={12} color={colors.text.muted} />
                               <span>{post.view_count}</span>
                             </div>
+                            {post.user?.id ? (
+                              <button
+                                type="button"
+                                style={styles.postAuthorBtn}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  navigate(`/mobile/community/user/${post.user.id}`);
+                                }}
+                              >
+                                @{post.user.nickname || '用户'}
+                              </button>
+                            ) : null}
                             <span style={styles.postTime}>{formatRelativeTime(post.created_at)}</span>
                           </div>
                         </div>
@@ -376,6 +472,18 @@ const HomePage: React.FC = () => {
                               <Eye size={12} color={colors.text.muted} />
                               <span>{post.view_count}</span>
                             </div>
+                            {post.user?.id ? (
+                              <button
+                                type="button"
+                                style={styles.postAuthorBtn}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  navigate(`/mobile/community/user/${post.user.id}`);
+                                }}
+                              >
+                                @{post.user.nickname || '用户'}
+                              </button>
+                            ) : null}
                             <span style={styles.postTime}>{formatRelativeTime(post.created_at)}</span>
                           </div>
                         </div>
@@ -405,7 +513,7 @@ const HomePage: React.FC = () => {
             </>
           ) : (
             <>
-              <div style={styles.sortBar}>
+              <div style={sortBarStyle}>
                 <span style={styles.sortStatsText}>共 {finishedTotal} 个成品</span>
                 <button style={styles.viewAllBtn} onClick={() => navigate('/mobile/finished')}>查看全部</button>
               </div>
@@ -417,7 +525,7 @@ const HomePage: React.FC = () => {
               ) : null}
 
               {finishedWorks.length > 0 ? (
-                <div style={styles.waterfall}>
+                <div style={waterfallStyle}>
                   <div style={styles.waterfallCol}>
                     {finishedWorks.filter((_, i) => i % 2 === 0).map(item => (
                       <div key={item.id} style={styles.postCard} onClick={() => navigate(`/mobile/finished/${item.id}`)}>
@@ -431,7 +539,18 @@ const HomePage: React.FC = () => {
                         <div style={styles.postInfo}>
                           <div style={styles.postTitle}>{sanitizeDisplayTitle(item.title)}</div>
                           <div style={styles.postMeta}>
-                            <span style={{ color: colors.bead.cyan }}>{item.user?.nickname || '用户'}</span>
+                            <button
+                              type="button"
+                              style={styles.finishedAuthorBtn}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (item.user?.id) {
+                                  navigate(`/mobile/community/user/${item.user.id}`);
+                                }
+                              }}
+                            >
+                              {item.user?.nickname || '用户'}
+                            </button>
                             <span style={{ color: colors.text.muted }}>·</span>
                             <span style={{ color: colors.bead.orange }}>{item.image_count}张</span>
                           </div>
@@ -458,7 +577,18 @@ const HomePage: React.FC = () => {
                         <div style={styles.postInfo}>
                           <div style={styles.postTitle}>{sanitizeDisplayTitle(item.title)}</div>
                           <div style={styles.postMeta}>
-                            <span style={{ color: colors.bead.cyan }}>{item.user?.nickname || '用户'}</span>
+                            <button
+                              type="button"
+                              style={styles.finishedAuthorBtn}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (item.user?.id) {
+                                  navigate(`/mobile/community/user/${item.user.id}`);
+                                }
+                              }}
+                            >
+                              {item.user?.nickname || '用户'}
+                            </button>
                             <span style={{ color: colors.text.muted }}>·</span>
                             <span style={{ color: colors.bead.orange }}>{item.image_count}张</span>
                           </div>
@@ -979,6 +1109,24 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '3px',
     fontSize: '11px',
     color: colors.text.muted,
+  },
+  postAuthorBtn: {
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    color: colors.bead.cyan,
+    fontSize: '11px',
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+  },
+  finishedAuthorBtn: {
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    color: colors.bead.cyan,
+    fontSize: '11px',
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
   },
   postTime: {
     marginLeft: 'auto',

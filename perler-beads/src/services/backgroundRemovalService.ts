@@ -1,4 +1,4 @@
-import { BeadColor } from '../data/beadColors';
+﻿import { BeadColor } from '../data/beadColors';
 import { BeadPixelData } from './colorMatchService';
 
 export interface QuickBackgroundRemovalSuggestion {
@@ -86,12 +86,6 @@ const collectConnectedBorderRegion = (
   }
 
   return region;
-};
-
-const collectAllSameColorIndices = (beadData: BeadPixelData, targetColorId: string): number[] => {
-  return beadData.beads
-    .map((bead, index) => (bead && bead.id === targetColorId ? index : -1))
-    .filter((index) => index >= 0);
 };
 
 const collectBorderColorEntries = (beadData: BeadPixelData): BorderColorEntry[] => {
@@ -260,9 +254,6 @@ export const suggestQuickBackgroundRemoval = (
   const primaryColorId = primaryEntry.color.id;
   const borderCoverage = primaryEntry.coverage;
   const connectedIndices = collectConnectedBorderRegion(beadData, primaryColorId);
-  const sameColorIndices = collectAllSameColorIndices(beadData, primaryColorId);
-  const expandThreshold = 0.88 - normalizedStrength * 0.0053;
-  const useFullColorRange = borderCoverage >= expandThreshold;
   const protectedSubjectRegion = protectSubject
     ? collectProtectedSubjectRegion(beadData, primaryColorId)
     : new Set<number>();
@@ -284,11 +275,9 @@ export const suggestQuickBackgroundRemoval = (
     return distance <= colorSimilarityThreshold || entry.coverage >= 0.18;
   });
 
-  const candidateGroups = useFullColorRange
-    ? [sameColorIndices]
-    : candidateEntries
-        .map((entry) => collectConnectedBorderRegion(beadData, entry.color.id))
-        .filter((group) => group.length > 0);
+  const candidateGroups = candidateEntries
+    .map((entry) => collectConnectedBorderRegion(beadData, entry.color.id))
+    .filter((group) => group.length > 0);
   const effectiveGroups = candidateGroups.length > 0 ? candidateGroups : [connectedIndices];
   const indices = unionCandidateIndices(effectiveGroups, protectedBuffer);
   const regionCoverage = indices.length / nonTransparentCellCount;
@@ -308,16 +297,13 @@ export const suggestQuickBackgroundRemoval = (
 
   const reason = aiRecommended
     ? '边缘背景不够稳定，建议使用智能抠图获得更干净的结果。'
-    : useFullColorRange
-      ? '边缘主色很稳定，已按整片同色背景优先圈选。'
-      : candidateEntries.length > 1
-        ? '边缘存在多组接近背景色，已把相近区域一起纳入候选。'
-        : '已按边缘连通区域圈出主要背景候选。';
+    : candidateEntries.length > 1
+      ? '已按外边界连通的相近背景区域圈选，内部被图案包住的同色区域不会被当成背景。'
+      : '已按外边界连通的背景区域圈选，内部被图案包住的同色区域不会被当成背景。';
   const finalReason =
     protectSubject && protectedSubjectRegion.size > 0
-      ? `${reason} 已启用主体保护，中心主体及周边缓冲区不会被一并删除。`
+      ? `${reason} 已启用主体保护，中心主体及周边缓冲区不会被一起删除。`
       : reason;
-
   return {
     primaryColorId,
     indices,
