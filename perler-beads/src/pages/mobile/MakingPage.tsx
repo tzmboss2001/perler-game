@@ -123,6 +123,8 @@ const MakingPage: React.FC = () => {
     beadData?: BeadPixelData;
     colorCount?: number;
     projectId?: number;
+    localProjectId?: number;
+    backTarget?: string;
     savedProgress?: {
       selectionType: "block" | "color" | null;
       blockX: number;
@@ -135,6 +137,8 @@ const MakingPage: React.FC = () => {
   const {
     beadData: initialBeadData,
     projectId,
+    localProjectId,
+    backTarget,
     savedProgress,
   } = (location.state as LocationState) || {};
 
@@ -206,6 +210,20 @@ const MakingPage: React.FC = () => {
 
   const [beadData, setBeadData] = useState<BeadPixelData | null>(getTestData());
   const [authChecked, setAuthChecked] = useState(false);
+
+  const handleBackToSource = useCallback(() => {
+    if (backTarget) {
+      navigate(backTarget);
+      return;
+    }
+
+    if (projectId || localProjectId) {
+      navigate("/mobile/profile");
+      return;
+    }
+
+    navigate("/mobile/create");
+  }, [backTarget, localProjectId, navigate, projectId]);
 
   // 选中状态（核心状态）
   const [selection, setSelection] = useState<SelectionState>({
@@ -710,6 +728,10 @@ const MakingPage: React.FC = () => {
         // 放大状态：选中颜色
         const index = cellY * beadData.width + cellX;
         const bead = beadData.beads[index];
+        if (!bead) {
+          setSelection({ type: null, blockX: 0, blockY: 0 });
+          return;
+        }
 
         // 显示坐标提示
         const screenX = e.clientX - wrapperRect.left;
@@ -883,6 +905,11 @@ const MakingPage: React.FC = () => {
             } else {
               const index = cellY * beadData.width + cellX;
               const bead = beadData.beads[index];
+              if (!bead) {
+                setSelection({ type: null, blockX: 0, blockY: 0 });
+                lastTapProcessedRef.current = Date.now();
+                return;
+              }
 
               const screenX = touch.clientX - wrapperRect.left;
               const screenY = touch.clientY - wrapperRect.top;
@@ -1006,7 +1033,7 @@ const MakingPage: React.FC = () => {
 
       // 替换所有该颜色的珠子
       const newBeads = beadData.beads.map((bead) => {
-        if (bead.hex === selection.colorHex) {
+        if (bead && bead.hex === selection.colorHex) {
           return { ...newColor };
         }
         return bead;
@@ -1412,7 +1439,7 @@ const MakingPage: React.FC = () => {
     >
       {/* 头部 */}
       <div style={styles.header}>
-        <button style={styles.backBtn} onClick={() => navigate(-1)}>
+        <button style={styles.backBtn} onClick={handleBackToSource}>
           <ArrowLeft size={20} weight="bold" />
         </button>
         <h1 style={styles.title}>制作模式</h1>

@@ -240,6 +240,7 @@ const CommunityDetailPage: React.FC = () => {
     navigate('/mobile/making', {
       state: {
         beadData: beadPixelData,
+        backTarget: `/mobile/community/${id}`,
       },
     });
     // 后台增加制作数

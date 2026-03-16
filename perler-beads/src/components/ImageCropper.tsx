@@ -1,6 +1,6 @@
 ﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import ReactCrop, { Crop, PixelCrop, makeAspectCrop, centerCrop } from 'react-image-crop';
+import ReactCrop, { Crop, PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { ArrowLeft, Check } from '@phosphor-icons/react';
 import { colors, radius, typography, shadows, animation, mixins } from '../styles/designSystem';
@@ -26,6 +26,32 @@ const aspectOptions: AspectOption[] = [
   { label: '4:3', key: '4:3', aspect: 4 / 3 },
   { label: '3:4', key: '3:4', aspect: 3 / 4 },
 ];
+
+const createMaxAspectCrop = (imgWidth: number, imgHeight: number, targetAspect: number): Crop => {
+  const imageAspect = imgWidth / imgHeight;
+
+  if (imageAspect >= targetAspect) {
+    // 原图更宽：用满高度，按目标比例裁宽度
+    const widthPercent = (targetAspect / imageAspect) * 100;
+    return {
+      unit: '%',
+      width: widthPercent,
+      height: 100,
+      x: (100 - widthPercent) / 2,
+      y: 0,
+    };
+  }
+
+  // 原图更高：用满宽度，按目标比例裁高度
+  const heightPercent = (imageAspect / targetAspect) * 100;
+  return {
+    unit: '%',
+    width: 100,
+    height: heightPercent,
+    x: 0,
+    y: (100 - heightPercent) / 2,
+  };
+};
 
 /**
  * 鍥剧墖瑁佸壀缁勪欢
@@ -77,23 +103,8 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
     // 鑾峰彇鍥剧墖鐨勬樉绀哄昂瀵?
     const { width: imgWidth, height: imgHeight } = imgRef.current;
 
-    // 浣跨敤 makeAspectCrop 璁＄畻绗﹀悎瀹介珮姣旂殑瑁佸壀鍖哄煙
-    // 鐒跺悗鐢?centerCrop 灏嗗叾灞呬腑
     if (currentAspect) {
-      // 鏈夊浐瀹氬楂樻瘮锛?:1, 4:3, 3:4锛?
-      const newCrop = centerCrop(
-        makeAspectCrop(
-          {
-            unit: '%',
-            width: 80, // 璧峰瀹藉害涓哄浘鐗囩殑80%
-          },
-          currentAspect,
-          imgWidth,
-          imgHeight
-        ),
-        imgWidth,
-        imgHeight
-      );
+      const newCrop = createMaxAspectCrop(imgWidth, imgHeight, currentAspect);
       setCrop(newCrop);
     } else if (currentIsFree) {
       // 鑷敱瑁佸壀妯″紡锛氳鍓瑕嗙洊鏁翠釜鍘熷浘

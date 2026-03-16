@@ -84,6 +84,8 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isInitialized, setIsInitialized] = useState(false); // 鏄惁宸插垵濮嬪寲閫傞厤缂╂斁
   const previousPatternSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const lastFitScaleRef = useRef(1);
+  const previousCanvasMetricsRef = useRef<{ width: number; height: number; scale: number } | null>(null);
 
   // 鍙屾寚缂╂斁鐘舵€?
   const [isPinching, setIsPinching] = useState(false);
@@ -127,7 +129,8 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     const fitScale = calculateFitScale();
     const isTinyPattern = beadData.width <= 24 && beadData.height <= 24;
     const minScale = Math.max(ABSOLUTE_MIN_SCALE, fitScale * 0.8);
-    const maxScale = Math.min(ABSOLUTE_MAX_SCALE, fitScale * (isTinyPattern ? 2.5 : 2));
+    const fitBasedMaxScale = Math.min(ABSOLUTE_MAX_SCALE, fitScale * (isTinyPattern ? 2.5 : 2));
+    const maxScale = Math.max(1, fitBasedMaxScale);
 
     return {
       fitScale,
@@ -169,34 +172,64 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     setZoomPercent,
   }), [fitToViewport, resetToActualSize, setZoomPercent, zoomIn, zoomOut]);
 
+  const syncScaleToViewport = useCallback((options?: { forceFit?: boolean; patternChanged?: boolean }) => {
+    if (!beadData || !containerRef.current) return;
+
+    const { fitScale, minScale, maxScale } = getScaleBounds();
+    const previousFitScale = lastFitScaleRef.current;
+    const forceFit = options?.forceFit ?? false;
+    const patternChanged = options?.patternChanged ?? false;
+
+    setScale((currentScale) => {
+      if (forceFit || !isInitialized) {
+        return fitScale;
+      }
+
+      const wasNearFit = Math.abs(currentScale - previousFitScale) < 0.02;
+      if (wasNearFit) {
+        return fitScale;
+      }
+
+      if (patternChanged && Number.isFinite(previousFitScale) && previousFitScale > 0) {
+        const zoomRatio = currentScale / previousFitScale;
+        const targetScale = fitScale * zoomRatio;
+        return Math.min(maxScale, Math.max(minScale, targetScale));
+      }
+
+      return Math.min(maxScale, Math.max(minScale, currentScale));
+    });
+
+    lastFitScaleRef.current = fitScale;
+    previousPatternSizeRef.current = { width: beadData.width, height: beadData.height };
+    setIsInitialized(true);
+  }, [beadData, getScaleBounds, isInitialized]);
+
   // beadData 鍙樺寲鏃讹紝閲嶆柊璁＄畻骞惰缃€傞厤缂╂斁
   useEffect(() => {
-    if (beadData && containerRef.current) {
-      // 浣跨敤 requestAnimationFrame 纭繚瀹瑰櫒灏哄宸叉洿鏂?
-      requestAnimationFrame(() => {
-        const { fitScale, minScale, maxScale } = getScaleBounds();
-        const previousPatternSize = previousPatternSizeRef.current;
+    if (!beadData || !containerRef.current) return;
+    requestAnimationFrame(() => {
+      const previousPatternSize = previousPatternSizeRef.current;
+      const patternChanged =
+        !previousPatternSize ||
+        previousPatternSize.width !== beadData.width ||
+        previousPatternSize.height !== beadData.height;
+      syncScaleToViewport({ forceFit: !isInitialized, patternChanged });
+    });
+  }, [beadData?.width, beadData?.height, isInitialized, syncScaleToViewport]);
 
-        setScale((currentScale) => {
-          if (!previousPatternSize || !isInitialized) {
-            return fitScale;
-          }
+  useEffect(() => {
+    if (!containerRef.current || typeof ResizeObserver === 'undefined') return;
 
-          const previousFitScale = calculateFitScaleForSize(previousPatternSize.width, previousPatternSize.height);
-          if (!Number.isFinite(previousFitScale) || previousFitScale <= 0) {
-            return fitScale;
-          }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      if (entry.contentRect.width <= 0 || entry.contentRect.height <= 0) return;
+      syncScaleToViewport({ forceFit: !isInitialized, patternChanged: false });
+    });
 
-          // Preserve the user's zoom intent relative to the previous fit scale.
-          const zoomRatio = currentScale / previousFitScale;
-          const targetScale = fitScale * zoomRatio;
-          return Math.min(maxScale, Math.max(minScale, targetScale));
-        });
-        previousPatternSizeRef.current = { width: beadData.width, height: beadData.height };
-        setIsInitialized(true);
-      });
-    }
-  }, [beadData?.width, beadData?.height, calculateFitScaleForSize, getScaleBounds, isInitialized]);
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [isInitialized, syncScaleToViewport]);
 
   useEffect(() => {
     const bounds = getScaleBounds();
@@ -207,6 +240,42 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
       fitScale: bounds.fitScale,
     });
   }, [getScaleBounds, onScaleChange, scale]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !beadData) return;
+
+    const nextMetrics = {
+      width: beadData.width * scaledCellSize,
+      height: beadData.height * scaledCellSize,
+      scale,
+    };
+    const previousMetrics = previousCanvasMetricsRef.current;
+
+    requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+
+      const currentContainer = containerRef.current;
+      const viewportWidth = currentContainer.clientWidth;
+      const viewportHeight = currentContainer.clientHeight;
+
+      if (!previousMetrics) {
+        currentContainer.scrollLeft = Math.max(0, (nextMetrics.width - viewportWidth) / 2);
+        currentContainer.scrollTop = Math.max(0, (nextMetrics.height - viewportHeight) / 2);
+        previousCanvasMetricsRef.current = nextMetrics;
+        return;
+      }
+
+      const centerX = currentContainer.scrollLeft + viewportWidth / 2;
+      const centerY = currentContainer.scrollTop + viewportHeight / 2;
+      const relativeCenterX = previousMetrics.width > 0 ? centerX / previousMetrics.width : 0.5;
+      const relativeCenterY = previousMetrics.height > 0 ? centerY / previousMetrics.height : 0.5;
+
+      currentContainer.scrollLeft = Math.max(0, nextMetrics.width * relativeCenterX - viewportWidth / 2);
+      currentContainer.scrollTop = Math.max(0, nextMetrics.height * relativeCenterY - viewportHeight / 2);
+      previousCanvasMetricsRef.current = nextMetrics;
+    });
+  }, [beadData, scaledCellSize, scale]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -265,19 +334,27 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
             }
 
             if (highlightedSet.has(index)) {
-              // 楂樹寒鐨勭綉鏍硷紙灏嗚閫忔槑鍖栵級- 缁樺埗閲戣壊杈规 + 鍗婇€忔槑閬僵
-              ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
-              ctx.fillRect(px, py, scaledCellSize, scaledCellSize);
-              ctx.strokeStyle = '#FFD700';
-              ctx.lineWidth = Math.max(2, scale);
+              // 已选背景区域改用更轻的透明棋盘格提示，避免误解成“变成绿色/变成实色”
+              const checkerSize = Math.max(2, Math.floor(scaledCellSize / 3));
+              for (let cy = 0; cy < scaledCellSize; cy += checkerSize) {
+                for (let cx = 0; cx < scaledCellSize; cx += checkerSize) {
+                  const useLightTile = ((Math.floor(cx / checkerSize) + Math.floor(cy / checkerSize)) % 2) === 0;
+                  ctx.fillStyle = useLightTile ? 'rgba(255, 255, 255, 0.18)' : 'rgba(12, 18, 32, 0.14)';
+                  ctx.fillRect(px + cx, py + cy, Math.min(checkerSize, scaledCellSize - cx), Math.min(checkerSize, scaledCellSize - cy));
+                }
+              }
+              ctx.strokeStyle = '#8BE9FD';
+              ctx.lineWidth = Math.max(1.5, scale * 0.9);
               ctx.strokeRect(px + 1, py + 1, scaledCellSize - 2, scaledCellSize - 2);
             } else if (bgModeExcludedIndices.has(index) && bead && bead.id === highlightedColorId) {
-              // 琚帓闄ょ殑缃戞牸锛堝悓鑹蹭絾琚繚鎶わ級- 缁樺埗缁胯壊杈规
-              ctx.strokeStyle = '#00FF00';
+              // 被排除保留的区域使用更温和的青色虚线边框
+              ctx.strokeStyle = '#67E8F9';
               ctx.lineWidth = Math.max(2, scale);
+              ctx.setLineDash([3, 2]);
               ctx.strokeRect(px + 1, py + 1, scaledCellSize - 2, scaledCellSize - 2);
+              ctx.setLineDash([]);
             } else if (isRecoverable) {
-              ctx.strokeStyle = '#34d399';
+              ctx.strokeStyle = '#FBBF24';
               ctx.lineWidth = Math.max(1.5, scale * 0.8);
               ctx.setLineDash([4, 3]);
               ctx.strokeRect(px + 2, py + 2, scaledCellSize - 4, scaledCellSize - 4);
@@ -364,6 +441,16 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
           onBgSelectColor(index);
         }
         return;
+      }
+
+      // 手动选背景模式下，点到其他未高亮格子时，允许直接重新选择新的连通区域。
+      if (bgViewMode === 'select' && bead && onBgSelectColor) {
+        const highlightedSet = new Set(bgModeHighlightedIndices);
+        const isSelectableNewSeed = !highlightedSet.has(index) && !bgModeExcludedIndices.has(index);
+        if (isSelectableNewSeed) {
+          onBgSelectColor(index);
+          return;
+        }
       }
 
       // 宸查€夋嫨棰滆壊锛岀偣鍑婚珮浜綉鏍兼垨鍚岃壊缃戞牸杩涜鎺掗櫎/鎭㈠
@@ -608,14 +695,17 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
   },
 
   container: {
     position: 'relative',
     width: '100%',
-    height: '45vh', // 鍥哄畾楂樺害锛岄伩鍏嶅唴瀹瑰彉鍖栨椂璺冲姩
-    minHeight: '45vh',
-    maxHeight: '45vh',
+    height: '52vh',
+    minHeight: '320px',
+    maxHeight: '58vh',
     background: colors.bg.card,
     borderRadius: radius.card,
     border: `2px solid ${colors.bead.cyan}40`,

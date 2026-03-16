@@ -229,6 +229,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const [isBackgroundMode, setIsBackgroundMode] = useState(false); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岋繝宕堕懜鐢电獧缂傚倸绉甸悧妤佺┍婵犲洤围闁告侗鍠栧▍锝囩磽娴ｆ彃浜鹃梺鍛婃处閸ㄩ亶鎮¤箛娑欑厱妞ゆ劧绲跨粻鏍ㄣ亜閵夛妇鐭嬮柕鍥у缁犳盯骞樼捄铏瑰幗婵犳鍠栭敃銊モ枍閿濆绠查柛鏇ㄥ灠鎯熼梺闈涱檧婵″洦绂嶉悙娴嬫斀闁绘ɑ顔栭弳顖涗繆閹绘帗鍤囩€规洩缍佸畷姗€顢欓幆褏銈﹀┑鐘灱濞夋稒寰勯崶顒€纾婚柟鍓х帛閺呮煡骞栫划鍏夊亾閼碱剛娉垮┑锛勫亼閸婃洜鎹㈤幇鐗堝亯闁绘挸瀵掑鏍煣韫囨凹娼愮€规洖顦甸弻鏇熺箾閸喖濮曢梺璇查叄缁犳牕顫忓ú顏勪紶闁告洟娼ч崜鏉款渻閵堝骸骞橀柛蹇旓耿閹即顢欑捄銊ф澑濠电偞鍨堕悷銉╁焵椤掆偓椤兘寮婚妶澶婄畳闁圭儤鍨垫慨鏇炩攽閻愬弶鍣烽柛銊ㄦ椤繐煤椤忓嫪绱堕梺鍛婃处閸嬧偓闁稿鎹囧畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕鐎ｎ偅灏い顐ｇ箞椤㈡宕掑┃鐐姂濮婃椽宕崟顕呮蕉闂佸憡姊归崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹诧紕鎷归敓鐘崇厱闊洦妫戦懓璺ㄢ偓娈垮枔閸斿秴顭囪箛娑辨晝闁靛繆鍓濋澶愭⒒?
   const [bgSelectedColorId, setBgSelectedColorId] = useState<string | null>(null); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛洦缍囬柕濞垮劜閻ｎ剟姊洪崣銉т覆缂傚秳绶氬璇差吋婢跺á銊╂煏婢诡垰绉剁粈濠勭磽娴ｉ缚妾搁柛妯绘倐瀹曟垿骞樼紒妯锋嫽闂佺鏈悷褏鎷规导瀛樼厱閻庯綆浜滈顓㈡寠濠靛鐓熼柕蹇嬪焺閻掗箖鏌＄€ｂ晝绐旈柡宀€鍠栭獮鎴﹀箛闂堟稒顔勯梻浣规た閸樹粙銆冮崱娑樜﹂柛鏇ㄥ灠缁犳盯鏌嶆潪鎷岊唹闁稿鎹囨俊鑸靛緞婵犲啳绶㈡繝鐢靛Т閿曘倝鎮ф繝鍥ㄥ亗婵炲棗娴氬〒濠氭倵閿濆簼閭い搴㈩殜閺屾稑螣缂佹ê鍞夐梺鍝勫閸撴繈骞忛崨顖涘枂闁告洦鍋嗛敍鎾绘煟鎼淬埄鍟忛柛锝庡櫍瀹曟粓鎮㈤梹鎰畾闂佸壊鍋呭ú鏍嵁閵忊€茬箚闁靛牆鎷戝妤冪磼閹插鐣垫慨濠勭帛閹峰懘宕崟顐＄帛婵犵數濮崑鎾绘煕濡ゅ啫鍓遍柣鏂挎閳?
+  const [bgSelectedSeedIndex, setBgSelectedSeedIndex] = useState<number | null>(null);
 
   const [bgExcludedIndices, setBgExcludedIndices] = useState<Set<number>>(new Set()); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛洦缍囬柕濞垮劜閻ｎ剟姊洪崣銉т覆缂傚秳绶氬璇差吋婢跺á銊╂煏婢诡垰绉剁粈濠勭磽娴ｉ缚妾搁柛妯绘倐瀹曟垿骞樼紒妯锋嫽闂佺鏈悷锔剧矈閻楀牏绠惧璺侯儐缁€瀣偓瑙勬磻閸楀啿顕ｉ幘顔碱潊闁绘ɑ顔栧Σ鍫曟⒒娴ｇ鎮戠紒浣规尦瀵彃鈹戦崶銉ょ泊闂佽鍎兼慨銈夊磻閳╁啰绠鹃柛鈩冾殘缁犵増銇勮箛濠冩珕闁靛洤瀚粻娑㈠箻鐠鸿櫣鍘芥繝娈垮枛閿曘劌鈻嶉敐澶婄闁告洦鍨版儫闂侀潧顧€婵″洭鍩€椤掑嫮鐣烘慨濠冩そ瀹曨偊宕熼棃娑樺婵＄偑鍊ら崢楣冨礂濮椻偓閹即顢欑捄銊ф澑濠电偞鍨堕悷銉╁焵椤掆偓椤兘寮婚妶澶婄畳闁圭儤鍨垫慨鏇炩攽閻愬弶鍣烽柛銊ㄦ椤繐煤椤忓嫪绱堕梺鍛婃处閸嬧偓闁稿鎹囧畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕鐎ｎ偅灏い顐ｇ箞椤㈡宕掑┃鐐姂濮婃椽宕崟顕呮蕉闂佸憡姊归崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹芥粎绮旈悜妯镐簻闁靛闄勫畷宀€鈧娲橀〃鍛达綖濠婂牆鐒垫い鎺嗗亾妞ゆ洩缍侀、鏇㈡晝閳ь剛绮绘繝姘仯闁搞儜鍐獓濡炪們鍎茬换鍫濐潖濞差亝顥堟繛鎴炶壘椤ｅ搫鈹戦埥鍡椾簼妞ゃ劌锕妴??
   const [bgViewMode, setBgViewMode] = useState<BackgroundEditMode>('select');
@@ -260,6 +261,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setCurrentColor,
 
     beadData,
+
+    initializeBeadData,
 
     setBeadData,
 
@@ -402,7 +405,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-      setBeadData(beads);
+      initializeBeadData(beads);
       setBgLastRemoval([]);
 
 
@@ -463,7 +466,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [currentImageData, gridSize, colorCount, simplifyLevel, saturationBoost, vibrancyPreference, excludedColorIds, activeCustomColorIds, setBeadData, currentColor, setCurrentColor]);
+  }, [currentImageData, gridSize, colorCount, simplifyLevel, saturationBoost, vibrancyPreference, excludedColorIds, activeCustomColorIds, initializeBeadData, currentColor, setCurrentColor]);
 
 
 
@@ -855,16 +858,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     const restoredData = JSON.parse(JSON.stringify(initialBeadData));
 
-    setBeadData(restoredData);
+    initializeBeadData(restoredData);
 
     setReplacedColors(new Map());
 
     setTriedColorsMap(new Map()); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹芥粎绮旈悜妯镐簻闁靛闄勫畷宀€鈧鍠氱划顖氼嚗閸曨垰绠涙い鎾跺仜婢瑰嫭淇婇悙顏勨偓鏍箰閸洖鍨傛繛宸簼閸嬪倿鏌曟径鍡樻珕闁绘挾鍠栭弻锟犲磼濞戞﹩鍤嬮梺鍝ュ枔閸嬨倝寮婚敐鍫㈢杸闁挎繂鎳忛悵婵嬫⒑閸濆嫮鐏遍柛鐘崇墵楠炲啫顭ㄩ崨顖炩攺闁诲函缍嗛崑鎺懳涢弽顓熲拺閻犲洤寮堕崬澶嬨亜椤愩埄妲圭紒缁樼⊕缁绘繈宕惰閹??
     setHighlightedColorId(null); // 闂傚倸鍊搁崐椋庣矆娓氣偓楠炲鏁撻悩鍐蹭画闂佹寧娲栭崐褰掑磻鐎ｎ喗鐓熸俊顖涱儥閸ゆ瑩鏌＄€ｂ晝绐旈柡宀€鍠栭獮鎴﹀箛闂堟稒顔勬繝纰樻閸嬪懘鏁冮姀銈呰摕闁哄洢鍨归柋鍥ㄧ節闂堟稒绁╂俊顐ゅ仜椤啴濡堕崨顖滎唶闂佺粯鐗滈崢褔锝炶箛娑欐優閻熸瑥瀚壕顖炴⒑闂堟侗鐒鹃柛搴㈢叀閹銈ｉ崘鈹炬嫼闂佸憡绻傜€氱兘宕曡箛鏂讳簻妞ゆ挾濮撮崢鎾煟濞戝崬鏋︾紒鐘崇☉閳藉鈻庤箛濠備壕濠电姵纰嶉悡鐘绘煙椤撶喎绗掗柛鏃€绮嶇换娑㈠川椤愩垻浼堝┑顔硷攻濡炶棄鐣烽锕€绀嬫い鎰枎娴滈箖鏌涢锝嗙缁炬儳缍婇弻鈥愁吋鎼粹€茬爱闂?
 
-    saveToHistory();
-
-  }, [initialBeadData, setBeadData, saveToHistory]);
+  }, [initialBeadData, initializeBeadData]);
 
 
 
@@ -904,6 +905,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setIsBackgroundMode(true);
 
     setBgSelectedColorId(null);
+    setBgSelectedSeedIndex(null);
 
     setBgExcludedIndices(new Set());
     setBgAutoIndices([]);
@@ -927,6 +929,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setIsBackgroundMode(false);
 
     setBgSelectedColorId(null);
+    setBgSelectedSeedIndex(null);
 
     setBgExcludedIndices(new Set());
     setBgAutoIndices([]);
@@ -952,9 +955,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     if (!bead) return; // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绋撴晶妤冩暜閳ュ磭鏆﹂柟杈剧畱缁犲鏌涢敂璇插箻闁哄顭堥埞鎴︽倷閺夋垹浠搁梺鑽ゅ櫐缁犳垿鍩㈠澶婎潊闁靛牆妫岄幏娲⒑閸涘﹦绠撻悗姘煎墴閸┾偓妞ゆ巻鍋撻柣鏍帶閻ｇ兘骞囬弶鍨敤濡炪倖鍔楅崰搴㈢閻愵剚鍙忔慨妤€妫楁晶鎵磼婢跺銇濋柡宀嬬磿娴狅妇鎷犻幓鎺濇綆闂備浇顕栭崰鎾诲垂閽樺鏆﹂柕濠忓缁♀偓闂佸憡娲︽禍鐐靛閸ф鈷掗柛灞剧懅椤︼妇绱撳鍜冭含閽樼喖鏌熼幑鎰靛殭缂佲偓閸屾稒鍙忔俊鐐额嚙娴滈箖鎮楀▓鍨珮闁稿锕悰顔嘉熼崗鐓庣彴闂佸憡鐟ラˇ钘壩涢悢鍏尖拻濞撴埃鍋撴繛浣冲洦鍋嬮柛鈩冦亗濞戞鏃堝椽娴ｈ娅嗛梻浣稿閸嬪懎煤濮椻偓閸╂盯骞嬮敂钘変化闂佽鍘界敮鎺撲繆婵傚憡鐓涢悗锝庡亜閻忔挳鏌″畝瀣？闁逞屽墾缂嶅棙绂嶉崼鏇熷亗闁稿繒鈷堝▓??
     setBgSelectedColorId(bead.id);
+    setBgSelectedSeedIndex(index);
     setBgSelectionSource('manual');
     setBgAutoIndices([]);
-    setBgDetectionMessage('已切换为手动选背景，点击同色格子可继续检查并排除误选。');
+    setBgDetectionMessage('已开启连片选背景，只会圈选与你点击位置连通的同色区域。');
 
     setBgExcludedIndices(new Set()); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娿儙鏃堟偐闂堟稐绮堕梺鎸庢处娴滎亜顕ｉ锕€绀冩い鏃囧亹閿涙粌鈹戦悙鏉戠仸闁荤噦绠撻、鏃堟偄閸忓皷鎷绘繛杈剧到閹诧繝骞嗛崼銉︾厱濠电姴鍊婚崺锝団偓瑙勬礃閸旀瑥顕ｆ禒瀣垫晝闁绘棁娓规竟鏇炩攽椤旀枻渚涢柛鎾寸〒缁棃鎼归崗澶婁壕婵炲牆鐏濆▍姗€鏌涢幘瀵告噰闁炽儻绠撴俊鎼佸煛娓氣偓閸炲爼姊虹紒妯荤叆闁硅绻濋、?
   }, [beadData]);
@@ -987,12 +991,62 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
+  const collectConnectedManualBgIndices = useCallback((seedIndex: number, colorId: string): number[] => {
+
+    if (!beadData) return [];
+
+    const seedBead = beadData.beads[seedIndex];
+    if (!seedBead || seedBead.id !== colorId) return [];
+
+    const visited = new Set<number>([seedIndex]);
+    const queue: number[] = [seedIndex];
+    const result: number[] = [];
+    const { width, height, beads } = beadData;
+
+    while (queue.length > 0) {
+      const index = queue.shift();
+      if (index === undefined) break;
+
+      const bead = beads[index];
+      if (!bead || bead.id !== colorId) continue;
+      result.push(index);
+
+      const x = index % width;
+      const y = Math.floor(index / width);
+      const neighbors = [
+        x > 0 ? index - 1 : -1,
+        x < width - 1 ? index + 1 : -1,
+        y > 0 ? index - width : -1,
+        y < height - 1 ? index + width : -1,
+      ];
+
+      neighbors.forEach((nextIndex) => {
+        if (nextIndex < 0 || visited.has(nextIndex)) return;
+        visited.add(nextIndex);
+        const nextBead = beads[nextIndex];
+        if (nextBead && nextBead.id === colorId) {
+          queue.push(nextIndex);
+        }
+      });
+    }
+
+    return result;
+
+  }, [beadData]);
+
+
+
   const getBgHighlightedIndices = useCallback((): number[] => {
 
     if (!beadData) return [];
 
     if (bgSelectionSource === 'auto') {
       return bgAutoIndices.filter((index) => !bgExcludedIndices.has(index));
+    }
+
+    if (bgSelectionSource === 'manual' && bgSelectedColorId && bgSelectedSeedIndex !== null) {
+      return collectConnectedManualBgIndices(bgSelectedSeedIndex, bgSelectedColorId)
+        .filter((index) => !bgExcludedIndices.has(index));
     }
 
     if (!bgSelectedColorId) return [];
@@ -1013,7 +1067,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       .map(({ index }) => index);
 
-  }, [beadData, bgSelectedColorId, bgExcludedIndices, bgAutoIndices, bgSelectionSource]);
+  }, [beadData, bgSelectedColorId, bgSelectedSeedIndex, bgExcludedIndices, bgAutoIndices, bgSelectionSource, collectConnectedManualBgIndices]);
 
 
 
@@ -1043,6 +1097,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
     setBgSelectedColorId(null);
+    setBgSelectedSeedIndex(null);
 
     setBgExcludedIndices(new Set());
     setBgAutoIndices([]);
@@ -1056,6 +1111,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const handleBgClearSelection = useCallback(() => {
 
     setBgSelectedColorId(null);
+    setBgSelectedSeedIndex(null);
 
     setBgExcludedIndices(new Set());
     setBgAutoIndices([]);
@@ -1073,19 +1129,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     if (nextMode === 'erase') {
       setBgSelectedColorId(null);
+      setBgSelectedSeedIndex(null);
       setBgExcludedIndices(new Set());
       setBgAutoIndices([]);
       setBgSelectionSource(null);
-      setBgDetectionMessage('手动擦背景已开启，点击任意格子可直接透明化。');
+      setBgDetectionMessage('已开启点格擦除，点哪一格就会删掉哪一格。');
       return;
     }
 
     if (nextMode === 'restore') {
       setBgSelectedColorId(null);
+      setBgSelectedSeedIndex(null);
       setBgExcludedIndices(new Set());
       setBgAutoIndices([]);
       setBgSelectionSource(null);
-      setBgDetectionMessage('手动补背景已开启，点击透明格可从去背景前状态补回。');
+      setBgDetectionMessage('已开启补回误删，点击透明格即可恢复。');
       return;
     }
 
@@ -1096,6 +1154,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     setBgDetectionMessage('');
   }, [bgViewMode]);
+
+  const handleBgEnableManualSelect = useCallback(() => {
+    setShowBgAdvanced(true);
+    setBgViewMode('select');
+    setBgDetectionMessage((prev) => prev || '点击背景边缘的格子，只会圈选与该点连通的同色区域。');
+  }, []);
 
   const handleBgQuickRemove = useCallback(() => {
 
@@ -1114,7 +1178,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       setBgSelectionSource('auto');
       setBgAutoIndices(suggestion.indices);
       setBgExcludedIndices(new Set());
-      setBgSelectedColorId(suggestion.primaryColorId);
+       setBgSelectedColorId(suggestion.primaryColorId);
+       setBgSelectedSeedIndex(null);
       setBgDetectionMessage(`已圈出候选背景 ${suggestion.indices.length} 格。${suggestion.reason}`);
       setBgViewMode('select');
       toast.info('这张图背景较复杂，建议使用智能抠图，再按需要手动微调。');
@@ -1135,6 +1200,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setBgAutoIndices([]);
     setBgExcludedIndices(new Set());
     setBgSelectedColorId(null);
+    setBgSelectedSeedIndex(null);
     setBgDetectionMessage(`已自动去掉 ${suggestion.indices.length} 格背景。`);
     toast.success(`已自动去掉 ${suggestion.indices.length} 格背景。`);
 
@@ -1316,12 +1382,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     if (!suggestion || suggestion.indices.length === 0) {
       setBgAutoIndices([]);
       setBgSelectedColorId(null);
+      setBgSelectedSeedIndex(null);
       setBgDetectionMessage('当前强度下没有找到稳定背景候选区，可调高强度或改用手动选择。');
       return;
     }
 
     setBgAutoIndices(suggestion.indices);
     setBgSelectedColorId(suggestion.primaryColorId);
+    setBgSelectedSeedIndex(null);
     setBgDetectionMessage(`重新圈出 ${suggestion.indices.length} 格背景候选区。${suggestion.reason}`);
   }, [beadData, bgAutoStrength, bgProtectSubject, isBackgroundMode, bgSelectionSource]);
 
@@ -1392,7 +1460,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       navigate('/mobile/making', {
 
-        state: { beadData, colorCount },
+        state: { beadData, colorCount, backTarget: '/mobile/create' },
 
       });
 
@@ -1601,7 +1669,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           navigate('/mobile/making', {
 
-            state: { beadData, colorCount, projectId: response.data.id },
+            state: { beadData, colorCount, projectId: response.data.id, backTarget: '/mobile/create' },
 
           });
 
@@ -1631,7 +1699,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       navigate('/mobile/making', {
 
-        state: { beadData, colorCount },
+        state: { beadData, colorCount, backTarget: '/mobile/create' },
 
       });
 
@@ -1720,7 +1788,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       navigate('/mobile/making', {
 
-        state: { beadData, colorCount, localProjectId: result.id },
+        state: { beadData, colorCount, localProjectId: result.id, backTarget: '/mobile/create' },
 
       });
 
@@ -1734,7 +1802,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       navigate('/mobile/making', {
 
-        state: { beadData, colorCount },
+        state: { beadData, colorCount, backTarget: '/mobile/create' },
 
       });
 
@@ -2719,9 +2787,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           onConfirm={(mergedData) => {
 
-            saveToHistory(beadData.beads);
-
             setBeadData(mergedData);
+
+            saveToHistory();
 
             setStatistics(calculateBeadStatistics(mergedData));
 
@@ -2776,17 +2844,19 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
           <div style={styles.bgModeEntryCard}>
             <div style={styles.bgModeEntryTextGroup}>
               <span style={styles.bgModeEntryTitle}>去背景工具</span>
-              <span style={styles.bgModeEntryDesc}>先试一键去背景，不够理想再用智能抠图或高级微调。</span>
+              <span style={styles.bgModeEntryDesc}>先一键，不够再 AI 或微调。</span>
             </div>
-            <div style={styles.bgModeEntryBadge}>只保留拼豆强相关功能</div>
+            <div style={styles.bgModeEntryBadge}>简化模式</div>
           </div>
 
           <div style={styles.bgModePrimaryActions}>
             <button style={styles.bgModeQuickBtn} onClick={handleBgQuickRemove}>
-              一键去背景
+              <span style={styles.bgModeActionPrimary}>一键</span>
+              <span style={styles.bgModeActionSecondary}>去背景</span>
             </button>
             <button style={styles.bgModeAiBtn} onClick={handleBgAiCutout} disabled={isBgAiCutoutLoading}>
-              {isBgAiCutoutLoading ? '智能抠图中...' : '智能抠图'}
+              <span style={styles.bgModeActionPrimary}>{isBgAiCutoutLoading ? '处理中' : 'AI'}</span>
+              <span style={styles.bgModeActionSecondary}>智能抠图</span>
             </button>
           </div>
 
@@ -2801,85 +2871,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             >
               {showBgAdvanced ? '收起高级微调' : '打开高级微调'}
             </button>
-            <span style={styles.bgModeAdvancedHint}>默认先用上面的两个主按钮</span>
+            <span style={styles.bgModeAdvancedHint}>只有自动结果不满意时，再用下面的手动补救</span>
           </div>
 
           {showBgAdvanced && (
             <>
-              <div style={styles.bgModeStrengthSection}>
-                <div style={styles.bgModeStrengthHeader}>
-                  <span style={styles.controlLabel}>识别强度</span>
-                  <span style={styles.bgModeStrengthValue}>
-                    {bgAutoStrength < 40 ? '保守' : bgAutoStrength > 70 ? '激进' : '推荐'} 档
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={bgAutoStrength}
-                  onChange={(e) => setBgAutoStrength(Number(e.target.value))}
-                  style={{
-                    ...styles.slider,
-                    background:
-                      'linear-gradient(to right, ' + colors.bead.cyan + ' 0%, ' + colors.bead.green + ' 45%, ' + colors.bead.yellow + ' 72%, ' + colors.bead.orange + ' 100%)',
-                  }}
-                />
-                <div style={styles.bgModeStrengthLabels}>
-                  <span>更保守</span>
-                  <span>更激进</span>
-                </div>
-              </div>
-
               <div style={styles.bgModeFilterRow}>
                 <button
                   style={{
                     ...styles.bgModeFilterBtn,
-                    ...(bgProtectSubject ? styles.bgModeFilterBtnActive : {}),
-                  }}
-                  onClick={() => setBgProtectSubject((prev) => !prev)}
-                >
-                  主体保护：{bgProtectSubject ? '已开启' : '已关闭'}
-                </button>
-              </div>
-
-              <div style={styles.bgModeFilterRow}>
-                <button
-                  style={{
-                    ...styles.bgModeFilterBtn,
-                    ...(bgCandidateOnly ? styles.bgModeFilterBtnActive : {}),
-                  }}
-                  onClick={() => setBgCandidateOnly((prev) => !prev)}
-                >
-                  {bgCandidateOnly ? '显示全部区域' : '只看背景候选区'}
-                </button>
-              </div>
-
-              <div style={styles.bgModeCompareRow}>
-                <button
-                  style={{
-                    ...styles.bgModeCompareBtn,
-                    ...(isBgComparingBefore ? styles.bgModeCompareBtnActive : {}),
-                    opacity: bgBaselineData ? 1 : 0.45,
-                  }}
-                  onClick={() => setBgCompareMode((prev) => (prev === 'before' ? 'current' : 'before'))}
-                  disabled={!bgBaselineData}
-                >
-                  {isBgComparingBefore ? '查看当前结果' : '查看去背景前'}
-                </button>
-              </div>
-
-              <div style={styles.bgModeFilterRow}>
-                <button
-                  style={{
-                    ...styles.bgModeFilterBtn,
-                    ...(bgViewMode === 'view' ? styles.bgModeFilterBtnActive : {}),
+                    ...(bgViewMode === 'select' ? styles.bgModeFilterBtnActive : {}),
                     flex: 1,
                   }}
-                  onClick={() => handleBgSwitchMode('view')}
+                  onClick={handleBgEnableManualSelect}
                 >
-                  {bgViewMode === 'view' ? '结束查看选择' : '手动选背景'}
+                  连片选背景
                 </button>
                 <button
                   style={{
@@ -2889,7 +2895,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                   }}
                   onClick={() => handleBgSwitchMode('erase')}
                 >
-                  {bgViewMode === 'erase' ? '结束手动擦除' : '手动擦除'}
+                  {bgViewMode === 'erase' ? '结束点格擦除' : '点格擦除'}
                 </button>
                 <button
                   style={{
@@ -2899,7 +2905,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                   }}
                   onClick={() => handleBgSwitchMode('restore')}
                 >
-                  {bgViewMode === 'restore' ? '结束手动补回' : '手动补回'}
+                  {bgViewMode === 'restore' ? '结束补回误删' : '补回误删'}
                 </button>
               </div>
             </>
@@ -2935,35 +2941,46 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               <p style={styles.bgModeDetectionText}>{bgDetectionMessage}</p>
             )}
 
-            {isBgComparingBefore && (
-              <p style={styles.bgModeCompareHint}>当前正在查看去背景前快照，便于和当前结果对比。</p>
-            )}
-
             {bgLastRemoval.length > 0 && (
               <p style={styles.bgModeRecoveryHint}>虚线框表示可恢复的误删背景格，点格子可逐个恢复。</p>
             )}
 
-            {isBgComparingBefore ? (
-              <p>这是去背景前的原图，只用于对比。</p>
-            ) : bgViewMode === 'view' ? (
+            {bgViewMode === 'view' ? (
               <p>当前是查看模式，不会修改图案。</p>
             ) : bgViewMode === 'erase' ? (
-              <p>已开启手动擦除，点击格子就会去掉背景。</p>
+              <p>已开启点格擦除，点哪个格子，就删掉哪个格子。</p>
             ) : bgViewMode === 'restore' ? (
-              <p>已开启手动补回，点击透明格即可恢复。</p>
+              <p>已开启补回误删，点透明格就能恢复。</p>
             ) : !bgSelectedColorId ? (
-              <p>点一下背景颜色，系统会帮你圈出同色区域。</p>
+              <p>点一下背景边缘的格子，系统会圈出与它连成一片的同色区域。</p>
             ) : (
-              <p>不对的地方再点一下排除，然后点“应用透明”。</p>
+              <p>不对的地方再点一下排除，确认后点“应用去背景”。</p>
             )}
           </div>
 
           <div style={styles.bgModeActions}>
-            {bgLastRemoval.length > 0 && (
-              <button style={styles.bgModeRestoreBtn} onClick={handleBgRestoreLastRemoval}>
-                恢复上次去背景
-              </button>
-            )}
+            <button
+              type="button"
+              aria-label="回退上一步"
+              title="回退上一步"
+              style={styles.bgModeHistoryBtn}
+              onClick={undo}
+              disabled={!canUndo}
+            >
+              <ArrowCounterClockwise size={16} weight="bold" />
+              <span>回退</span>
+            </button>
+            <button
+              type="button"
+              aria-label="前进一步"
+              title="前进一步"
+              style={styles.bgModeHistoryBtn}
+              onClick={redo}
+              disabled={!canRedo}
+            >
+              <ArrowClockwise size={16} weight="bold" />
+              <span>前进</span>
+            </button>
             {showBgAdvanced && (
               <button style={styles.bgModeClearBtn} onClick={handleBgClearSelection}>
                 清空选择
@@ -2974,7 +2991,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               onClick={handleBgConfirmTransparent}
               disabled={getBgHighlightedIndices().length === 0}
             >
-              应用透明
+              应用去背景
             </button>
             <button style={styles.bgModeExitBtn} onClick={handleExitBackgroundMode}>
               返回编辑
@@ -5200,11 +5217,13 @@ const styles: Record<string, React.CSSProperties> = {
 
     background: colors.bg.primary,
 
-    zIndex: 200,
+    zIndex: 1200,
 
     display: 'flex',
 
     flexDirection: 'column',
+
+    paddingBottom: '156px',
 
   },
 
@@ -5367,8 +5386,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: '12px',
-    padding: '12px 16px',
+    gap: '8px',
+    padding: '10px 14px',
     background: 'rgba(255,255,255,0.04)',
     borderBottom: '1px solid ' + colors.border.soft,
     flexWrap: 'wrap',
@@ -5390,19 +5409,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   bgModeEntryDesc: {
-    fontSize: typography.fontSize.xs,
+    fontSize: '11px',
     color: colors.text.secondary,
     fontFamily: typography.fontFamilyAlt,
-    lineHeight: 1.5,
+    lineHeight: 1.4,
   },
 
   bgModeEntryBadge: {
-    padding: '6px 10px',
+    padding: '4px 8px',
     background: 'rgba(92, 242, 207, 0.12)',
     border: '1px solid rgba(92, 242, 207, 0.28)',
     borderRadius: radius.full,
     color: colors.bead.green,
-    fontSize: typography.fontSize.xs,
+    fontSize: '11px',
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
   },
@@ -5567,7 +5586,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexWrap: 'wrap',
     gap: '8px',
-    padding: '12px 16px 8px',
+    padding: '10px 12px 6px',
     background: colors.bg.secondary,
     borderTop: '1px solid ' + colors.border.soft,
   },
@@ -5585,8 +5604,8 @@ const styles: Record<string, React.CSSProperties> = {
   bgModeAdvancedHint: {
     flex: 1,
     minWidth: '160px',
-    fontSize: typography.fontSize.xs,
-    lineHeight: 1.5,
+    fontSize: '11px',
+    lineHeight: 1.4,
     color: colors.text.muted,
     fontFamily: typography.fontFamilyAlt,
   },
@@ -5650,31 +5669,37 @@ const styles: Record<string, React.CSSProperties> = {
 
     flexWrap: 'wrap',
 
-    gap: '6px',
+    gap: '8px',
 
-    padding: '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))',
+    padding: '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))',
 
     background: colors.bg.secondary,
 
     borderTop: '1px solid ' + colors.border.soft,
-    position: 'sticky',
-    bottom: 0,
-    zIndex: 2,
+    position: 'fixed',
+    left: 0,
+    right: 0,
+    bottom: 'calc(66px + env(safe-area-inset-bottom, 0px))',
+    zIndex: 1202,
     boxShadow: '0 -10px 24px rgba(6, 12, 24, 0.28)',
 
   },
 
   bgModeQuickBtn: {
 
-    flex: '1 1 calc(50% - 3px)',
+    flex: '1 1 calc(50% - 4px)',
 
     display: 'flex',
+
+    flexDirection: 'column',
 
     alignItems: 'center',
 
     justifyContent: 'center',
 
-    padding: '12px',
+    minHeight: '54px',
+
+    padding: '8px 10px',
 
     background: "linear-gradient(145deg, " + colors.bead.green + ", " + colors.bead.cyan + ")",
 
@@ -5698,15 +5723,19 @@ const styles: Record<string, React.CSSProperties> = {
 
   bgModeAiBtn: {
 
-    flex: '1 1 calc(50% - 3px)',
+    flex: '1 1 calc(50% - 4px)',
 
     display: 'flex',
+
+    flexDirection: 'column',
 
     alignItems: 'center',
 
     justifyContent: 'center',
 
-    padding: '12px',
+    minHeight: '54px',
+
+    padding: '8px 10px',
 
     background: "linear-gradient(145deg, " + colors.bead.yellow + ", " + colors.bead.orange + ")",
 
@@ -5728,9 +5757,9 @@ const styles: Record<string, React.CSSProperties> = {
 
   },
 
-  bgModeRestoreBtn: {
+  bgModeHistoryBtn: {
 
-    flex: '1 1 100%',
+    flex: '0 0 auto',
 
     display: 'flex',
 
@@ -5738,15 +5767,21 @@ const styles: Record<string, React.CSSProperties> = {
 
     justifyContent: 'center',
 
-    padding: '12px',
+    gap: '6px',
 
-    background: colors.bg.tertiary,
+    minWidth: '72px',
 
-    border: '1px solid ' + colors.bead.green + '50',
+    minHeight: '44px',
+
+    padding: '10px 12px',
+
+    background: colors.bg.card,
+
+    border: '1px solid ' + colors.border.soft,
 
     borderRadius: radius.button,
 
-    color: colors.bead.green,
+    color: colors.text.primary,
 
     fontSize: typography.fontSize.sm,
 
@@ -5756,6 +5791,20 @@ const styles: Record<string, React.CSSProperties> = {
 
     cursor: 'pointer',
 
+  },
+
+  bgModeActionPrimary: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    fontFamily: typography.fontFamilyAlt,
+    lineHeight: 1.1,
+  },
+
+  bgModeActionSecondary: {
+    fontSize: '11px',
+    fontFamily: typography.fontFamilyAlt,
+    lineHeight: 1.1,
+    opacity: 0.92,
   },
 
 
@@ -5806,7 +5855,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   bgModeClearBtn: {
 
-    flex: 1,
+    flex: '0 0 auto',
 
     display: 'flex',
 
@@ -5814,7 +5863,9 @@ const styles: Record<string, React.CSSProperties> = {
 
     justifyContent: 'center',
 
-    padding: '12px',
+    minHeight: '44px',
+
+    padding: '10px 12px',
 
     background: colors.bg.tertiary,
 
@@ -5838,7 +5889,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   bgModeConfirmBtn: {
 
-    flex: 1,
+    flex: '1 1 0',
 
     display: 'flex',
 
@@ -5846,7 +5897,9 @@ const styles: Record<string, React.CSSProperties> = {
 
     justifyContent: 'center',
 
-    padding: '12px',
+    minHeight: '44px',
+
+    padding: '10px 14px',
 
     background: "linear-gradient(145deg, " + colors.bead.magenta + ", " + colors.bead.purple + ")",
 
@@ -5872,7 +5925,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   bgModeExitBtn: {
 
-    flex: 1,
+    flex: '0 0 auto',
 
     display: 'flex',
 
@@ -5880,7 +5933,11 @@ const styles: Record<string, React.CSSProperties> = {
 
     justifyContent: 'center',
 
-    padding: '12px',
+    minWidth: '88px',
+
+    minHeight: '44px',
+
+    padding: '10px 14px',
 
     background: colors.bg.tertiary,
 
@@ -5920,3 +5977,4 @@ if (!document.querySelector('#editor-styles')) {
 
 
 export default EditorPage;
+

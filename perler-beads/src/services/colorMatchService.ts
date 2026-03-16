@@ -71,7 +71,7 @@ export const matchPixelsToBead = (
     // 应用饱和度增强
     let processedRgb = rgb;
     if (saturationBoost > 0) {
-      processedRgb = boostSaturation(rgb, saturationBoost / 100);
+      processedRgb = boostVividness(rgb, saturationBoost / 100);
     }
 
     // 根据设置选择匹配算法
@@ -299,6 +299,17 @@ const boostSaturation = (
   // 增强饱和度，但不超过 1
   const newS = Math.min(1, s + (1 - s) * boost);
   return hslToRgb([h, newS, l]);
+};
+
+const boostVividness = (
+  rgb: [number, number, number],
+  boost: number
+): [number, number, number] => {
+  const [h, s, l] = rgbToHsl(rgb);
+  const nextS = Math.min(1, s + (1 - s) * boost * 0.9);
+  const lightnessLift = boost * (l < 0.35 ? 0.12 : l < 0.65 ? 0.08 : 0.04);
+  const nextL = Math.min(0.92, l + lightnessLift);
+  return hslToRgb([h, nextS, nextL]);
 };
 
 /**

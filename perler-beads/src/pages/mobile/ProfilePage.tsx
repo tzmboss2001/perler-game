@@ -95,6 +95,7 @@ const ProfilePage: React.FC = () => {
         beadData,
         colorCount: project.settings?.colorCount || 96,
         localProjectId: project.id,
+        backTarget: '/mobile/profile',
         ...(project.progress ? { savedProgress: project.progress } : {}),
       },
     });
@@ -136,6 +137,7 @@ const ProfilePage: React.FC = () => {
             beadData,
             colorCount: detail.settings?.colorCount || 96,
             projectId: project.id,
+            backTarget: '/mobile/profile',
             // 如果有保存进度，则恢复进度状态
             ...(detail.progress ? {
               savedProgress: detail.progress,

@@ -9,6 +9,11 @@ import { BeadPixelData } from '../services/colorMatchService';
 
 export type EditorTool = 'brush' | 'fill' | 'eraser' | 'picker';
 
+type HistoryBead = BeadColor | null;
+
+const cloneHistoryBeads = (beads: HistoryBead[]): HistoryBead[] =>
+  beads.map((bead) => (bead ? { ...bead } : null));
+
 interface EditorState {
   // 当前工具
   currentTool: EditorTool;
@@ -20,10 +25,11 @@ interface EditorState {
 
   // 珠子数据
   beadData: BeadPixelData | null;
+  initializeBeadData: (data: BeadPixelData) => void;
   setBeadData: (data: BeadPixelData) => void;
 
   // 历史记录（用于撤销/重做）
-  history: BeadColor[][];
+  history: HistoryBead[][];
   historyIndex: number;
   maxHistory: number;
 
@@ -58,11 +64,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setCurrentColor: (color) => set({ currentColor: color }),
 
   beadData: null,
+  initializeBeadData: (data) => {
+    set({
+      beadData: data,
+      history: [cloneHistoryBeads(data.beads)],
+      historyIndex: 0,
+    });
+  },
   setBeadData: (data) => {
     set({
       beadData: data,
-      history: [data.beads.map(b => ({ ...b }))],
-      historyIndex: 0,
     });
   },
 
@@ -75,7 +86,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!beadData) return;
 
     // 复制当前状态
-    const currentState = beadData.beads.map(b => ({ ...b }));
+    const currentState = cloneHistoryBeads(beadData.beads);
 
     // 截断后面的历史（如果在中间进行了新操作）
     const newHistory = history.slice(0, historyIndex + 1);
@@ -102,7 +113,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       beadData: {
         ...beadData,
-        beads: previousState.map(b => ({ ...b })),
+        beads: cloneHistoryBeads(previousState),
       },
       historyIndex: newIndex,
     });
@@ -118,7 +129,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       beadData: {
         ...beadData,
-        beads: nextState.map(b => ({ ...b })),
+        beads: cloneHistoryBeads(nextState),
       },
       historyIndex: newIndex,
     });

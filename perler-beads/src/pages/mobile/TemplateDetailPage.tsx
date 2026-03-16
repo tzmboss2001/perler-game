@@ -295,6 +295,7 @@ const TemplateDetailPage: React.FC = () => {
         state: {
           beadData,
           colorCount: template.color_count,
+          backTarget: `/mobile/template/${template.id}`,
         },
       });
     } catch (err) {
