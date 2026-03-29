@@ -1,15 +1,13 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 
-import { ArrowLeft, GridFour, Palette, ListBullets, ArrowClockwise, ArrowCounterClockwise, Play, ArrowsClockwise, ShareNetwork, ShoppingCart, Prohibit, CheckCircle } from '@phosphor-icons/react';
+import { ArrowLeft, GridFour, Palette, ArrowCounterClockwise, Play, ArrowsClockwise, ShoppingCart } from '@phosphor-icons/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 import { colors, radius, typography, shadows, animation, mixins } from '../../styles/designSystem';
 
 import { pixelizeImage, PixelData } from '../../services/pixelizeService';
 
-import { matchPixelsToBead, calculateBeadStatistics, renderBeadsToCanvas, BeadPixelData, BeadStatistics, replaceColor, findNextSimilarColor, reduceColors, smartMergeColors } from '../../services/colorMatchService';
-
-import SmartMergeModal from '../../components/SmartMergeModal';
+import { matchPixelsToBead, calculateBeadStatistics, renderBeadsToCanvas, BeadPixelData, BeadStatistics, reduceColors } from '../../services/colorMatchService';
 
 import { colorCountOptions, defaultColorCount, allBeadColors, BeadColor } from '../../data/beadColors';
 
@@ -22,14 +20,12 @@ import ColorPicker from '../../components/ColorPicker';
 import InteractiveCanvas, { InteractiveCanvasHandle } from '../../components/InteractiveCanvas';
 import SaveProjectModal from '../../components/SaveProjectModal';
 
-import ShareModal from '../../components/ShareModal';
 
 import ShoppingListModal from '../../components/ShoppingListModal';
 
 import LoginModal from '../../components/LoginModal';
 
 import MyColorsModal from '../../components/MyColorsModal';
-import RewardedUnlockModal from '../../components/ads/RewardedUnlockModal';
 
 import { useUserStore } from '../../store/userStore';
 
@@ -43,18 +39,15 @@ import Modal, { useModal } from '../../components/Modal';
 
 import { localStorageService } from '../../services/localStorageService';
 
-import { recommendBoard } from '../../services/boardService';
-import { adService } from '../../services/adService';
 
 import { myColorsService } from '../../services/myColorsService';
 import { applyTransparentIndices, suggestQuickBackgroundRemoval } from '../../services/backgroundRemovalService';
-import { getAiCutoutAvailability, requestAiCutout } from '../../services/aiCutoutService';
 
 
 
 /**
  * 移动端编辑图案页面。
- * 支持预览、调参、色系设置、豆子统计、背景处理和智能抠图。
+ * 支持预览、调参、色系设置、豆子统计和背景处理。
  */
 
 export interface EditorStateData {
@@ -69,9 +62,22 @@ export interface EditorStateData {
 
 }
 
+interface EditorResumeDraft extends EditorStateData {
+  beadData?: BeadPixelData;
+  initialBeadData?: BeadPixelData | null;
+  saturationBoost?: number;
+  vibrancyPreference?: number;
+  pendingAction?: 'startMaking';
+}
+
 type RemovedBackgroundCell = {
   index: number;
   bead: NonNullable<BeadPixelData['beads'][number]>;
+};
+
+type BackgroundManualSelection = {
+  seedIndex: number;
+  colorId: string;
 };
 
 type BackgroundEditMode = 'select' | 'view' | 'erase' | 'restore';
@@ -88,11 +94,13 @@ interface EditorPageProps {
 
 const GRID_SIZE_MIN = 10;
 
-const GRID_SIZE_MAX = 200;
+const GRID_SIZE_MAX = 240;
 
 const GRID_SIZE_STEP = 2;
 
-const COMMON_BOARD_WIDTHS = [54, 78, 104];
+const BACKGROUND_DETECTION_MIN_WIDTH = 208;
+
+const COMMON_BOARD_WIDTHS = [54, 78, 104, 208];
 
 const SATURATION_PRESETS = [
 
@@ -104,6 +112,8 @@ const SATURATION_PRESETS = [
 
 ];
 
+const EDITOR_RESUME_DRAFT_KEY = 'editorResumeDraft';
+
 const normalizeGridSize = (value: number) => {
 
   const safeValue = Number.isFinite(value) ? value : 52;
@@ -114,6 +124,223 @@ const normalizeGridSize = (value: number) => {
 
   return Math.min(GRID_SIZE_MAX, Math.max(GRID_SIZE_MIN, snapped));
 
+};
+
+const mapIndicesFromReferenceGrid = (
+  referenceData: BeadPixelData,
+  targetData: BeadPixelData,
+  referenceIndices: number[],
+  threshold: number = 0.18
+): number[] => {
+  if (
+    referenceData.width === targetData.width &&
+    referenceData.height === targetData.height
+  ) {
+    return referenceIndices;
+  }
+
+  const referenceSet = new Set(referenceIndices);
+  const mappedIndices: number[] = [];
+
+  for (let targetY = 0; targetY < targetData.height; targetY += 1) {
+    const refYStart = Math.floor((targetY / targetData.height) * referenceData.height);
+    const refYEnd = Math.max(
+      refYStart + 1,
+      Math.ceil(((targetY + 1) / targetData.height) * referenceData.height)
+    );
+
+    for (let targetX = 0; targetX < targetData.width; targetX += 1) {
+      const targetIndex = targetY * targetData.width + targetX;
+      if (!targetData.beads[targetIndex]) {
+        continue;
+      }
+
+      const refXStart = Math.floor((targetX / targetData.width) * referenceData.width);
+      const refXEnd = Math.max(
+        refXStart + 1,
+        Math.ceil(((targetX + 1) / targetData.width) * referenceData.width)
+      );
+
+      let total = 0;
+      let matched = 0;
+
+      for (let refY = refYStart; refY < refYEnd; refY += 1) {
+        for (let refX = refXStart; refX < refXEnd; refX += 1) {
+          const refIndex = refY * referenceData.width + refX;
+          if (!referenceData.beads[refIndex]) {
+            continue;
+          }
+          total += 1;
+          if (referenceSet.has(refIndex)) {
+            matched += 1;
+          }
+        }
+      }
+
+      if (total > 0 && matched / total >= threshold) {
+        mappedIndices.push(targetIndex);
+      }
+    }
+  }
+
+  return mappedIndices;
+};
+
+const collectManualLikeBackgroundRegion = (
+  beadData: BeadPixelData,
+  seedIndex: number,
+  strictThresholds: { seed: number; average: number; brightness: number } = { seed: 42, average: 34, brightness: 30 },
+  relaxedThresholds: { seed: number; average: number; brightness: number } = { seed: 60, average: 48, brightness: 42 },
+  minStrictRegionSize: number = 24
+): number[] => {
+  const seedBead = beadData.beads[seedIndex];
+  if (!seedBead) return [];
+
+  const { width, height, beads } = beadData;
+
+  const calcDistance = (source: [number, number, number], target: [number, number, number]) => {
+    const redDiff = source[0] - target[0];
+    const greenDiff = source[1] - target[1];
+    const blueDiff = source[2] - target[2];
+    return Math.sqrt(redDiff * redDiff + greenDiff * greenDiff + blueDiff * blueDiff);
+  };
+
+  const seedBrightness = (seedBead.rgb[0] + seedBead.rgb[1] + seedBead.rgb[2]) / 3;
+
+  const runFloodFill = (
+    seedDistanceThreshold: number,
+    averageDistanceThreshold: number,
+    brightnessTolerance: number
+  ): number[] => {
+    const visited = new Set<number>([seedIndex]);
+    const queue: number[] = [seedIndex];
+    const result: number[] = [];
+
+    let avgR = seedBead.rgb[0];
+    let avgG = seedBead.rgb[1];
+    let avgB = seedBead.rgb[2];
+    let acceptedCount = 1;
+
+    while (queue.length > 0) {
+      const index = queue.shift();
+      if (index === undefined) break;
+
+      const bead = beads[index];
+      if (!bead) continue;
+      result.push(index);
+
+      avgR = (avgR * acceptedCount + bead.rgb[0]) / (acceptedCount + 1);
+      avgG = (avgG * acceptedCount + bead.rgb[1]) / (acceptedCount + 1);
+      avgB = (avgB * acceptedCount + bead.rgb[2]) / (acceptedCount + 1);
+      acceptedCount += 1;
+
+      const x = index % width;
+      const y = Math.floor(index / width);
+      const neighbors = [
+        x > 0 ? index - 1 : -1,
+        x < width - 1 ? index + 1 : -1,
+        y > 0 ? index - width : -1,
+        y < height - 1 ? index + width : -1,
+        x > 0 && y > 0 ? index - width - 1 : -1,
+        x < width - 1 && y > 0 ? index - width + 1 : -1,
+        x > 0 && y < height - 1 ? index + width - 1 : -1,
+        x < width - 1 && y < height - 1 ? index + width + 1 : -1,
+      ];
+
+      neighbors.forEach((nextIndex) => {
+        if (nextIndex < 0 || visited.has(nextIndex)) return;
+        visited.add(nextIndex);
+
+        const nextBead = beads[nextIndex];
+        if (!nextBead) return;
+
+        const distanceToSeed = calcDistance(seedBead.rgb, nextBead.rgb);
+        const distanceToAverage = calcDistance([avgR, avgG, avgB], nextBead.rgb);
+        const nextBrightness = (nextBead.rgb[0] + nextBead.rgb[1] + nextBead.rgb[2]) / 3;
+        const brightnessDiff = Math.abs(seedBrightness - nextBrightness);
+
+        if (
+          (distanceToSeed <= seedDistanceThreshold || distanceToAverage <= averageDistanceThreshold) &&
+          brightnessDiff <= brightnessTolerance
+        ) {
+          queue.push(nextIndex);
+        }
+      });
+    }
+
+    return result;
+  };
+
+  const strictResult = runFloodFill(
+    strictThresholds.seed,
+    strictThresholds.average,
+    strictThresholds.brightness
+  );
+
+  if (strictResult.length >= minStrictRegionSize) {
+    return strictResult;
+  }
+
+  return runFloodFill(
+    relaxedThresholds.seed,
+    relaxedThresholds.average,
+    relaxedThresholds.brightness
+  );
+};
+
+const collectEdgeSeedBackgroundFallback = (beadData: BeadPixelData): number[] => {
+  const { width, height, beads } = beadData;
+  const activeCellCount = beads.reduce((count, bead) => (bead ? count + 1 : count), 0);
+  if (activeCellCount === 0) return [];
+
+  const edgeDepth = Math.min(3, height, width);
+  const horizontalStep = width <= 96 ? 3 : 4;
+  const verticalStep = height <= 160 ? 4 : 6;
+  const minRegionSize = Math.max(24, Math.round(activeCellCount * 0.006));
+  const acceptedRegions: number[][] = [];
+
+  const shouldMergeRegion = (region: number[]) => {
+    const regionSet = new Set(region);
+    return acceptedRegions.some((existing) => {
+      const overlap = existing.reduce((count, index) => (
+        regionSet.has(index) ? count + 1 : count
+      ), 0);
+      return overlap / Math.min(existing.length, region.length) >= 0.55;
+    });
+  };
+
+  const tryAddSeed = (index: number) => {
+    const bead = beads[index];
+    if (!bead) return;
+    const region = collectManualLikeBackgroundRegion(beadData, index);
+    if (region.length < minRegionSize) return;
+    if (shouldMergeRegion(region)) return;
+    acceptedRegions.push(region);
+  };
+
+  for (let y = 0; y < edgeDepth; y += 1) {
+    for (let x = 0; x < width; x += horizontalStep) {
+      tryAddSeed(y * width + x);
+      tryAddSeed((height - 1 - y) * width + x);
+    }
+  }
+
+  for (let x = 0; x < edgeDepth; x += 1) {
+    for (let y = 0; y < height; y += verticalStep) {
+      tryAddSeed(y * width + x);
+      tryAddSeed(y * width + (width - 1 - x));
+    }
+  }
+
+  const merged = new Set<number>();
+  acceptedRegions
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 6)
+    .forEach((region) => {
+      region.forEach((index) => merged.add(index));
+    });
+
+  return Array.from(merged);
 };
 
 
@@ -135,6 +362,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const containerRef = useRef<HTMLDivElement>(null);
 
   const interactiveCanvasRef = useRef<InteractiveCanvasHandle>(null);
+  const bgInteractiveCanvasRef = useRef<InteractiveCanvasHandle>(null);
 
   const savedScrollPosition = useRef<number>(0);
 
@@ -143,7 +371,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-  const stateData: EditorStateData = (location.state as EditorStateData) || {};
+  const navigationState = (location.state as (EditorStateData & { resumeStartMaking?: boolean }) | null) || {};
+  const stateData: EditorStateData = navigationState;
 
   const sessionData = React.useMemo<EditorStateData>(() => {
 
@@ -163,7 +392,25 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   }, []);
 
-  const mergedStateData = embeddedStateData ?? (stateData.imageData ? stateData : sessionData);
+  const pendingResumeDraft = React.useMemo<EditorResumeDraft | null>(() => {
+
+    try {
+
+      const stored = sessionStorage.getItem(EDITOR_RESUME_DRAFT_KEY);
+
+      if (stored) {
+
+        return JSON.parse(stored) as EditorResumeDraft;
+
+      }
+
+    } catch (e) {}
+
+    return null;
+
+  }, []);
+
+  const mergedStateData = embeddedStateData ?? (stateData.imageData ? stateData : pendingResumeDraft?.imageData ? pendingResumeDraft : sessionData);
 
   const { imageData, colorCount: initialColorCount, gridWidth: initialGridWidth, customColorIds } = mergedStateData;
 
@@ -171,9 +418,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const [gridSize, setGridSize] = useState(normalizeGridSize(initialGridWidth || 52));
   const [currentImageData, setCurrentImageData] = useState(imageData);
-  const [lastAiCutoutImageData, setLastAiCutoutImageData] = useState<string | null>(null);
   const [viewportWidth, setViewportWidth] = useState(
     typeof window !== 'undefined' ? window.innerWidth : 390
+  );
+  const [isCoarsePointer, setIsCoarsePointer] = useState(
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(pointer: coarse)').matches
+      : false
   );
 
   const [gridSizeInput, setGridSizeInput] = useState(String(normalizeGridSize(initialGridWidth || 52)));
@@ -182,17 +433,17 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const [simplifyLevel, setSimplifyLevel] = useState<number>(0);
 
-  const [saturationBoost, setSaturationBoost] = useState<number>(0);
+  const [saturationBoost, setSaturationBoost] = useState<number>(pendingResumeDraft?.saturationBoost || 0);
 
-  const [vibrancyPreference, setVibrancyPreference] = useState<number>(0);
+  const [vibrancyPreference, setVibrancyPreference] = useState<number>(pendingResumeDraft?.vibrancyPreference || 0);
 
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const [showStats, setShowStats] = useState(false);
 
   const [showColorPicker, setShowColorPicker] = useState(false);
 
   const [showPaletteSettings, setShowPaletteSettings] = useState(false);
+  const [showColorStyleSettings, setShowColorStyleSettings] = useState(false);
 
   const [useMyColors, setUseMyColors] = useState<boolean>(() => Boolean(customColorIds?.length));
 
@@ -208,20 +459,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [isEditPanelClosing, setIsEditPanelClosing] = useState(false);
-  const [replacedColors, setReplacedColors] = useState<Map<string, BeadColor>>(new Map());
   const [initialBeadData, setInitialBeadData] = useState<BeadPixelData | null>(null);
-  const [highlightedColorId, setHighlightedColorId] = useState<string | null>(null);
 
-  const [triedColorsMap, setTriedColorsMap] = useState<Map<string, string[]>>(new Map());
   const [showSaveModal, setShowSaveModal] = useState(false); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸閻忕偠顕ч埀顒佺箞閻涱喗绗熼埀顒勭嵁閹烘绠ｆ繝闈涙－濞笺儵姊婚崒娆戭槮闁圭⒈鍋婇幆澶嬬附缁嬭法鐛ラ梺鍝勭▉閸樺ジ鎷戦悢鍏肩厪濠电偟鍋撳▍鍡涙煕鐎ｎ亜顏柡灞剧☉閳藉顫滈崼婵嗩潬濠电偛顕崢褏鈧碍婢橀～蹇斻偊鐟併倓姹楅梺鍦劋缁诲啴藟閺嶎厽鈷戠紒瀣硶缁犳煡鏌ㄩ弴妯虹仼妞ゆ洩缍侀、鏇㈡晝閳ь剛绮绘繝姘仯闁搞儜鍐獓濡炪們鍎茬换鍫濐潖濞差亝顥堟繛鎴炶壘椤ｅ搫鈹戦埥鍡椾簼妞ゃ劌锕妴渚€寮崼婵嬪敹闂佸搫娲ㄩ崯鍧楀箯濞差亝鐓熼柣妯哄帠閼割亪鏌涢弬璺ㄧ劯鐎殿喗鎮傞獮瀣晜閻ｅ苯骞愰梺璇插嚱缂嶅棙绂嶉崼鏇熷亗闁稿繒鈷堝▓?
   const [isSaving, setIsSaving] = useState(false); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹诧紕鎷归敓鐘崇厱闊洦妫戦懓鍧楁寠閻斿吋鐓欓柟顖嗗懏鎲奸梺??
-  const [showShareModal, setShowShareModal] = useState(false); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹芥粎绮旈悜妯镐簻闁靛闄勫畷宀€鈧娲橀〃鍛达綖濠婂牆鐒垫い鎺嗗亾妞?
+
   const [showShoppingList, setShowShoppingList] = useState(false); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖骞戦幇闈涙缂佺虎鍘搁崑鎾绘⒒娴ｇ瓔娼愰柛搴″悑閹便劑濡舵径濠勶紵閻庡厜鍋撻柛鏇ㄥ墰閸樺崬鈹戦悙鏉戠仸闁挎洦鍋勯蹇涘Ψ閿旇桨绨婚棅顐㈡处閹搁箖宕洪敐鍡樺弿濠电姴鎳忛鐘绘煙閻熸澘顏┑鈩冩倐婵＄兘鏁傞崣銉ф晼婵犵數濮烽。钘壩ｉ崨鏉戠；闁告洦鍘搁崑鎾愁潩椤撶喓鍑￠梺浼欑悼閸忔﹢寮幘缁樺亹闁圭粯甯掔粊顕€姊绘笟鈧褏鎹㈤崱娑樼婵犻潧妫岄弸宥夋煏韫囧鈧牠鍩涢幋锔界厱婵犻潧妫楅鈺呮煃瑜滈崜娆撴偉閻撳海鏆﹂柟鐗堟緲閸愨偓濡炪倖鍔楅崰搴㈢閻愵剚鍙忔慨妤€妫楁晶鎵磼婢跺銇濋柡宀嬬磿娴狅妇鎷犻幓鎺濇綆闂備浇顕栭崰鎾诲垂閽樺鏆﹂柕濠忓缁♀偓闂佸憡娲︽禍鐐靛閸ф鈷?
-  const [excludedColorIds, setExcludedColorIds] = useState<Set<string>>(new Set()); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岋繝宕堕妷銉т患缂備讲鍋撻柛顐犲劜閻撶姵绻涢弶鎴剱婵炲懎娲ら—鍐喆閸曨偀鏋欓梺璇″枛閸㈡煡鍩㈡惔銈囩杸闁瑰灝鍟╅幃锝嗕繆閻愵亜鈧洜鎹㈤幇鐗堝亯闁绘挸瀵掑鏍煣韫囨凹娼愮€规洖顦甸弻鏇熺箾閸喖濮曢梺璇查叄缁犳牕顫忓ú顏勪紶闁告洟娼ч崜鏉款渻閵堝骸骞橀柛蹇旓耿閹即顢欑捄銊ф澑濠电偞鍨堕悷銉╁焵椤掆偓椤兘寮婚妶澶婄畳闁圭儤鍨垫慨鏇炩攽閻愬弶鍣烽柛銊ㄦ椤繐煤椤忓嫪绱堕梺鍛婃处閸嬧偓闁稿鎹囧畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕鐎ｎ偅灏い顐ｇ箞椤㈡宕掑┃鐐姂濮婅櫣娑甸崨顔惧涧缂備浇顕ч悧鎾荤嵁閸℃稑閱囬柕澶涚畱娴?
 
   const [showLoginModal, setShowLoginModal] = useState(false); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊﹀▕閸┾偓妞ゆ帒鍊归崵鈧柣搴㈠嚬閸樼晫绮╅悢鐓庡耿婵炲棙鍨归悡瀣⒑缁夊棗瀚峰▓鏇㈡煃闁垮鐏撮柟顔肩秺楠炰線骞掗幋婵愮€抽梻浣告惈椤戝棝宕归崸妤€钃熼柨娑樺閸嬫捇鏁愭惔婵囧枤闂佺粯鎸搁崥瀣€冮妷鈺傚€烽柤纰卞墰椤旀帡姊虹拠鈥虫灍缂侇喗鎹囬獮濠囨倷閸濆嫀銊╂煥閺冨倻鎽傚ù鐘欏洦鈷掗柛灞剧懅椤︼箓鏌熺喊鍗炰喊鐎规洘鍔欏畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕?
 
-  const [showSmartMerge, setShowSmartMerge] = useState(false);
 
   const [previewZoom, setPreviewZoom] = useState({ scale: 1, minScale: 1, maxScale: 1, fitScale: 1 });
 
@@ -230,6 +476,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const [isBackgroundMode, setIsBackgroundMode] = useState(false); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岋繝宕堕懜鐢电獧缂傚倸绉甸悧妤佺┍婵犲洤围闁告侗鍠栧▍锝囩磽娴ｆ彃浜鹃梺鍛婃处閸ㄩ亶鎮¤箛娑欑厱妞ゆ劧绲跨粻鏍ㄣ亜閵夛妇鐭嬮柕鍥у缁犳盯骞樼捄铏瑰幗婵犳鍠栭敃銊モ枍閿濆绠查柛鏇ㄥ灠鎯熼梺闈涱檧婵″洦绂嶉悙娴嬫斀闁绘ɑ顔栭弳顖涗繆閹绘帗鍤囩€规洩缍佸畷姗€顢欓幆褏銈﹀┑鐘灱濞夋稒寰勯崶顒€纾婚柟鍓х帛閺呮煡骞栫划鍏夊亾閼碱剛娉垮┑锛勫亼閸婃洜鎹㈤幇鐗堝亯闁绘挸瀵掑鏍煣韫囨凹娼愮€规洖顦甸弻鏇熺箾閸喖濮曢梺璇查叄缁犳牕顫忓ú顏勪紶闁告洟娼ч崜鏉款渻閵堝骸骞橀柛蹇旓耿閹即顢欑捄銊ф澑濠电偞鍨堕悷銉╁焵椤掆偓椤兘寮婚妶澶婄畳闁圭儤鍨垫慨鏇炩攽閻愬弶鍣烽柛銊ㄦ椤繐煤椤忓嫪绱堕梺鍛婃处閸嬧偓闁稿鎹囧畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕鐎ｎ偅灏い顐ｇ箞椤㈡宕掑┃鐐姂濮婃椽宕崟顕呮蕉闂佸憡姊归崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹诧紕鎷归敓鐘崇厱闊洦妫戦懓璺ㄢ偓娈垮枔閸斿秴顭囪箛娑辨晝闁靛繆鍓濋澶愭⒒?
   const [bgSelectedColorId, setBgSelectedColorId] = useState<string | null>(null); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛洦缍囬柕濞垮劜閻ｎ剟姊洪崣銉т覆缂傚秳绶氬璇差吋婢跺á銊╂煏婢诡垰绉剁粈濠勭磽娴ｉ缚妾搁柛妯绘倐瀹曟垿骞樼紒妯锋嫽闂佺鏈悷褏鎷规导瀛樼厱閻庯綆浜滈顓㈡寠濠靛鐓熼柕蹇嬪焺閻掗箖鏌＄€ｂ晝绐旈柡宀€鍠栭獮鎴﹀箛闂堟稒顔勯梻浣规た閸樹粙銆冮崱娑樜﹂柛鏇ㄥ灠缁犳盯鏌嶆潪鎷岊唹闁稿鎹囨俊鑸靛緞婵犲啳绶㈡繝鐢靛Т閿曘倝鎮ф繝鍥ㄥ亗婵炲棗娴氬〒濠氭倵閿濆簼閭い搴㈩殜閺屾稑螣缂佹ê鍞夐梺鍝勫閸撴繈骞忛崨顖涘枂闁告洦鍋嗛敍鎾绘煟鎼淬埄鍟忛柛锝庡櫍瀹曟粓鎮㈤梹鎰畾闂佸壊鍋呭ú鏍嵁閵忊€茬箚闁靛牆鎷戝妤冪磼閹插鐣垫慨濠勭帛閹峰懘宕崟顐＄帛婵犵數濮崑鎾绘煕濡ゅ啫鍓遍柣鏂挎閳?
   const [bgSelectedSeedIndex, setBgSelectedSeedIndex] = useState<number | null>(null);
+  const [bgManualSelections, setBgManualSelections] = useState<BackgroundManualSelection[]>([]);
 
   const [bgExcludedIndices, setBgExcludedIndices] = useState<Set<number>>(new Set()); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛洦缍囬柕濞垮劜閻ｎ剟姊洪崣銉т覆缂傚秳绶氬璇差吋婢跺á銊╂煏婢诡垰绉剁粈濠勭磽娴ｉ缚妾搁柛妯绘倐瀹曟垿骞樼紒妯锋嫽闂佺鏈悷锔剧矈閻楀牏绠惧璺侯儐缁€瀣偓瑙勬磻閸楀啿顕ｉ幘顔碱潊闁绘ɑ顔栧Σ鍫曟⒒娴ｇ鎮戠紒浣规尦瀵彃鈹戦崶銉ょ泊闂佽鍎兼慨銈夊磻閳╁啰绠鹃柛鈩冾殘缁犵増銇勮箛濠冩珕闁靛洤瀚粻娑㈠箻鐠鸿櫣鍘芥繝娈垮枛閿曘劌鈻嶉敐澶婄闁告洦鍨版儫闂侀潧顧€婵″洭鍩€椤掑嫮鐣烘慨濠冩そ瀹曨偊宕熼棃娑樺婵＄偑鍊ら崢楣冨礂濮椻偓閹即顢欑捄銊ф澑濠电偞鍨堕悷銉╁焵椤掆偓椤兘寮婚妶澶婄畳闁圭儤鍨垫慨鏇炩攽閻愬弶鍣烽柛銊ㄦ椤繐煤椤忓嫪绱堕梺鍛婃处閸嬧偓闁稿鎹囧畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕鐎ｎ偅灏い顐ｇ箞椤㈡宕掑┃鐐姂濮婃椽宕崟顕呮蕉闂佸憡姊归崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹芥粎绮旈悜妯镐簻闁靛闄勫畷宀€鈧娲橀〃鍛达綖濠婂牆鐒垫い鎺嗗亾妞ゆ洩缍侀、鏇㈡晝閳ь剛绮绘繝姘仯闁搞儜鍐獓濡炪們鍎茬换鍫濐潖濞差亝顥堟繛鎴炶壘椤ｅ搫鈹戦埥鍡椾簼妞ゃ劌锕妴??
   const [bgViewMode, setBgViewMode] = useState<BackgroundEditMode>('select');
@@ -240,12 +487,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const [bgProtectSubject, setBgProtectSubject] = useState(true);
   const [bgLastRemoval, setBgLastRemoval] = useState<RemovedBackgroundCell[]>([]);
   const [bgCandidateOnly, setBgCandidateOnly] = useState(false);
-  const [showBgAdvanced, setShowBgAdvanced] = useState(false);
   const [bgBaselineData, setBgBaselineData] = useState<BeadPixelData | null>(null);
   const [bgCompareMode, setBgCompareMode] = useState<'current' | 'before'>('current');
-  const [isBgAiCutoutLoading, setIsBgAiCutoutLoading] = useState(false);
-  const [showAiCutoutUnlockModal, setShowAiCutoutUnlockModal] = useState(false);
-  const pendingAiCutoutAfterRewardRef = useRef<(() => void) | null>(null);
+  const [bgPanMode, setBgPanMode] = useState(false);
+  const [resumeStartMakingAfterLogin, setResumeStartMakingAfterLogin] = useState(
+    pendingResumeDraft?.pendingAction === 'startMaking' || Boolean(navigationState.resumeStartMaking)
+  );
+  const restoredResumeDraftRef = useRef(false);
 
 
 
@@ -265,6 +513,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     initializeBeadData,
 
     setBeadData,
+
+    applyBeadDataChange,
 
     saveToHistory,
 
@@ -309,6 +559,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       vibrancyPreference?: number;
 
+      colorCount?: number;
+
+      customColorIds?: string[] | undefined;
+
     }
 
   ) => {
@@ -333,6 +587,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       const nextVibrancyPreference = overrides?.vibrancyPreference ?? vibrancyPreference;
 
+      const nextColorCount = overrides?.colorCount ?? colorCount;
+
+      const nextCustomColorIds = overrides?.customColorIds ?? activeCustomColorIds;
+
       const pixels = await pixelizeImage(currentImageData, {
 
         gridWidth: nextGridSize,
@@ -341,38 +599,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       });
 
-
-
-
-      const excludeList = Array.from(excludedColorIds);
-
-      if (activeCustomColorIds && activeCustomColorIds.length > 0) {
-
-
-        const customSet = new Set(activeCustomColorIds);
-
-        const { mardColors: allMard } = await import('../../data/beadColors');
-
-        allMard.forEach(c => {
-
-          if (!customSet.has(c.id) && !excludeList.includes(c.id)) {
-
-            excludeList.push(c.id);
-
-          }
-
-        });
-
-      }
-
       let beads = matchPixelsToBead(pixels, {
 
-        colorCount,
+        colorCount: nextColorCount,
 
         useLabSpace: true,           // 婵犵數濮烽弫鎼佸磻閻樿绠垫い蹇撴缁躲倝鏌﹀Ο渚▓闁绘帊绮欓弻銊╂偄閸濆嫅銏ゆ煛鐎ｂ晝绐旈柡宀€鍠栭獮鎴﹀箛闂堟稒顔勬繝纰樻閸嬪懘鏁冮姀銈呰摕闁哄洢鍨归柋鍥ㄧ節闂堟稒绁╂俊顐ゅ仜椤?Lab 闂傚倸鍊搁崐宄懊归崶銊х彾闁割偁鍎荤紞鏍ь熆閼搁潧濮堥柛瀣€块弻銊╂偄閸濆嫅銏ゆ煛鐎ｂ晝绐旈柡宀€鍠栭獮鍡氼槻妞わ絽纾惀顏堝箚瑜嬮崑銏ゆ煛瀹€瀣М妤犵偛娲、姘跺川椤旂晫妲ｉ梻鍌欐祰濡椼劎绮堟担琛″亾濮橆厽绶叉い顐㈢箲缁绘繂顫濋鍌︾床婵犵數濞€濞佳兠洪妶鍛鐟滃繒妲愰幘瀛樺濞寸姴顑呴幗鐢电磽娴ｇ瓔鍤欓柣妤佹尭椤曪絾绻濆顑┾晠鏌嶉崫鍕偓鍛婄濠婂牊鈷戦柛娑橈功閳藉鏌ㄩ弴顏堟閻庨潧銈稿畷鐔碱敍濞戞帗瀚奸柣鐔哥矌婢ф鏁埡浣勬盯骞嬮敂鐣屽幈闂婎偄娲﹀Λ鎴︽嚀鐠恒劉鍋撳▓鍨珮闁稿锕悰顔嘉熼崗鐓庣彴闂佸憡鐟ラˇ钘壩涢悢鍏尖拻濞撴埃鍋撴繛浣冲洦鍋嬮柛鈩冦亗濞戞鏃堝椽娴ｈ娅嗛梻浣稿閸嬪懎煤濮椻偓閸╂盯骞嬮敂钘変化闂佽鍘界敮鎺撲繆婵傚憡鐓涢悗锝庡亜閻忔挳鏌″畝瀣？闁逞屽墾缂嶅棙绂嶉崼鏇熷亗闁稿繒鈷堝▓浠嬫煟閹邦垰鐨虹紒鐘差煼閺岀喖顢欓悾宀€鐓夐梺鐟扮－閸嬨倖淇婇悜鑺ユ櫆缂佹稑顑勯幋鐑芥⒒閸屾艾鈧绮堟笟鈧獮鏍敃閿曗偓绾惧綊鏌涢锝嗙缁炬儳缍婇弻鈥愁吋鎼粹€茬爱闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噽椤︻參姊洪崨濠勬噧妞わ附婢橀埢宥夊箻缂佹ǚ鎷婚梺绋挎湰閼归箖鍩€椤掍焦鍊愰柟顔ㄥ洤绀冩い鏃囧亹閺屟冣攽閻樿宸ラ柟鍐差樀瀹曟垿骞橀幇浣瑰兊濡炪倖甯掗崐缁橆殭闂?
         saturationBoost: nextSaturationBoost,             // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇顓熷弿濠电姴瀚崝瀣煥濞戞瑥濮堥柟宄版嚇閹煎綊鐛崹顔荤敾婵犵绱曢崑鎴﹀磹閺嵮屾綎鐟滅増甯掔粈澶嬬箾閸℃ɑ灏电€规挷绶氶悡顐﹀炊閵娧€濮囬梺绋匡工椤兘寮婚妶澶婄畳闁圭儤鍨垫慨鏇炩攽閻愬弶鍣烽柛銊ㄦ椤繐煤椤忓嫪绱堕梺鍛婃处閸嬧偓闁稿鎹囧畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕??
         vibrancyPreference: nextVibrancyPreference,          // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛袦濡炪們鍨哄ú鐔笺€侀弴顫稏妞ゆ挾鍋涘В鎰攽閿涘嫬浜奸柛濠冪墪椤繗銇愰幒鎴狀槷濠电偛妫欓幐鎯х暤娓氣偓閻擃偊宕堕妸锕€鏆楅梺鍝勬椤戝懓鐏嬫俊顐︻暒濞村洭宕楀畝鍕厱??
-        excludeColors: excludeList,  // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岋繝宕堕妷銉т患缂備讲鍋撻柛顐犲劜閻撶姵绻涢弶鎴剱婵炲懎娲ら—鍐喆閸曨偀鏋欓梺璇″枛閸㈡煡鍩㈡惔銈囩杸闁瑰灝鍟╅幃锝嗕繆閻愵亜鈧洜鎹㈤幇鐗堝亯闁绘挸瀵掑鏍煣韫囨凹娼愮€规洖顦甸弻鏇熺箾閸喖濮曢梺璇查叄缁犳牕顫忓ú顏勪紶闁告洟娼ч崜鏉款渻閵堝骸骞橀柛蹇旓耿閹即顢欑捄銊ф澑濠电偞鍨堕悷銉╁焵椤掆偓椤兘寮婚妶澶婄畳闁圭儤鍨垫慨鏇炩攽閻愬弶鍣烽柛銊ㄦ椤繐煤椤忓嫪绱堕梺鍛婃处閸嬧偓闁稿鎹囧畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕??
       });
 
 
@@ -434,14 +667,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-      if (!isRegenerate) {
-
-        setReplacedColors(new Map());
-
-      }
-
-
-
     } catch (error) {
 
       console.error('生成图案失败:', error);
@@ -466,7 +691,92 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [currentImageData, gridSize, colorCount, simplifyLevel, saturationBoost, vibrancyPreference, excludedColorIds, activeCustomColorIds, initializeBeadData, currentColor, setCurrentColor]);
+  }, [currentImageData, gridSize, colorCount, simplifyLevel, saturationBoost, vibrancyPreference, activeCustomColorIds, initializeBeadData, currentColor, setCurrentColor]);
+
+  const buildBackgroundDetectionData = useCallback(async (): Promise<BeadPixelData | null> => {
+    if (!currentImageData || !beadData) {
+      return beadData ?? null;
+    }
+
+    const detectionGridWidth = Math.max(
+      beadData.width,
+      Math.min(GRID_SIZE_MAX, BACKGROUND_DETECTION_MIN_WIDTH)
+    );
+
+    if (detectionGridWidth <= beadData.width) {
+      return beadData;
+    }
+
+    const pixels = await pixelizeImage(currentImageData, {
+      gridWidth: detectionGridWidth,
+      keepAspectRatio: true,
+    });
+
+    let detectionBeads = matchPixelsToBead(pixels, {
+      colorCount,
+      useLabSpace: true,
+      saturationBoost,
+      vibrancyPreference,
+    });
+
+    if (simplifyLevel > 0) {
+      const stats = calculateBeadStatistics(detectionBeads);
+      const currentColorCount = stats.length;
+      const minColors = 5;
+      const targetColors = Math.max(
+        minColors,
+        Math.round(currentColorCount * (1 - simplifyLevel / 120))
+      );
+
+      if (targetColors < currentColorCount) {
+        detectionBeads = reduceColors(detectionBeads, targetColors, allBeadColors);
+      }
+    }
+
+    return detectionBeads;
+  }, [beadData, colorCount, currentImageData, simplifyLevel, saturationBoost, vibrancyPreference]);
+
+  const detectQuickBackgroundSuggestion = useCallback(async () => {
+    if (!beadData) return null;
+
+    const detectionData = await buildBackgroundDetectionData();
+    if (!detectionData) return null;
+
+    const suggestion = suggestQuickBackgroundRemoval(detectionData, bgAutoStrength, {
+      protectSubject: bgProtectSubject,
+    });
+
+    if (!suggestion || suggestion.indices.length === 0) {
+      return null;
+    }
+
+    const mappedIndices = mapIndicesFromReferenceGrid(detectionData, beadData, suggestion.indices);
+    const activeCellCount = beadData.beads.reduce(
+      (count, bead) => (bead ? count + 1 : count),
+      0
+    );
+    const tinyMappedRegionThreshold = Math.max(12, Math.round(activeCellCount * 0.0025));
+    const effectiveIndices =
+      mappedIndices.length <= tinyMappedRegionThreshold
+        ? collectEdgeSeedBackgroundFallback(beadData)
+        : mappedIndices;
+
+    if (effectiveIndices.length === 0) {
+      return null;
+    }
+
+    const regionCoverage = activeCellCount > 0 ? effectiveIndices.length / activeCellCount : 0;
+
+    return {
+      ...suggestion,
+      indices: effectiveIndices,
+      regionCoverage,
+      reason:
+        effectiveIndices !== mappedIndices
+          ? '已按边缘背景色自动扩张候选背景，适合先去掉大面积外部背景，再手动补剩余边角。'
+          : suggestion.reason,
+    };
+  }, [beadData, bgAutoStrength, bgProtectSubject, buildBackgroundDetectionData]);
 
 
 
@@ -475,6 +785,57 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     initUser();
 
   }, [initUser]);
+
+
+
+  useEffect(() => {
+
+    if (restoredResumeDraftRef.current || !pendingResumeDraft?.beadData || beadData) {
+
+      return;
+
+    }
+
+    restoredResumeDraftRef.current = true;
+    initializedImageDataRef.current = pendingResumeDraft.imageData;
+    initializeBeadData(pendingResumeDraft.beadData);
+
+    if (pendingResumeDraft.initialBeadData) {
+
+      setInitialBeadData(JSON.parse(JSON.stringify(pendingResumeDraft.initialBeadData)));
+
+    } else {
+
+      setInitialBeadData(JSON.parse(JSON.stringify(pendingResumeDraft.beadData)));
+
+    }
+
+  }, [beadData, initializeBeadData, pendingResumeDraft]);
+
+
+
+  useEffect(() => {
+
+    if (!isLoggedIn || !resumeStartMakingAfterLogin || !beadData || showSaveModal) {
+
+      return;
+
+    }
+
+    setResumeStartMakingAfterLogin(false);
+    setShowSaveModal(true);
+
+    try {
+
+      sessionStorage.removeItem(EDITOR_RESUME_DRAFT_KEY);
+
+    } catch (e) {
+
+      console.warn('清理编辑器恢复草稿失败:', e);
+
+    }
+
+  }, [beadData, isLoggedIn, resumeStartMakingAfterLogin, showSaveModal]);
 
 
 
@@ -707,190 +1068,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-  const handleStatsColorClick = (color: BeadColor) => {
 
-    if (highlightedColorId === color.id) {
-
-      setHighlightedColorId(null);
-
-    } else {
-
-      setHighlightedColorId(color.id);
-
-    }
-
-  };
-
-
-
-
-
-  const handleReplaceColor = useCallback((colorId: string) => {
-
-    if (!beadData) return;
-
-
-
-
-    const currentColorObj = allBeadColors.find(c => c.id === colorId);
-
-    if (!currentColorObj) return;
-
-
-
-    const initialColor = replacedColors.get(colorId) || currentColorObj;
-
-    const initialColorId = initialColor.id;
-
-
-
-    const triedColors = triedColorsMap.get(initialColorId) || [initialColorId];
-
-
-
-    const nextColor = findNextSimilarColor(colorId, triedColors);
-
-
-
-    if (nextColor) {
-
-      const newBeadData = replaceColor(beadData, colorId, nextColor);
-
-      setBeadData(newBeadData);
-
-
-
-
-      setReplacedColors(prev => {
-
-        const next = new Map(prev);
-
-        next.delete(colorId); // 闂傚倸鍊搁崐椋庣矆娓氣偓楠炲鏁嶉崟顒佹闂佺粯鍔曢顓犵不妤ｅ啯鐓冪憸婊堝礈閻旂厧钃熼柍鈺佸暞婵挳鎮峰▎蹇擃仼缁剧偓濞婇幃妤€鈻撻崹顔界彯闂佸憡鎸鹃崰鎰┍婵犲洤閱囬柡鍥╁仜閼板灝鈹戞幊閸婃洟鏁冮敐鍥潟闁挎洖鍊归埛鎺楁煕鐏炲墽鎳勭紒浣哄缁绘稒寰勭€ｎ偆顦伴悗瑙勬磻閸楁娊鐛Ο鍏煎珰闁肩⒈鍓﹂弨銊╂煟鎼淬値娼愭繛鍙夌墪鐓ら柕鍫濐槸閸戠娀鏌涢锝囩闁绘柨妫濋幃瑙勬姜閹峰矈鍔呴梺绋块缁绘垿濡甸崟顔剧杸闁规崘娉涢悡鐔兼⒑閸濆嫮鐒跨紒缁樼箓閻ｇ兘鎮㈢喊杈ㄦ櫍闂佺粯鍔忛弲婊堟倵娴煎瓨鈷掑ù锝堝Г閵嗗啴鏌ｉ幒鐐电暤妤犵偞鍨垮畷鎯邦檨闁搞倖娲橀妵鍕箳閹存繍浠奸柛銉︽尦濮婅櫣鍖栭弴鐐测拤濡炪們鍔岀换鎴犫偓?
-
-        next.set(nextColor.id, initialColor); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戠痪顓炴噺閻濐亞绱掔拠鑼ⅵ妤犵偛妫濆畷濂稿Ψ閿曗偓娴?-> 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊﹀▕閸┾偓妞ゆ帒鍊归崵鈧柣搴㈢煯閸楀啿鐣烽幋鐐电瘈闁稿被鍊楅崝宄扳攽鎺抽崐鏇㈠箠韫囨稑鐓曢柟杈鹃檮閸嬶綁鏌熼鐔风瑨濠碘€炽偢閺岋紕鈧綆鍋勯悘鎾煛瀹€瀣？闁逞屽墾缂嶅棙绂嶉崼鏇熷亗闁稿繒鈷堝▓浠嬫煟閹邦垰鐨虹紒鐘差煼閺岀喖顢欓崗鐓庝淮濡炪們鍨虹粙鎴︼綖濠靛绀傜痪鎷岄哺椤?
-
-        return next;
-
-      });
-
-
-
-      setTriedColorsMap(prev => {
-
-        const next = new Map(prev);
-
-        const tried = [...triedColors, nextColor.id];
-
-        next.set(initialColorId, tried);
-
-        return next;
-
-      });
-
-
-
-      setHighlightedColorId(null);
-
-
-
-      saveToHistory();
-
-    }
-
-  }, [beadData, replacedColors, triedColorsMap, setBeadData, saveToHistory]);
-
-
-
-  const handleRestoreColor = useCallback((colorId: string) => {
-
-    const initial = replacedColors.get(colorId);
-
-    if (!initial || !beadData) return;
-
-
-
-    const newBeadData = replaceColor(beadData, colorId, initial);
-
-    setBeadData(newBeadData);
-
-
-
-    setReplacedColors(prev => {
-
-      const next = new Map(prev);
-
-      next.delete(colorId);
-
-      return next;
-
-    });
-
-
-
-    setTriedColorsMap(prev => {
-
-      const next = new Map(prev);
-
-      next.delete(initial.id);
-
-      return next;
-
-    });
-
-
-
-
-    setHighlightedColorId(null);
-
-
-
-    saveToHistory();
-
-  }, [beadData, replacedColors, setBeadData, saveToHistory]);
-
-
-
-  const handleRestoreAll = useCallback(() => {
-
-    if (!initialBeadData) return;
-
-
-
-    const restoredData = JSON.parse(JSON.stringify(initialBeadData));
-
-    initializeBeadData(restoredData);
-
-    setReplacedColors(new Map());
-
-    setTriedColorsMap(new Map()); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹芥粎绮旈悜妯镐簻闁靛闄勫畷宀€鈧鍠氱划顖氼嚗閸曨垰绠涙い鎾跺仜婢瑰嫭淇婇悙顏勨偓鏍箰閸洖鍨傛繛宸簼閸嬪倿鏌曟径鍡樻珕闁绘挾鍠栭弻锟犲磼濞戞﹩鍤嬮梺鍝ュ枔閸嬨倝寮婚敐鍫㈢杸闁挎繂鎳忛悵婵嬫⒑閸濆嫮鐏遍柛鐘崇墵楠炲啫顭ㄩ崨顖炩攺闁诲函缍嗛崑鎺懳涢弽顓熲拺閻犲洤寮堕崬澶嬨亜椤愩埄妲圭紒缁樼⊕缁绘繈宕惰閹??
-    setHighlightedColorId(null); // 闂傚倸鍊搁崐椋庣矆娓氣偓楠炲鏁撻悩鍐蹭画闂佹寧娲栭崐褰掑磻鐎ｎ喗鐓熸俊顖涱儥閸ゆ瑩鏌＄€ｂ晝绐旈柡宀€鍠栭獮鎴﹀箛闂堟稒顔勬繝纰樻閸嬪懘鏁冮姀銈呰摕闁哄洢鍨归柋鍥ㄧ節闂堟稒绁╂俊顐ゅ仜椤啴濡堕崨顖滎唶闂佺粯鐗滈崢褔锝炶箛娑欐優閻熸瑥瀚壕顖炴⒑闂堟侗鐒鹃柛搴㈢叀閹銈ｉ崘鈹炬嫼闂佸憡绻傜€氱兘宕曡箛鏂讳簻妞ゆ挾濮撮崢鎾煟濞戝崬鏋︾紒鐘崇☉閳藉鈻庤箛濠備壕濠电姵纰嶉悡鐘绘煙椤撶喎绗掗柛鏃€绮嶇换娑㈠川椤愩垻浼堝┑顔硷攻濡炶棄鐣烽锕€绀嬫い鎰枎娴滈箖鏌涢锝嗙缁炬儳缍婇弻鈥愁吋鎼粹€茬爱闂?
-
-  }, [initialBeadData, initializeBeadData]);
-
-
-
-
-  const handleToggleExcludeColor = useCallback((colorId: string) => {
-
-    setExcludedColorIds(prev => {
-
-      const next = new Set(prev);
-
-      if (next.has(colorId)) {
-
-        next.delete(colorId);
-
-      } else {
-
-        next.add(colorId);
-
-      }
-
-      return next;
-
-    });
-
-  }, []);
 
 
 
@@ -906,6 +1084,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     setBgSelectedColorId(null);
     setBgSelectedSeedIndex(null);
+    setBgManualSelections([]);
 
     setBgExcludedIndices(new Set());
     setBgAutoIndices([]);
@@ -914,12 +1093,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setBgAutoStrength(55);
     setBgProtectSubject(true);
     setBgCandidateOnly(false);
-    setShowBgAdvanced(false);
     setBgCompareMode('current');
+    setBgPanMode(false);
 
     setBgViewMode('select'); // 婵犵數濮甸鏍窗濡ゅ啯鏆滄俊銈呭暟閻瑩鏌熼悜姗嗘畷闁哄懏绻堥弻鏇＄疀鐎ｎ亖鍋撻弴銏犲嚑濞撴埃鍋撻柡宀€鍠栭獮鎴﹀箛闂堟稒顔勬繝纰樻閸嬪懘鏁冮姀銈呰摕闁哄洢鍨归柋鍥ㄧ節闂堟稒绁╂俊顐ゅ仜椤啴濡堕崨顖滎唶闂佺粯鐗滈崢褔锝炶箛鎾佹椽顢斿鍡樻珖闂備線娼х换鍡涘疾濠婂牆鐓濋柛顐犲劜閳锋垿寮堕悙鏉戭棆闁告柨绉归弻鐔兼偡閻楀牊鎮欏銈嗘穿缂嶄線銆佸Δ鍛妞ゆ劕鐟崶銊у幈闂佹枼鏅涢崰姘枔閵忕妴褰掑礂閸忕厧纰嶉梺瀹狀潐閸ㄥ潡宕洪妷鈺佸耿婵°倕鍟╃划鎾⒒娓氣偓閳ь剛鍋涢懟顖涙櫠椤斿墽妫紓浣靛灩楠炴ɑ绻涢幋鐘虫毈闁糕斁鍋?
 
-    setHighlightedColorId(null); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇娴滄鏌熼懝鐗堝涧缂佽鲸娲熷濂稿焵椤掆偓閳规垿鏁嶉崟顐℃澀闂佺顭堥崐婵嗙暦閵忋倖鍋╅悘鐐靛亾濞堟澘鈹戞幊閸婃洟宕悩璇茬；闁圭偓鍓氬鈺傘亜閹烘垵鈧粯顨欓梻??
   }, [beadData]);
 
 
@@ -930,6 +1108,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     setBgSelectedColorId(null);
     setBgSelectedSeedIndex(null);
+    setBgManualSelections([]);
 
     setBgExcludedIndices(new Set());
     setBgAutoIndices([]);
@@ -940,6 +1119,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setBgCandidateOnly(false);
     setBgCompareMode('current');
     setBgBaselineData(null);
+    setBgPanMode(false);
 
     setBgViewMode('select');
 
@@ -956,9 +1136,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     if (!bead) return; // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绋撴晶妤冩暜閳ュ磭鏆﹂柟杈剧畱缁犲鏌涢敂璇插箻闁哄顭堥埞鎴︽倷閺夋垹浠搁梺鑽ゅ櫐缁犳垿鍩㈠澶婎潊闁靛牆妫岄幏娲⒑閸涘﹦绠撻悗姘煎墴閸┾偓妞ゆ巻鍋撻柣鏍帶閻ｇ兘骞囬弶鍨敤濡炪倖鍔楅崰搴㈢閻愵剚鍙忔慨妤€妫楁晶鎵磼婢跺銇濋柡宀嬬磿娴狅妇鎷犻幓鎺濇綆闂備浇顕栭崰鎾诲垂閽樺鏆﹂柕濠忓缁♀偓闂佸憡娲︽禍鐐靛閸ф鈷掗柛灞剧懅椤︼妇绱撳鍜冭含閽樼喖鏌熼幑鎰靛殭缂佲偓閸屾稒鍙忔俊鐐额嚙娴滈箖鎮楀▓鍨珮闁稿锕悰顔嘉熼崗鐓庣彴闂佸憡鐟ラˇ钘壩涢悢鍏尖拻濞撴埃鍋撴繛浣冲洦鍋嬮柛鈩冦亗濞戞鏃堝椽娴ｈ娅嗛梻浣稿閸嬪懎煤濮椻偓閸╂盯骞嬮敂钘変化闂佽鍘界敮鎺撲繆婵傚憡鐓涢悗锝庡亜閻忔挳鏌″畝瀣？闁逞屽墾缂嶅棙绂嶉崼鏇熷亗闁稿繒鈷堝▓??
     setBgSelectedColorId(bead.id);
     setBgSelectedSeedIndex(index);
+    setBgManualSelections((prev) => {
+      if (prev.some((item) => item.seedIndex === index)) {
+        return prev;
+      }
+      return [...prev, { seedIndex: index, colorId: bead.id }];
+    });
     setBgSelectionSource('manual');
     setBgAutoIndices([]);
-    setBgDetectionMessage('已开启连片选背景，只会圈选与你点击位置连通的同色区域。');
+    setBgDetectionMessage('');
+    setBgPanMode(false);
 
     setBgExcludedIndices(new Set()); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娿儙鏃堟偐闂堟稐绮堕梺鎸庢处娴滎亜顕ｉ锕€绀冩い鏃囧亹閿涙粌鈹戦悙鏉戠仸闁荤噦绠撻、鏃堟偄閸忓皷鎷绘繛杈剧到閹诧繝骞嗛崼銉︾厱濠电姴鍊婚崺锝団偓瑙勬礃閸旀瑥顕ｆ禒瀣垫晝闁绘棁娓规竟鏇炩攽椤旀枻渚涢柛鎾寸〒缁棃鎼归崗澶婁壕婵炲牆鐏濆▍姗€鏌涢幘瀵告噰闁炽儻绠撴俊鎼佸煛娓氣偓閸炲爼姊虹紒妯荤叆闁硅绻濋、?
   }, [beadData]);
@@ -998,39 +1185,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     const seedBead = beadData.beads[seedIndex];
     if (!seedBead || seedBead.id !== colorId) return [];
 
-    const visited = new Set<number>([seedIndex]);
-    const queue: number[] = [seedIndex];
-    const result: number[] = [];
-    const { width, height, beads } = beadData;
-
-    while (queue.length > 0) {
-      const index = queue.shift();
-      if (index === undefined) break;
-
-      const bead = beads[index];
-      if (!bead || bead.id !== colorId) continue;
-      result.push(index);
-
-      const x = index % width;
-      const y = Math.floor(index / width);
-      const neighbors = [
-        x > 0 ? index - 1 : -1,
-        x < width - 1 ? index + 1 : -1,
-        y > 0 ? index - width : -1,
-        y < height - 1 ? index + width : -1,
-      ];
-
-      neighbors.forEach((nextIndex) => {
-        if (nextIndex < 0 || visited.has(nextIndex)) return;
-        visited.add(nextIndex);
-        const nextBead = beads[nextIndex];
-        if (nextBead && nextBead.id === colorId) {
-          queue.push(nextIndex);
-        }
-      });
-    }
-
-    return result;
+    return collectManualLikeBackgroundRegion(beadData, seedIndex);
 
   }, [beadData]);
 
@@ -1044,9 +1199,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       return bgAutoIndices.filter((index) => !bgExcludedIndices.has(index));
     }
 
-    if (bgSelectionSource === 'manual' && bgSelectedColorId && bgSelectedSeedIndex !== null) {
-      return collectConnectedManualBgIndices(bgSelectedSeedIndex, bgSelectedColorId)
-        .filter((index) => !bgExcludedIndices.has(index));
+    if (bgSelectionSource === 'manual' && bgManualSelections.length > 0) {
+      const merged = new Set<number>();
+      bgManualSelections.forEach(({ seedIndex, colorId }) => {
+        collectConnectedManualBgIndices(seedIndex, colorId).forEach((index) => {
+          if (!bgExcludedIndices.has(index)) {
+            merged.add(index);
+          }
+        });
+      });
+      return Array.from(merged);
     }
 
     if (!bgSelectedColorId) return [];
@@ -1067,7 +1229,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       .map(({ index }) => index);
 
-  }, [beadData, bgSelectedColorId, bgSelectedSeedIndex, bgExcludedIndices, bgAutoIndices, bgSelectionSource, collectConnectedManualBgIndices]);
+  }, [beadData, bgSelectedColorId, bgSelectedSeedIndex, bgExcludedIndices, bgAutoIndices, bgSelectionSource, bgManualSelections, collectConnectedManualBgIndices]);
 
 
 
@@ -1098,11 +1260,13 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     setBgSelectedColorId(null);
     setBgSelectedSeedIndex(null);
+    setBgManualSelections([]);
 
     setBgExcludedIndices(new Set());
     setBgAutoIndices([]);
     setBgSelectionSource(null);
     setBgDetectionMessage('');
+    setBgPanMode(false);
 
   }, [beadData, getBgHighlightedIndices, setBeadData, saveToHistory]);
 
@@ -1112,24 +1276,25 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     setBgSelectedColorId(null);
     setBgSelectedSeedIndex(null);
+    setBgManualSelections([]);
 
     setBgExcludedIndices(new Set());
     setBgAutoIndices([]);
     setBgSelectionSource(null);
     setBgDetectionMessage('');
+    setBgPanMode(false);
 
   }, []);
 
   const handleBgSwitchMode = useCallback((mode: BackgroundEditMode) => {
     const nextMode = bgViewMode === mode ? 'select' : mode;
-    if (nextMode !== 'select') {
-      setShowBgAdvanced(true);
-    }
+    setBgPanMode(false);
     setBgViewMode(nextMode);
 
     if (nextMode === 'erase') {
       setBgSelectedColorId(null);
       setBgSelectedSeedIndex(null);
+      setBgManualSelections([]);
       setBgExcludedIndices(new Set());
       setBgAutoIndices([]);
       setBgSelectionSource(null);
@@ -1140,6 +1305,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     if (nextMode === 'restore') {
       setBgSelectedColorId(null);
       setBgSelectedSeedIndex(null);
+      setBgManualSelections([]);
       setBgExcludedIndices(new Set());
       setBgAutoIndices([]);
       setBgSelectionSource(null);
@@ -1155,34 +1321,83 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setBgDetectionMessage('');
   }, [bgViewMode]);
 
-  const handleBgEnableManualSelect = useCallback(() => {
-    setShowBgAdvanced(true);
-    setBgViewMode('select');
-    setBgDetectionMessage((prev) => prev || '点击背景边缘的格子，只会圈选与该点连通的同色区域。');
-  }, []);
+  const handleBgUndoStep = useCallback(() => {
+    setBgPanMode(false);
 
-  const handleBgQuickRemove = useCallback(() => {
+    if (bgSelectionSource === 'manual' && bgManualSelections.length > 0) {
+      setBgManualSelections((prev) => {
+        if (prev.length === 0) {
+          return prev;
+        }
 
-    if (!beadData) return;
-
-    const suggestion = suggestQuickBackgroundRemoval(beadData, bgAutoStrength, {
-      protectSubject: bgProtectSubject,
-    });
-
-    if (!suggestion || suggestion.indices.length === 0) {
-      toast.warning('这张图暂时没有识别到可一键去掉的简单背景，可尝试手动选择或智能抠图。');
+        const next = prev.slice(0, -1);
+        const last = next[next.length - 1] ?? null;
+        setBgSelectedSeedIndex(last?.seedIndex ?? null);
+        setBgSelectedColorId(last?.colorId ?? null);
+        setBgSelectionSource(next.length > 0 ? 'manual' : null);
+        setBgDetectionMessage('');
+        return next;
+      });
       return;
     }
 
-    if (suggestion.aiRecommended) {
+    if (bgSelectionSource === 'auto' && bgAutoIndices.length > 0) {
+      setBgSelectedColorId(null);
+      setBgSelectedSeedIndex(null);
+      setBgManualSelections([]);
+      setBgExcludedIndices(new Set());
+      setBgAutoIndices([]);
+      setBgSelectionSource(null);
+      setBgDetectionMessage('');
+      return;
+    }
+
+    if (canUndo) {
+      undo();
+      setBgSelectedColorId(null);
+      setBgSelectedSeedIndex(null);
+      setBgManualSelections([]);
+      setBgExcludedIndices(new Set());
+      setBgAutoIndices([]);
+      setBgSelectionSource(null);
+      setBgDetectionMessage('');
+      setBgLastRemoval([]);
+    }
+  }, [bgSelectionSource, bgManualSelections, bgAutoIndices, canUndo, undo]);
+
+  const handleBgTogglePanMode = useCallback(() => {
+    setBgPanMode((prev) => {
+      const next = !prev;
+      setBgDetectionMessage(
+        next
+          ? '已开启移动视图，可直接拖动画面查看别的位置。'
+          : ''
+      );
+      return next;
+    });
+  }, []);
+
+  const handleBgQuickRemove = useCallback(async () => {
+
+    if (!beadData) return;
+
+    const suggestion = await detectQuickBackgroundSuggestion();
+
+    if (!suggestion || suggestion.indices.length === 0) {
+      toast.warning('这张图暂时没有识别到可一键去掉的简单背景，可尝试手动选择或点格擦除。');
+      return;
+    }
+
+    if (suggestion.confidence < 0.38 || suggestion.regionCoverage < 0.03 || suggestion.regionCoverage > 0.78) {
       setBgSelectionSource('auto');
       setBgAutoIndices(suggestion.indices);
       setBgExcludedIndices(new Set());
-       setBgSelectedColorId(suggestion.primaryColorId);
-       setBgSelectedSeedIndex(null);
+      setBgSelectedColorId(suggestion.primaryColorId);
+      setBgSelectedSeedIndex(null);
       setBgDetectionMessage(`已圈出候选背景 ${suggestion.indices.length} 格。${suggestion.reason}`);
+      setBgPanMode(false);
       setBgViewMode('select');
-      toast.info('这张图背景较复杂，建议使用智能抠图，再按需要手动微调。');
+      toast.info('这张图背景较复杂，建议直接继续手动微调。');
       return;
     }
 
@@ -1202,100 +1417,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setBgSelectedColorId(null);
     setBgSelectedSeedIndex(null);
     setBgDetectionMessage(`已自动去掉 ${suggestion.indices.length} 格背景。`);
+    setBgPanMode(false);
     toast.success(`已自动去掉 ${suggestion.indices.length} 格背景。`);
 
-  }, [beadData, bgAutoStrength, bgProtectSubject, saveToHistory, setBeadData, toast]);
-
-  const runBgAiCutout = useCallback(() => {
-    if (!currentImageData) {
-      showAlert('当前没有可处理的原图，请先返回上一步重新导入图片。', {
-        type: 'warning',
-        title: '无法开始智能抠图',
-      });
-      return;
-    }
-
-    setIsBgAiCutoutLoading(true);
-    requestAiCutout({
-      imageData: currentImageData,
-      mode: 'foreground-segmentation',
-    })
-      .then((result) => {
-        initializedImageDataRef.current = null;
-        setLastAiCutoutImageData(currentImageData);
-        setCurrentImageData(result.imageData);
-        handleExitBackgroundMode();
-        toast.success('智能抠图已应用，正在重新生成图案。');
-      })
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : '智能抠图处理失败，请稍后重试。';
-        showAlert(message, {
-          type: 'error',
-          title: '智能抠图失败',
-        });
-      })
-      .finally(() => {
-        setIsBgAiCutoutLoading(false);
-      });
-  }, [currentImageData, handleExitBackgroundMode, showAlert, toast]);
-
-  const handleBgAiCutout = useCallback(() => {
-    const status = getAiCutoutAvailability();
-
-    if (status.available) {
-      const decision = adService.getAiCutoutDecision();
-      if (!decision.allowed) {
-        pendingAiCutoutAfterRewardRef.current = () => {
-          const unlockedDecision = adService.getAiCutoutDecision();
-          if (unlockedDecision.allowed) {
-            adService.recordAiCutoutOpened(unlockedDecision.channel);
-          }
-          runBgAiCutout();
-        };
-        setShowAiCutoutUnlockModal(true);
-        return;
-      }
-
-      adService.recordAiCutoutOpened(decision.channel);
-      runBgAiCutout();
-      return;
-    }
-
-    showAlert(
-      <div style={styles.aiCutoutStatusContent}>
-        <p style={styles.aiCutoutStatusParagraph}>{status.description}</p>
-        <div style={styles.aiCutoutStatusCard}>
-          <div style={styles.aiCutoutStatusRow}>
-            <span style={styles.aiCutoutStatusLabel}>服务供应商</span>
-            <span style={styles.aiCutoutStatusValue}>{status.providerLabel}</span>
-          </div>
-          <div style={styles.aiCutoutStatusRow}>
-            <span style={styles.aiCutoutStatusLabel}>推荐解锁方式</span>
-            <span style={styles.aiCutoutStatusValue}>{status.recommendedEntryLabel}</span>
-          </div>
-          <div style={styles.aiCutoutStatusRow}>
-            <span style={styles.aiCutoutStatusLabel}>当前状态</span>
-            <span style={styles.aiCutoutStatusValue}>{status.available ? '已就绪' : '尚未接通'}</span>
-          </div>
-        </div>
-        <p style={styles.aiCutoutStatusNext}>{status.nextStep}</p>
-      </div>,
-      {
-        type: 'info',
-        title: status.title,
-      }
-    );
-  }, [runBgAiCutout, showAlert]);
-
-  const handleRestoreAiCutoutSource = useCallback(() => {
-    if (!lastAiCutoutImageData) return;
-
-    initializedImageDataRef.current = null;
-    setCurrentImageData(lastAiCutoutImageData);
-    setLastAiCutoutImageData(null);
-    setBgLastRemoval([]);
-    toast.success('已恢复到智能抠图前的原图。');
-  }, [lastAiCutoutImageData, toast]);
+  }, [beadData, detectQuickBackgroundSuggestion, saveToHistory, setBeadData, toast]);
 
   const handleBgRestoreLastRemoval = useCallback(() => {
     if (!beadData || bgLastRemoval.length === 0) return;
@@ -1345,6 +1470,28 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setBgDetectionMessage('已手动擦除 1 格背景，可继续点击其他格子细修。');
   }, [beadData, saveToHistory, setBeadData]);
 
+  const applyMirrorTransform = useCallback((direction: 'horizontal' | 'vertical') => {
+    if (!beadData) return;
+
+    const { width, height, beads } = beadData;
+    const nextBeads = new Array(beads.length).fill(null);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const sourceIndex = y * width + x;
+        const targetX = direction === 'horizontal' ? width - 1 - x : x;
+        const targetY = direction === 'vertical' ? height - 1 - y : y;
+        const targetIndex = targetY * width + targetX;
+        nextBeads[targetIndex] = beads[sourceIndex];
+      }
+    }
+
+    applyBeadDataChange({
+      ...beadData,
+      beads: nextBeads,
+    });
+  }, [applyBeadDataChange, beadData]);
+
   const bgRecoverableIndices = React.useMemo(
     () => {
       const recoverable = new Set<number>();
@@ -1372,26 +1519,54 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia('(pointer: coarse)');
+    const updatePointerMode = () => setIsCoarsePointer(mediaQuery.matches);
+    updatePointerMode();
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updatePointerMode);
+      return () => mediaQuery.removeEventListener('change', updatePointerMode);
+    }
+
+    mediaQuery.addListener(updatePointerMode);
+    return () => mediaQuery.removeListener(updatePointerMode);
+  }, []);
+
+  useEffect(() => {
     if (!beadData || !isBackgroundMode || bgSelectionSource !== 'auto') {
       return;
     }
 
-    const suggestion = suggestQuickBackgroundRemoval(beadData, bgAutoStrength, {
-      protectSubject: bgProtectSubject,
-    });
-    if (!suggestion || suggestion.indices.length === 0) {
-      setBgAutoIndices([]);
-      setBgSelectedColorId(null);
-      setBgSelectedSeedIndex(null);
-      setBgDetectionMessage('当前强度下没有找到稳定背景候选区，可调高强度或改用手动选择。');
-      return;
-    }
+    let cancelled = false;
 
-    setBgAutoIndices(suggestion.indices);
-    setBgSelectedColorId(suggestion.primaryColorId);
-    setBgSelectedSeedIndex(null);
-    setBgDetectionMessage(`重新圈出 ${suggestion.indices.length} 格背景候选区。${suggestion.reason}`);
-  }, [beadData, bgAutoStrength, bgProtectSubject, isBackgroundMode, bgSelectionSource]);
+    const run = async () => {
+      const suggestion = await detectQuickBackgroundSuggestion();
+      if (cancelled) return;
+
+      if (!suggestion || suggestion.indices.length === 0) {
+        setBgAutoIndices([]);
+        setBgSelectedColorId(null);
+        setBgSelectedSeedIndex(null);
+        setBgDetectionMessage('当前强度下没有找到稳定背景候选区，可调高强度或改用手动选择。');
+        return;
+      }
+
+      setBgAutoIndices(suggestion.indices);
+      setBgSelectedColorId(suggestion.primaryColorId);
+      setBgSelectedSeedIndex(null);
+      setBgDetectionMessage(`重新圈出 ${suggestion.indices.length} 格背景候选区。${suggestion.reason}`);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [beadData, detectQuickBackgroundSuggestion, isBackgroundMode, bgSelectionSource]);
 
 
 
@@ -1424,6 +1599,72 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   }, [currentImageData, colorCount, gridSize, activeCustomColorIds]);
 
+  const serializeBeadDataForSave = useCallback((data: BeadPixelData) => {
+
+    return {
+
+      width: data.width,
+
+      height: data.height,
+
+      beads: data.beads.map((b) => b ? {
+
+        id: b.id,
+
+        name: b.name,
+
+        nameCN: b.nameCN,
+
+        rgb: b.rgb,
+
+        hex: b.hex,
+
+        brand: b.brand,
+
+      } : { id: '', name: '', nameCN: '', rgb: [0, 0, 0] as [number, number, number], hex: '#00000000', brand: 'transparent' }),
+
+    };
+
+  }, []);
+
+  const saveEditorResumeDraftToSession = useCallback((pendingAction?: 'startMaking') => {
+
+    if (!currentImageData || !beadData) return;
+
+    try {
+
+      const draft: EditorResumeDraft = {
+
+        imageData: currentImageData,
+
+        colorCount,
+
+        gridWidth: gridSize,
+
+        customColorIds: activeCustomColorIds,
+
+        saturationBoost,
+
+        vibrancyPreference,
+
+        beadData: JSON.parse(JSON.stringify(beadData)),
+
+        initialBeadData: initialBeadData ? JSON.parse(JSON.stringify(initialBeadData)) : null,
+
+        pendingAction,
+
+      };
+
+      sessionStorage.setItem(EDITOR_RESUME_DRAFT_KEY, JSON.stringify(draft));
+
+    } catch (e) {
+
+      console.warn('保存编辑器恢复草稿到会话失败:', e);
+
+    }
+
+  }, [activeCustomColorIds, beadData, colorCount, currentImageData, gridSize, initialBeadData, saturationBoost, vibrancyPreference]);
+
 
 
   const handleStartMakingClick = (e?: React.MouseEvent) => {
@@ -1445,8 +1686,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
         onConfirm: () => {
 
           saveEditorStateToSession();
+          saveEditorResumeDraftToSession('startMaking');
 
-          navigate('/mobile/login', { state: { from: '/mobile/editor' } });
+          navigate('/mobile/login', { state: { from: '/mobile/editor', resumeStartMaking: true } });
 
         },
 
@@ -1498,36 +1740,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-  const handleShareClick = useCallback(() => {
-
-    if (!isLoggedIn) {
-
-      showConfirm('登录后才可以分享图纸到社区，现在去登录吗？', {
-
-        title: '需要先登录',
-
-        type: 'info',
-
-        confirmText: '去登录',
-
-        onConfirm: () => {
-
-          saveEditorStateToSession();
-
-          navigate('/mobile/login', { state: { from: '/mobile/editor' } });
-
-        },
-
-      });
-
-      return;
-
-    }
-
-    setShowShareModal(true);
-
-  }, [isLoggedIn, showConfirm, saveEditorStateToSession, navigate]);
-
 
 
   const handleLoginSuccess = () => {
@@ -1568,12 +1780,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
     setIsSaving(true);
+    const thumbnail = generateThumbnail();
+    const originalImage = imageData || thumbnail;
 
     try {
-
-      const thumbnail = generateThumbnail();
-
-      const originalImage = imageData || thumbnail;
 
 
 
@@ -1603,8 +1813,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           toast.error('图片上传失败，已取消本次云端保存。');
 
-          setIsSaving(false);
-
           return;
 
         }
@@ -1619,29 +1827,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           original_image: originalImageUrl,
 
-          bead_data: {
-
-            width: beadData.width,
-
-            height: beadData.height,
-
-            beads: beadData.beads.map(b => ({
-
-              id: b.id,
-
-              name: b.name,
-
-              nameCN: b.nameCN,
-
-              rgb: b.rgb,
-
-              hex: b.hex,
-
-              brand: b.brand,
-
-            })),
-
-          },
+          bead_data: serializeBeadDataForSave(beadData),
 
           settings: {
 
@@ -1677,9 +1863,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           console.error('创建方案失败:', response.msg);
 
-          toast.warning('云端保存失败，已自动转存到本地方案。');
-
-          saveToLocal(name, thumbnail, originalImage);
+          saveToLocal(name, thumbnail, originalImage, { fromCloudFallback: true });
 
         }
 
@@ -1692,16 +1876,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     } catch (error) {
 
       console.error('保存方案异常:', error);
-
-      toast.warning('云端保存异常，将直接进入制作模式。');
-
-      setShowSaveModal(false);
-
-      navigate('/mobile/making', {
-
-        state: { beadData, colorCount, backTarget: '/mobile/create' },
-
-      });
+      saveToLocal(name, thumbnail, originalImage, { fromCloudFallback: true });
 
     } finally {
 
@@ -1714,11 +1889,17 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-  const saveToLocal = (name: string, thumbnail: string, originalImage: string) => {
+  const saveToLocal = (
+    name: string,
+    thumbnail: string,
+    originalImage: string,
+    options?: { fromCloudFallback?: boolean }
+  ) => {
 
     if (!beadData) return;
 
     try {
+      setShowSaveModal(false);
 
       const projectPayload = {
 
@@ -1728,29 +1909,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
         originalImage: originalImage.length > 2_000_000 ? thumbnail : originalImage,
 
-        beadData: {
-
-          width: beadData.width,
-
-          height: beadData.height,
-
-          beads: beadData.beads.map(b => b ? {
-
-            id: b.id,
-
-            name: b.name,
-
-            nameCN: b.nameCN,
-
-            rgb: b.rgb,
-
-            hex: b.hex,
-
-            brand: b.brand,
-
-          } : { id: '', name: '', nameCN: '', rgb: [0, 0, 0] as [number, number, number], hex: '#000', brand: 'mard' }),
-
-        },
+        beadData: serializeBeadDataForSave(beadData),
 
         settings: {
 
@@ -1782,9 +1941,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       }
 
-      toast.success('本地方案已保存，正在进入制作模式。');
-
-      setShowSaveModal(false);
+      toast.success(
+        options?.fromCloudFallback
+          ? '已自动保存到本地方案，正在进入制作模式。'
+          : '本地方案已保存，正在进入制作模式。'
+      );
 
       navigate('/mobile/making', {
 
@@ -1796,9 +1957,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       console.error('本地保存失败:', e);
 
-      toast.warning('本地保存失败，将直接进入制作模式。');
-
-      setShowSaveModal(false);
+      toast.error('保存失败，将直接进入制作模式。');
 
       navigate('/mobile/making', {
 
@@ -1812,7 +1971,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-  const lastAppliedParamsRef = useRef({ gridSize, saturationBoost, vibrancyPreference });
+  const lastAppliedParamsRef = useRef({ gridSize, saturationBoost, vibrancyPreference, colorCount });
 
 
 
@@ -1829,6 +1988,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
         setVibrancyPreference(lastAppliedParamsRef.current.vibrancyPreference);
 
+        setColorCount(lastAppliedParamsRef.current.colorCount);
+
         return;
 
       }
@@ -1836,7 +1997,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     }
 
 
-    lastAppliedParamsRef.current = { gridSize, saturationBoost, vibrancyPreference };
+    lastAppliedParamsRef.current = { gridSize, saturationBoost, vibrancyPreference, colorCount };
 
     if (containerRef.current) {
 
@@ -1912,6 +2073,43 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       vibrancyPreference,
 
     });
+
+  };
+
+  const handleApplyColorCount = (nextValue: number) => {
+
+    if (nextValue === colorCount) {
+
+      return;
+
+    }
+
+    if (canUndo) {
+
+      if (!window.confirm('当前还有未保存的编辑结果，重新生成会覆盖这些修改，确定继续吗？')) {
+
+        return;
+
+      }
+
+    }
+
+    setColorCount(nextValue);
+
+    lastAppliedParamsRef.current = {
+      gridSize,
+      saturationBoost,
+      vibrancyPreference,
+      colorCount: nextValue,
+    };
+
+    if (containerRef.current) {
+
+      savedScrollPosition.current = containerRef.current.scrollTop;
+
+    }
+
+    processImage(true, { colorCount: nextValue });
 
   };
 
@@ -1992,7 +2190,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const currentColorOption = colorCountOptions.find(opt => opt.count === colorCount);
 
-  const totalBeads = beadData?.beads.length || 0;
 
 
 
@@ -2011,10 +2208,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       }
 
       setUseMyColors(true);
-
       setActiveCustomColorIds(selectedIds);
-
       setMyColorCount(selectedIds.length);
+      lastAppliedParamsRef.current = {
+        gridSize,
+        saturationBoost,
+        vibrancyPreference,
+        colorCount,
+      };
+      processImage(true, {
+        colorCount,
+        customColorIds: selectedIds,
+      });
 
       return;
 
@@ -2023,8 +2228,17 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
     setUseMyColors(false);
-
     setActiveCustomColorIds(undefined);
+    lastAppliedParamsRef.current = {
+      gridSize,
+      saturationBoost,
+      vibrancyPreference,
+      colorCount,
+    };
+    processImage(true, {
+      colorCount,
+      customColorIds: undefined,
+    });
 
   };
 
@@ -2052,7 +2266,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-  const boardRecommendation = beadData ? recommendBoard(beadData.width, beadData.height) : null;
 
 
 
@@ -2095,36 +2308,63 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   }, [beadData]);
 
-  const isNarrowEditorControls = viewportWidth <= 390;
+  const isNarrowEditorControls = viewportWidth <= 420;
   const isCompactEditorControls = viewportWidth <= 360;
   const editorControlRowStyle: React.CSSProperties = {
     ...styles.previewZoomRow,
-    gap: isCompactEditorControls ? '6px' : '8px',
+    gap: isNarrowEditorControls ? '6px' : '8px',
   };
   const editorSliderStyle: React.CSSProperties = {
     ...styles.previewZoomSlider,
     minWidth: isNarrowEditorControls ? '100%' : styles.previewZoomSlider.minWidth,
+    flexBasis: isNarrowEditorControls ? '100%' : undefined,
     order: isNarrowEditorControls ? 3 : 0,
   };
   const editorStepButtonStyle: React.CSSProperties = {
     ...styles.previewZoomButton,
-    width: isCompactEditorControls ? '30px' : styles.previewZoomButton.width,
-    height: isCompactEditorControls ? '30px' : styles.previewZoomButton.height,
+    width: isCompactEditorControls ? '28px' : isNarrowEditorControls ? '30px' : styles.previewZoomButton.width,
+    height: isCompactEditorControls ? '28px' : isNarrowEditorControls ? '30px' : styles.previewZoomButton.height,
+    fontSize: isCompactEditorControls ? '16px' : undefined,
   };
   const editorChipStyle: React.CSSProperties = {
     ...styles.previewZoomChip,
-    padding: isCompactEditorControls ? '7px 8px' : styles.previewZoomChip.padding,
+    padding: isCompactEditorControls ? '6px 8px' : isNarrowEditorControls ? '6px 9px' : styles.previewZoomChip.padding,
   };
   const editorGridInputStyle: React.CSSProperties = {
     ...styles.gridSizeNumberInput,
-    width: isNarrowEditorControls ? '72px' : styles.gridSizeNumberInput.width,
+    width: isNarrowEditorControls ? '56px' : '64px',
     marginLeft: isNarrowEditorControls ? 'auto' : 0,
+    border: 'none',
+    borderRadius: 0,
+    background: 'transparent',
+    color: editorCandy.cyan,
+    padding: 0,
+    boxShadow: 'none',
+    textAlign: 'right',
+    height: 'auto',
+  };
+  const editorWidthControlRowStyle: React.CSSProperties = {
+    ...styles.gridSizeControlRow,
+    display: 'flex',
+    alignItems: 'center',
+    gap: isNarrowEditorControls ? '6px' : '8px',
+    width: '100%',
+  };
+  const gridSliderMarkerAreaStyle: React.CSSProperties = {
+    ...styles.gridSliderMarkerArea,
+    flex: 1,
+    minWidth: 0,
+    paddingTop: isCompactEditorControls ? '16px' : isNarrowEditorControls ? '17px' : styles.gridSliderMarkerArea.paddingTop,
+    paddingBottom: isCompactEditorControls ? '16px' : isNarrowEditorControls ? '17px' : styles.gridSliderMarkerArea.paddingBottom,
+  };
+  const gridSliderTrackStyle: React.CSSProperties = {
+    ...styles.gridSizeSlider,
+    width: '100%',
   };
   const editorPresetRowStyle: React.CSSProperties = {
     ...styles.gridPresetRow,
     gap: isCompactEditorControls ? '6px' : '8px',
   };
-  const isNarrowFloatingPanel = viewportWidth <= 390;
   const isCompactFloatingPanel = viewportWidth <= 360;
   const floatingUtilityStackStyle: React.CSSProperties = {
     ...styles.floatingUtilityStack,
@@ -2144,20 +2384,21 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     width: isCompactFloatingPanel ? '40px' : styles.floatingUtilityBtn.width,
     minHeight: isCompactFloatingPanel ? '40px' : styles.floatingUtilityBtn.minHeight,
   };
-  const floatingPanelStyle: React.CSSProperties = {
-    ...styles.floatingPanel,
-    top: isCompactFloatingPanel ? '6px' : styles.floatingPanel.top,
-    left: isNarrowFloatingPanel ? (isCompactFloatingPanel ? '46px' : '50px') : styles.floatingPanel.left,
-    right: isCompactFloatingPanel ? '6px' : styles.floatingPanel.right,
-    padding: isCompactFloatingPanel ? '10px' : styles.floatingPanel.padding,
-    gap: isCompactFloatingPanel ? '10px' : styles.floatingPanel.gap,
+  const drawerPanelStyle: React.CSSProperties = {
+    ...styles.drawerPanel,
+    left: isCompactFloatingPanel ? '8px' : styles.drawerPanel.left,
+    right: isCompactFloatingPanel ? '8px' : styles.drawerPanel.right,
+    bottom: isCompactFloatingPanel ? '78px' : styles.drawerPanel.bottom,
+    padding: isCompactFloatingPanel ? '12px' : styles.drawerPanel.padding,
+    gap: isCompactFloatingPanel ? '10px' : styles.drawerPanel.gap,
+    maxHeight: isCompactFloatingPanel ? '44vh' : styles.drawerPanel.maxHeight,
   };
-  const floatingPanelHeaderStyle: React.CSSProperties = {
-    ...styles.floatingPanelHeader,
+  const drawerPanelHeaderStyle: React.CSSProperties = {
+    ...styles.drawerPanelHeader,
     flexWrap: isCompactFloatingPanel ? 'wrap' : 'nowrap',
   };
-  const floatingPanelActionsStyle: React.CSSProperties = {
-    ...styles.floatingPanelActions,
+  const drawerPanelActionsStyle: React.CSSProperties = {
+    ...styles.drawerPanelActions,
     width: isCompactFloatingPanel ? '100%' : undefined,
     justifyContent: isCompactFloatingPanel ? 'flex-end' : undefined,
   };
@@ -2217,7 +2458,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
               isEditMode={isEditMode}
 
-              highlightedColorId={highlightedColorId}
 
               onBeadClick={handleBeadClick}
 
@@ -2245,7 +2485,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                 event.preventDefault();
                 event.stopPropagation();
                 setShowPaletteSettings(false);
-                setShowStats(false);
+                
                 handleEnterBackgroundMode();
               }}
               aria-label="进入去背景工具"
@@ -2257,6 +2497,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
           )}
           {beadData && !isBackgroundMode && (
             <>
+              {(showPaletteSettings || showColorStyleSettings) && (
+                <div
+                  style={styles.drawerBackdrop}
+                  onClick={() => {
+                    setShowPaletteSettings(false);
+                    setShowColorStyleSettings(false);
+                  }}
+                />
+              )}
               <div style={floatingUtilityStackStyle}>
                 <button
                   style={{
@@ -2264,9 +2513,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                     ...(showPaletteSettings ? styles.floatingUtilityBtnActive : {}),
                   }}
                   onClick={() => {
+                    setShowColorStyleSettings(false);
                     setShowPaletteSettings((prev) => {
                       const next = !prev;
-                      if (next) setShowStats(false);
                       return next;
                     });
                   }}
@@ -2275,63 +2524,85 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                   <span style={styles.floatingUtilityPrimary}>色系</span>
                   <span style={styles.floatingUtilitySecondary}>配色</span>
                 </button>
-
                 <button
                   style={{
                     ...floatingUtilityBtnStyle,
-                    ...(showStats ? styles.floatingUtilityBtnActive : {}),
+                    ...(showColorStyleSettings ? styles.floatingUtilityBtnActive : {}),
                   }}
                   onClick={() => {
-                    setShowStats((prev) => {
-                      const next = !prev;
-                      if (next) setShowPaletteSettings(false);
-                      return next;
-                    });
+                    setShowPaletteSettings(false);
+                    setShowColorStyleSettings((prev) => !prev);
                   }}
-                  aria-label="打开豆子统计"
+                  aria-label="打开颜色风格"
                 >
-                  <span style={styles.floatingUtilityPrimary}>统计</span>
-                  <span style={styles.floatingUtilitySecondary}>用量</span>
+                  <span style={styles.floatingUtilityPrimary}>风格</span>
+                  <span style={styles.floatingUtilitySecondary}>颜色</span>
                 </button>
+                <button
+                  style={{
+                    ...floatingUtilityBtnStyle,
+                  }}
+                  onClick={() => {
+                    setShowPaletteSettings(false);
+                    setShowColorStyleSettings(false);
+                    applyMirrorTransform('horizontal');
+                  }}
+                  aria-label="左右镜像"
+                >
+                  <span style={styles.floatingUtilityPrimary}>镜像</span>
+                  <span style={styles.floatingUtilitySecondary}>翻转</span>
+                </button>
+
               </div>
 
               {showPaletteSettings && (
-                <div style={floatingPanelStyle}>
-                  <div style={floatingPanelHeaderStyle}>
-                    <div style={styles.floatingPanelTitleGroup}>
+                <div style={drawerPanelStyle}>
+                  <div style={styles.drawerHandle} />
+                  <div style={drawerPanelHeaderStyle}>
+                    <div style={styles.drawerPanelTitleGroup}>
                       <Palette size={18} weight="fill" color={colors.bead.cyan} />
-                      <div style={styles.floatingPanelTextGroup}>
-                        <span style={styles.floatingPanelTitle}>色系设置</span>
-                        <span style={styles.floatingPanelSummary}>
-                          当前 {colorCount} 色{myColorCount > 0 && <>，我的颜色 {myColorCount}</>}
+                      <div style={styles.drawerPanelTextGroup}>
+                        <span style={styles.drawerPanelTitle}>色系设置</span>
+                        <span style={styles.drawerPanelSummary}>
+                          {useMyColors
+                            ? <>当前仅使用我的颜色{myColorCount > 0 && <>，共 {myColorCount} 色</>}</>
+                            : <>当前 {colorCount} 色{myColorCount > 0 && <>，我的颜色 {myColorCount}</>}</>}
                         </span>
                       </div>
                     </div>
-                    <div style={floatingPanelActionsStyle}>
-                      <button style={styles.floatingPanelCloseBtn} onClick={() => setShowPaletteSettings(false)}>
+                    <div style={drawerPanelActionsStyle}>
+                      <button style={styles.drawerPanelCloseBtn} onClick={() => setShowPaletteSettings(false)}>
                         ×
                       </button>
                     </div>
                   </div>
 
-                  <div style={styles.colorCountTabs}>
-                    {colorCountOptions.map((opt) => (
-                      <button
-                        key={opt.count}
-                        style={{
-                          ...styles.colorCountTab,
-                          ...(colorCount === opt.count ? styles.colorCountTabActive : {}),
-                        }}
-                        onClick={() => setColorCount(opt.count)}
-                      >
-                        <span>{opt.label}</span>
-                      </button>
-                    ))}
-                  </div>
+                  {!useMyColors ? (
+                    <>
+                      <div style={styles.colorCountTabs}>
+                        {colorCountOptions.map((opt) => (
+                          <button
+                            key={opt.count}
+                            style={{
+                              ...styles.colorCountTab,
+                              ...(colorCount === opt.count ? styles.colorCountTabActive : {}),
+                            }}
+                            onClick={() => handleApplyColorCount(opt.count)}
+                          >
+                            <span>{opt.label}</span>
+                          </button>
+                        ))}
+                      </div>
 
-                  <div style={styles.paletteSettingsHint}>
-                    {currentColorOption?.description} · {currentColorOption?.detailDesc}
-                  </div>
+                      <div style={styles.paletteSettingsHint}>
+                        {currentColorOption?.description} · {currentColorOption?.detailDesc}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={styles.paletteModeHint}>
+                      当前仅使用“我的颜色”生成，系统色数已停用。
+                    </div>
+                  )}
 
                   <div style={styles.paletteSwitchRow}>
                     <div style={styles.paletteSwitchInfo}>
@@ -2356,118 +2627,67 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                     </div>
                   </div>
 
-                  <button style={styles.applyPaletteBtn} onClick={handleApplyPaletteSettings}>
-                    应用当前色系设置
-                  </button>
+                  {!useMyColors && (
+                    <button style={styles.applyPaletteBtn} onClick={handleApplyPaletteSettings}>
+                      应用当前色系设置
+                    </button>
+                  )}
                 </div>
               )}
 
-              {showStats && (
-                <div style={floatingPanelStyle}>
-                  <div style={floatingPanelHeaderStyle}>
-                    <div style={styles.floatingPanelTitleGroup}>
-                      <ListBullets size={18} weight="fill" color={colors.bead.orange} />
-                      <div style={styles.floatingPanelTextGroup}>
-                        <span style={styles.floatingPanelTitle}>豆子统计</span>
-                        <span style={styles.floatingPanelSummary}>{statistics.length} 种颜色</span>
+              {showColorStyleSettings && (
+                <div style={drawerPanelStyle}>
+                  <div style={styles.drawerHandle} />
+                  <div style={drawerPanelHeaderStyle}>
+                    <div style={styles.drawerPanelTitleGroup}>
+                      <Palette size={18} weight="fill" color={colors.bead.green} />
+                      <div style={styles.drawerPanelTextGroup}>
+                        <span style={styles.drawerPanelTitle}>颜色风格</span>
+                        <span style={styles.drawerPanelSummary}>
+                          {saturationBoost === 0 ? '当前原图风格' : `当前鲜亮 ${saturationBoost}%`}
+                        </span>
                       </div>
                     </div>
-                    <div style={floatingPanelActionsStyle}>
-                      <button style={styles.smartMergeBtn} onClick={() => setShowSmartMerge(true)}>
-                        智能合并
-                      </button>
-                      <button style={styles.floatingPanelCloseBtn} onClick={() => setShowStats(false)}>
+                    <div style={drawerPanelActionsStyle}>
+                      <button style={styles.drawerPanelCloseBtn} onClick={() => setShowColorStyleSettings(false)}>
                         ×
                       </button>
                     </div>
                   </div>
 
-                  <div style={styles.statsOverviewCard}>
-                    <div style={styles.statsOverviewRow}>
-                      <span style={styles.statsOverviewLabel}>图案尺寸</span>
-                      <span style={styles.statsOverviewValue}>{beadData.width} x {beadData.height} = {totalBeads} 颗豆</span>
-                    </div>
-                    {boardRecommendation && (
-                      <div style={styles.statsOverviewRow}>
-                        <span style={styles.statsOverviewLabel}>拼豆板建议</span>
-                        <div style={styles.boardRecommendation}>
-                          <span style={styles.boardBadge}>{boardRecommendation.boardSize} 钉</span>
-                          <span style={styles.boardText}>{boardRecommendation.summary}</span>
-                        </div>
-                      </div>
-                    )}
+                  <div style={editorPresetRowStyle}>
+                    {SATURATION_PRESETS.map((preset) => (
+                      <button
+                        key={preset.label}
+                        style={{
+                          ...styles.gridPresetChip,
+                          ...(saturationBoost === preset.value ? styles.gridPresetChipActive : {}),
+                        }}
+                        onClick={() => handleRegenerateWithSaturation(preset.value)}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                    <span style={styles.gridPresetHint}>多数图片先用推荐，再按需要微调</span>
                   </div>
 
-                  <div style={styles.floatingStatsList}>
-                    {statistics.map((stat, index) => {
-                      const colorInfo = getColorDisplayInfo(stat.color);
-                      return (
-                        <div
-                          key={stat.color.id}
-                          style={{
-                            ...styles.statsItem,
-                            ...(highlightedColorId === stat.color.id ? styles.statsItemHighlighted : {}),
-                          }}
-                          onClick={() => handleStatsColorClick(stat.color)}
-                          title={colorInfo.name + " · " + stat.color.id + " · " + stat.count + " 颗豆"}
-                        >
-                          <span style={styles.statsRank}>{index + 1}</span>
-                          <div style={{ ...styles.statsColorBox, backgroundColor: stat.color.hex }} />
-                          <span style={styles.statsColorName}>{colorInfo.name}</span>
-                          <span style={styles.statsColorId}>色号 {stat.color.id}</span>
-                          <span style={styles.statsColorCount}>{stat.count}</span>
-                          <span style={styles.statsColorPercent}>{stat.percentage.toFixed(1)}%</span>
-                          <button
-                            style={styles.replaceBtn}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleReplaceColor(stat.color.id);
-                            }}
-                          >
-                            换色
-                          </button>
-                          <button
-                            style={{
-                              ...styles.excludeBtn,
-                              ...(excludedColorIds.has(stat.color.id) ? styles.excludeBtnActive : {}),
-                            }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleExcludeColor(stat.color.id);
-                            }}
-                            title={excludedColorIds.has(stat.color.id) ? "已排除该颜色" : "排除该颜色"}
-                          >
-                            {excludedColorIds.has(stat.color.id) ? <CheckCircle size={12} /> : <Prohibit size={12} />}
-                          </button>
-                          {replacedColors.has(stat.color.id) && (
-                            <button
-                              style={styles.restoreBtn}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRestoreColor(stat.color.id);
-                              }}
-                            >
-                              还原
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                    {replacedColors.size > 0 && (
-                      <button style={styles.restoreAllBtn} onClick={handleRestoreAll}>
-                        还原全部颜色
-                      </button>
-                    )}
-
-                    {excludedColorIds.size > 0 && (
-                      <div style={styles.excludeHint}>
-                        已排除 {excludedColorIds.size} 种颜色，重新生成时不会再使用这些颜色。
-                      </div>
-                    )}
+                  <div style={styles.mergeSliderRow}>
+                    <span style={styles.mergeLabel}>更接近原图</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="30"
+                      value={saturationBoost}
+                      onChange={(e) => setSaturationBoost(Number(e.target.value))}
+                      onMouseUp={handleRegenerate}
+                      onTouchEnd={handleRegenerate}
+                      style={styles.slider}
+                    />
+                    <span style={styles.mergeLabel}>更鲜亮</span>
                   </div>
                 </div>
               )}
+
             </>
           )}
         <div style={styles.controlPanel}>
@@ -2493,34 +2713,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             </div>
           </div>
 
-          <div style={styles.controlItem}>
+          <div style={{ ...styles.controlItem, paddingTop: '4px' }}>
             <div style={styles.controlHeader}>
-              <span style={styles.controlLabel}>作品宽度</span>
-              <span style={styles.controlValue}>{gridSize} 颗</span>
-            </div>
-            <div style={editorControlRowStyle}>
-              <button style={editorStepButtonStyle} onClick={() => handleAdjustGridSize(-GRID_SIZE_STEP)} disabled={!beadData}>-</button>
+              <span style={styles.controlLabel}>宽度</span>
               <input
-                type="range"
-                min={GRID_SIZE_MIN}
-                max={GRID_SIZE_MAX}
-                step={GRID_SIZE_STEP}
-                value={gridSize}
-                onChange={(e) => setGridSize(Number(e.target.value))}
-                onMouseUp={handleRegenerate}
-                onTouchEnd={handleRegenerate}
-                style={editorSliderStyle}
-                disabled={!beadData}
-              />
-              <button style={editorStepButtonStyle} onClick={() => handleAdjustGridSize(GRID_SIZE_STEP)} disabled={!beadData}>+</button>
-              <input
-                type="number"
+                type="text"
                 id="editor-grid-size-input"
                 name="editor-grid-size"
-                min={GRID_SIZE_MIN}
-                max={GRID_SIZE_MAX}
-                step={GRID_SIZE_STEP}
                 inputMode="numeric"
+                pattern="[0-9]*"
                 value={gridSizeInput}
                 onChange={(e) => setGridSizeInput(e.target.value)}
                 onBlur={handleGridSizeInputCommit}
@@ -2531,94 +2732,71 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                   }
                 }}
                 style={editorGridInputStyle}
-                aria-label="作品宽度输入"
+                aria-label="宽度输入"
               />
             </div>
-            <div style={editorPresetRowStyle}>
-              {COMMON_BOARD_WIDTHS.map((preset) => (
-                <button
-                  key={preset}
-                  style={{
-                    ...styles.gridPresetChip,
-                    ...(gridSize === preset ? styles.gridPresetChipActive : {}),
-                  }}
-                  onClick={() => handleRegenerateWithGridSize(preset)}
-                >
-                  {preset}
-                </button>
-              ))}
-              <span style={styles.gridPresetHint}>步长 2，常用板宽可直达</span>
-            </div>
-            <div style={styles.sliderLabels}>
-              <span style={styles.sliderLabelGreen}>流畅</span>
-              <span style={styles.sliderLabelYellow}>适中</span>
-              <span style={styles.sliderLabelRed}>精细</span>
-            </div>
-          </div>
-
-          <div style={styles.controlItem}>
-            <div style={styles.controlHeader}>
-              <span style={styles.controlLabel}>颜色风格</span>
-              <span style={styles.controlValue}>{saturationBoost === 0 ? '原图' : saturationBoost + '%'}</span>
-            </div>
-            <div style={editorPresetRowStyle}>
-              {SATURATION_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  style={{
-                    ...styles.gridPresetChip,
-                    ...(saturationBoost === preset.value ? styles.gridPresetChipActive : {}),
-                  }}
-                  onClick={() => handleRegenerateWithSaturation(preset.value)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-              <span style={styles.gridPresetHint}>多数图片先用推荐，再按需要微调</span>
-            </div>
-            <div style={styles.mergeSliderRow}>
-              <span style={styles.mergeLabel}>更接近原图</span>
-              <input
-                type="range"
-                min="0"
-                max="30"
-                value={saturationBoost}
-                onChange={(e) => setSaturationBoost(Number(e.target.value))}
-                onMouseUp={handleRegenerate}
-                onTouchEnd={handleRegenerate}
-                style={styles.slider}
-              />
-              <span style={styles.mergeLabel}>更鲜亮</span>
-            </div>
-          </div>
-
-          {lastAiCutoutImageData && (
-            <div style={styles.aiCutoutRestoreCard}>
-              <div style={styles.aiCutoutRestoreInfo}>
-                <span style={styles.controlLabel}>智能抠图结果已应用</span>
-                <span style={styles.aiCutoutRestoreHint}>不满意可以一键恢复到抠图前原图</span>
+            <div style={editorWidthControlRowStyle}>
+              <button style={editorStepButtonStyle} onClick={() => handleAdjustGridSize(-GRID_SIZE_STEP)} disabled={!beadData}>-</button>
+              <div style={gridSliderMarkerAreaStyle}>
+                {COMMON_BOARD_WIDTHS.map((preset, index) => {
+                  const leftPercent = ((preset - GRID_SIZE_MIN) / (GRID_SIZE_MAX - GRID_SIZE_MIN)) * 100;
+                  const isTop = index % 2 === 0;
+                  return (
+                    <div
+                      key={preset}
+                      style={{
+                        ...styles.gridSliderMarkerAnchor,
+                        left: `${leftPercent}%`,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        style={{
+                          ...styles.gridSliderMarkerBtn,
+                          minWidth: isNarrowEditorControls ? '28px' : styles.gridSliderMarkerBtn.minWidth,
+                          height: isNarrowEditorControls ? '18px' : styles.gridSliderMarkerBtn.height,
+                          padding: isNarrowEditorControls ? '0 4px' : styles.gridSliderMarkerBtn.padding,
+                          fontSize: isNarrowEditorControls ? '9px' : styles.gridSliderMarkerBtn.fontSize,
+                          top: isTop ? '0' : 'auto',
+                          bottom: isTop ? 'auto' : '0',
+                          ...(gridSize === preset ? styles.gridSliderMarkerBtnActive : {}),
+                        }}
+                        onClick={() => handleRegenerateWithGridSize(preset)}
+                        disabled={!beadData}
+                        aria-label={`选择 ${preset} 宽度`}
+                      >
+                        {preset}
+                      </button>
+                      <div
+                        style={{
+                          ...styles.gridSliderMarkerLine,
+                          top: isTop ? (isNarrowEditorControls ? '16px' : '18px') : 'auto',
+                          bottom: isTop ? 'auto' : (isNarrowEditorControls ? '16px' : '18px'),
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+                <input
+                  type="range"
+                  min={GRID_SIZE_MIN}
+                  max={GRID_SIZE_MAX}
+                  step={GRID_SIZE_STEP}
+                  value={gridSize}
+                  onChange={(e) => setGridSize(Number(e.target.value))}
+                  onMouseUp={handleRegenerate}
+                  onTouchEnd={handleRegenerate}
+                  style={gridSliderTrackStyle}
+                  disabled={!beadData}
+                />
               </div>
-              <button
-                style={styles.aiCutoutRestoreButton}
-                onClick={handleRestoreAiCutoutSource}
-              >
-                恢复抠图前原图
-              </button>
+              <button style={editorStepButtonStyle} onClick={() => handleAdjustGridSize(GRID_SIZE_STEP)} disabled={!beadData}>+</button>
             </div>
-          )}
-        </div>
+          </div>
 
-        <div style={styles.primaryFlowHint}>
-          <Play size={14} weight="fill" />
-          <span>完成调整后，点击“保存并开始制作”进入制作模式</span>
         </div>
 
         <div style={styles.actions}>
-          <button style={styles.secondaryBtn} onClick={() => (onBack ? onBack() : navigate('/mobile/create'))}>
-            <ArrowClockwise size={18} />
-            返回选图
-          </button>
-
           <button
             style={styles.primaryBtn}
             onClick={handleStartMakingClick}
@@ -2626,13 +2804,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
           >
             <Play size={18} weight="fill" />
             保存并开始制作
-          </button>
-        </div>
-
-        <div style={styles.subActions}>
-          <button style={styles.ghostLinkBtn} onClick={handleShareClick} disabled={!beadData}>
-            <ShareNetwork size={14} />
-            <span>分享图纸</span>
           </button>
         </div>
 
@@ -2673,12 +2844,32 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             setUseMyColors(true);
 
             setActiveCustomColorIds(selectedIds);
+            lastAppliedParamsRef.current = {
+              gridSize,
+              saturationBoost,
+              vibrancyPreference,
+              colorCount,
+            };
+            processImage(true, {
+              colorCount,
+              customColorIds: selectedIds,
+            });
 
           } else {
 
             setUseMyColors(false);
 
             setActiveCustomColorIds(undefined);
+            lastAppliedParamsRef.current = {
+              gridSize,
+              saturationBoost,
+              vibrancyPreference,
+              colorCount,
+            };
+            processImage(true, {
+              colorCount,
+              customColorIds: undefined,
+            });
 
           }
 
@@ -2694,7 +2885,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
         onClose={() => setShowLoginModal(false)}
         onSuccess={handleLoginSuccess}
         title="登录后再继续"
-        message="登录后可保存方案、同步进度并分享图纸。"
+        message="登录后可保存方案并同步制作进度。"
       />
 
 
@@ -2713,27 +2904,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
       {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹芥粎绮旈悜妯镐簻闁靛闄勫畷宀€鈧娲橀〃鍛达綖濠婂牆鐒垫い鎺嗗亾妞?*/}
-
-      {beadData && (
-
-        <ShareModal
-          visible={showShareModal}
-          onClose={() => setShowShareModal(false)}
-          imageData={(() => {
-            const canvas = document.createElement('canvas');
-            renderBeadsToCanvas(beadData, canvas, 10, true, false);
-            return canvas.toDataURL('image/png');
-          })()}
-          title="分享图纸"
-          stats={statistics.map(s => ({
-            color: s.color.hex,
-            count: s.count,
-            name: s.color.nameCN,
-          }))}
-          gridSize={{ width: beadData.width, height: beadData.height }}
-        />
-
-      )}
 
 
 
@@ -2775,51 +2945,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸閻忕偟顭堟晶鑼偓鍨緲鐎氼噣鍩€椤掑﹦绉甸柛瀣瀹曟瑩鏁撻悩鏂ユ嫼闁荤姴娲犻埀顒冩珪閻忓牆鈹戦悙宸殶闁稿繑锕㈤悰顔跨疀濞戞瑥浜规繛鎾村嚬閸ㄨ鲸鐡忛梻鍌欐祰椤曆呪偓娑掓櫊閹虫繈宕滆缁€濠傗攽閻樺弶鎼愰柦鍐枛閺屾洘绻涢悙顒佺彆闂佺顑呯€氫即寮诲☉妯锋婵鐗嗘慨娑欑箾鐎电甯堕悗姘緲椤繑銈︾憗銈勬睏闂佸湱鍎ょ换鍐夐弽顓熲拺缂佸娉曠粻鏌ユ煥閺囨ê鐏╂い鏇秮椤㈡洟鏁冮埀顒傜不婵犳碍鍋ｉ柛銉戝啰楠囧銈冨劜缁诲牆顫忓ú顏咁棃婵炴垶鑹鹃。鍝勨攽閳藉棗浜濇い銊ワ躬閵?*/}
 
-      {beadData && (
-
-        <SmartMergeModal
-
-          visible={showSmartMerge}
-
-          onClose={() => setShowSmartMerge(false)}
-
-          beadData={beadData}
-
-          onConfirm={(mergedData) => {
-
-            setBeadData(mergedData);
-
-            saveToHistory();
-
-            setStatistics(calculateBeadStatistics(mergedData));
-
-          }}
-
-        />
-
-      )}
 
 
 
       {/* 缂傚倸鍊搁崐鎼佸磹閹间礁纾归柣鎴ｅГ閸ゅ嫰鏌涢锝嗙缂佹劖顨堥埀顒€绠嶉崕鍗灻洪妸鈺佺婵鍩栭悡娆戠磽娴ｉ潧鐏╅柡瀣枛閺岋綁骞橀崡鐐插Е闂佸搫鐭夌紞浣割嚕椤掑嫬绠伴幖绮瑰墲濞堟﹢姊绘担绛嬪殭婵炲瓨宀稿畷鎶芥晲婢跺﹨鎽曢梺缁樻煥婢瑰﹤危瑜版帒绠圭紒顔煎帨閸嬫捇宕橀懠顒夊悈闂傚倸鍊峰ù鍥ь浖閵娾晜鍊块柨鏇炲€哥粻鏌ユ煕閵夋垵鑻▓銊ヮ渻閵堝棗绗掗悗姘煎墮濞插潡姊绘担铏广€婇柛鎾寸箞閵嗗啳绠涢弬娆惧殼?*/}
 
       <Modal {...modalProps} />
-
-      <RewardedUnlockModal
-        visible={showAiCutoutUnlockModal}
-        title="解锁智能抠图"
-        desc="观看一次短广告后，可为当前图片解锁一次智能抠图。"
-        onClose={() => {
-          setShowAiCutoutUnlockModal(false);
-          pendingAiCutoutAfterRewardRef.current = null;
-        }}
-        onRewardEarned={() => {
-          adService.grantAiCutoutRewardCredit();
-          const pendingAction = pendingAiCutoutAfterRewardRef.current;
-          pendingAiCutoutAfterRewardRef.current = null;
-          pendingAction?.();
-        }}
-      />
 
 
 
@@ -2835,84 +2966,27 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             <span style={styles.bgModeCount}>
               {bgSelectionSource === 'auto'
                 ? '已圈出 ' + getBgHighlightedIndices().length + ' 格背景'
-                : bgSelectedColorId
+                : bgSelectionSource === 'manual' && bgManualSelections.length > 0
                   ? '已选中 ' + getBgHighlightedIndices().length + ' 格'
                   : '点击格子选择背景色'}
             </span>
           </div>
 
-          <div style={styles.bgModeEntryCard}>
-            <div style={styles.bgModeEntryTextGroup}>
-              <span style={styles.bgModeEntryTitle}>去背景工具</span>
-              <span style={styles.bgModeEntryDesc}>先一键，不够再 AI 或微调。</span>
-            </div>
-            <div style={styles.bgModeEntryBadge}>简化模式</div>
-          </div>
-
-          <div style={styles.bgModePrimaryActions}>
-            <button style={styles.bgModeQuickBtn} onClick={handleBgQuickRemove}>
-              <span style={styles.bgModeActionPrimary}>一键</span>
-              <span style={styles.bgModeActionSecondary}>去背景</span>
-            </button>
-            <button style={styles.bgModeAiBtn} onClick={handleBgAiCutout} disabled={isBgAiCutoutLoading}>
-              <span style={styles.bgModeActionPrimary}>{isBgAiCutoutLoading ? '处理中' : 'AI'}</span>
-              <span style={styles.bgModeActionSecondary}>智能抠图</span>
-            </button>
-          </div>
-
-          <div style={styles.bgModeAdvancedToggleRow}>
-            <button
-              type="button"
-              style={{
-                ...styles.bgModeToggleBtn,
-                ...(showBgAdvanced ? styles.bgModeToggleBtnActive : {}),
-              }}
-              onClick={() => setShowBgAdvanced((prev) => !prev)}
-            >
-              {showBgAdvanced ? '收起高级微调' : '打开高级微调'}
-            </button>
-            <span style={styles.bgModeAdvancedHint}>只有自动结果不满意时，再用下面的手动补救</span>
-          </div>
-
-          {showBgAdvanced && (
-            <>
-              <div style={styles.bgModeFilterRow}>
-                <button
-                  style={{
-                    ...styles.bgModeFilterBtn,
-                    ...(bgViewMode === 'select' ? styles.bgModeFilterBtnActive : {}),
-                    flex: 1,
-                  }}
-                  onClick={handleBgEnableManualSelect}
-                >
-                  连片选背景
-                </button>
-                <button
-                  style={{
-                    ...styles.bgModeFilterBtn,
-                    ...(bgViewMode === 'erase' ? styles.bgModeFilterBtnActive : {}),
-                    flex: 1,
-                  }}
-                  onClick={() => handleBgSwitchMode('erase')}
-                >
-                  {bgViewMode === 'erase' ? '结束点格擦除' : '点格擦除'}
-                </button>
-                <button
-                  style={{
-                    ...styles.bgModeFilterBtn,
-                    ...(bgViewMode === 'restore' ? styles.bgModeFilterBtnActive : {}),
-                    flex: 1,
-                  }}
-                  onClick={() => handleBgSwitchMode('restore')}
-                >
-                  {bgViewMode === 'restore' ? '结束补回误删' : '补回误删'}
-                </button>
-              </div>
-            </>
-          )}
-
           <div style={styles.bgModePreview}>
+            {!isCoarsePointer && (
+              <button
+                style={{
+                  ...styles.bgModePreviewFloatingBtn,
+                  ...(bgPanMode ? styles.bgModePreviewFloatingBtnActive : {}),
+                }}
+                onClick={handleBgTogglePanMode}
+                aria-label={bgPanMode ? '切换到选背景' : '切换到移动画面'}
+              >
+                {bgPanMode ? '选背景' : '移动画面'}
+              </button>
+            )}
             <InteractiveCanvas
+              ref={bgInteractiveCanvasRef}
               beadData={bgPreviewBeadData}
               cellSize={cellSize}
               currentTool="picker"
@@ -2925,6 +2999,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               bgCandidateOnly={!isBgComparingBefore && bgCandidateOnly}
               isBackgroundMode={true}
               bgViewMode={isBgComparingBefore ? 'view' : bgViewMode}
+              backgroundPanEnabled={!isBgComparingBefore && bgPanMode}
               onBgSelectColor={handleBgSelectColor}
               onBgToggleExclude={handleBgToggleExclude}
               onBgRestoreCell={handleBgRestoreSingleCell}
@@ -2933,69 +3008,107 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               onBeadDrag={() => {}}
               onDragEnd={() => {}}
               onPickColor={() => {}}
+              showControls={false}
+              onScaleChange={setPreviewZoom}
             />
           </div>
 
-          <div style={styles.bgModeHint}>
-            {bgDetectionMessage && (
-              <p style={styles.bgModeDetectionText}>{bgDetectionMessage}</p>
-            )}
-
-            {bgLastRemoval.length > 0 && (
-              <p style={styles.bgModeRecoveryHint}>虚线框表示可恢复的误删背景格，点格子可逐个恢复。</p>
-            )}
-
-            {bgViewMode === 'view' ? (
-              <p>当前是查看模式，不会修改图案。</p>
-            ) : bgViewMode === 'erase' ? (
-              <p>已开启点格擦除，点哪个格子，就删掉哪个格子。</p>
-            ) : bgViewMode === 'restore' ? (
-              <p>已开启补回误删，点透明格就能恢复。</p>
-            ) : !bgSelectedColorId ? (
-              <p>点一下背景边缘的格子，系统会圈出与它连成一片的同色区域。</p>
-            ) : (
-              <p>不对的地方再点一下排除，确认后点“应用去背景”。</p>
-            )}
+          <div style={styles.bgModeZoomPanel}>
+            <div style={styles.controlHeader}>
+              <span style={styles.controlLabel}>预览缩放</span>
+              <span style={styles.controlValue}>{Math.round(previewZoom.scale * 100)}%</span>
+            </div>
+            <div style={editorControlRowStyle}>
+              <button
+                style={editorStepButtonStyle}
+                onClick={() => bgInteractiveCanvasRef.current?.zoomOut()}
+                disabled={!bgPreviewBeadData}
+              >
+                -
+              </button>
+              <input
+                type="range"
+                min={Math.round(previewZoom.minScale * 100)}
+                max={Math.round(previewZoom.maxScale * 100)}
+                value={Math.round(previewZoom.scale * 100)}
+                onChange={(e) => bgInteractiveCanvasRef.current?.setZoomPercent(Number(e.target.value))}
+                style={editorSliderStyle}
+                disabled={!bgPreviewBeadData}
+              />
+              <button
+                style={editorStepButtonStyle}
+                onClick={() => bgInteractiveCanvasRef.current?.zoomIn()}
+                disabled={!bgPreviewBeadData}
+              >
+                +
+              </button>
+              <button
+                style={editorChipStyle}
+                onClick={() => bgInteractiveCanvasRef.current?.fitToViewport()}
+                disabled={!bgPreviewBeadData}
+              >
+                适配
+              </button>
+              <button
+                style={editorChipStyle}
+                onClick={() => bgInteractiveCanvasRef.current?.resetToActualSize()}
+                disabled={!bgPreviewBeadData}
+              >
+                1:1
+              </button>
+            </div>
           </div>
 
+          {(bgDetectionMessage || bgLastRemoval.length > 0 || bgViewMode === 'view' || bgPanMode) && (
+            <div style={styles.bgModeHint}>
+              {bgDetectionMessage && (
+                <p style={styles.bgModeDetectionText}>{bgDetectionMessage}</p>
+              )}
+
+              {bgLastRemoval.length > 0 && (
+                <p style={styles.bgModeRecoveryHint}>虚线框表示可恢复的误删背景格，点格子可逐个恢复。</p>
+              )}
+
+              {bgViewMode === 'view' ? (
+                <p>当前是查看模式，不会修改图案。</p>
+              ) : bgPanMode ? (
+                <p>当前是移动画面模式，拖动画面查看别的位置。</p>
+              ) : null}
+            </div>
+          )}
+
           <div style={styles.bgModeActions}>
-            <button
-              type="button"
-              aria-label="回退上一步"
-              title="回退上一步"
-              style={styles.bgModeHistoryBtn}
-              onClick={undo}
-              disabled={!canUndo}
-            >
-              <ArrowCounterClockwise size={16} weight="bold" />
-              <span>回退</span>
-            </button>
-            <button
-              type="button"
-              aria-label="前进一步"
-              title="前进一步"
-              style={styles.bgModeHistoryBtn}
-              onClick={redo}
-              disabled={!canRedo}
-            >
-              <ArrowClockwise size={16} weight="bold" />
-              <span>前进</span>
-            </button>
-            {showBgAdvanced && (
-              <button style={styles.bgModeClearBtn} onClick={handleBgClearSelection}>
-                清空选择
+            <div style={styles.bgModePrimaryActionRow}>
+              <button
+                type="button"
+                aria-label="回退一步选择"
+                title="回退一步选择"
+                style={styles.bgModeHistoryBtn}
+                onClick={handleBgUndoStep}
+                disabled={!(
+                  (bgSelectionSource === 'manual' && bgManualSelections.length > 0) ||
+                  (bgSelectionSource === 'auto' && bgAutoIndices.length > 0) ||
+                  canUndo
+                )}
+              >
+                <ArrowCounterClockwise size={16} weight="bold" />
+                <span>回退一步</span>
               </button>
-            )}
-            <button
-              style={styles.bgModeConfirmBtn}
-              onClick={handleBgConfirmTransparent}
-              disabled={getBgHighlightedIndices().length === 0}
-            >
-              应用去背景
-            </button>
-            <button style={styles.bgModeExitBtn} onClick={handleExitBackgroundMode}>
-              返回编辑
-            </button>
+              <button
+                style={styles.bgModeConfirmBtn}
+                onClick={handleBgConfirmTransparent}
+                disabled={getBgHighlightedIndices().length === 0}
+              >
+                确定
+              </button>
+              <button
+                style={styles.bgModeExitBtn}
+                onClick={handleBgQuickRemove}
+                disabled={!bgPreviewBeadData}
+              >
+                一键去背景
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3009,6 +3122,22 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
+const editorCandy = {
+  bg: '#fdf7f1',
+  bgSoft: '#fff1e7',
+  panel: 'rgba(255,255,255,0.9)',
+  panelStrong: '#ffffff',
+  surface: '#fff7ef',
+  border: 'rgba(255, 186, 161, 0.34)',
+  borderStrong: 'rgba(95, 200, 255, 0.38)',
+  text: '#4b3f5f',
+  textSoft: '#7f7293',
+  textMuted: '#a093af',
+  cyan: '#4faee1',
+  lavender: '#8f72ff',
+  shadow: '0 16px 36px rgba(255, 188, 154, 0.14)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
 
   container: {
@@ -3019,7 +3148,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     flexDirection: 'column',
 
-    background: colors.bg.primary,
+    background: `linear-gradient(180deg, ${editorCandy.bg} 0%, ${editorCandy.bgSoft} 100%)`,
 
     overflowY: 'auto',
 
@@ -3037,8 +3166,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '10px 16px',
-    background: colors.bg.secondary,
-    borderBottom: '1px solid ' + colors.border.soft,
+    background: 'rgba(255,255,255,0.84)',
+    borderBottom: '1px solid ' + editorCandy.border,
     position: 'fixed',
     top: 0,
     left: 0,
@@ -3099,12 +3228,11 @@ const styles: Record<string, React.CSSProperties> = {
 
 
   previewSection: {
+    padding: '8px 10px 6px',
 
-    padding: '8px 12px 6px',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(255,244,234,0.9) 100%)',
 
-    background: colors.bg.secondary,
-
-    borderBottom: '1px solid ' + colors.border.soft,
+    borderBottom: '1px solid ' + editorCandy.border,
 
     position: 'sticky',
 
@@ -3120,9 +3248,9 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '6px 10px',
 
-    background: colors.bg.secondary,
+    background: 'rgba(255,255,255,0.82)',
 
-    borderBottom: '1px solid ' + colors.border.soft,
+    borderBottom: '1px solid ' + editorCandy.border,
 
   },
 
@@ -3132,7 +3260,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     flex: 'none',
 
-    padding: '8px 12px',
+    padding: '6px 12px 8px',
 
     overscrollBehaviorX: 'none',
 
@@ -3152,7 +3280,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '60px 20px',
 
-    background: colors.bg.card,
+    background: editorCandy.panel,
 
     borderRadius: radius.card,
 
@@ -3186,7 +3314,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     margin: 0,
 
@@ -3235,7 +3363,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
   },
 
@@ -3267,7 +3395,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.bead.cyan,
+    color: editorCandy.cyan,
 
   },
 
@@ -3279,7 +3407,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
   },
 
@@ -3297,9 +3425,9 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '4px 8px',
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
@@ -3313,7 +3441,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     flexShrink: 0,
 
@@ -3348,12 +3476,12 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: '2px',
-    background: "linear-gradient(145deg, " + colors.bead.green + ", " + colors.bead.cyan + ")",
+    background: 'linear-gradient(145deg, #8ddfc3, #77d6ff)',
     border: 'none',
     borderRadius: radius.button,
     color: '#ffffff',
     cursor: 'pointer',
-    boxShadow: "0 4px 12px " + colors.bead.cyan + "45",
+    boxShadow: '0 10px 22px rgba(119, 214, 255, 0.28)',
     zIndex: 10,
     transition: animation.transition.fast,
   },
@@ -3383,6 +3511,13 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 11,
   },
 
+  drawerBackdrop: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(49, 35, 74, 0.12)',
+    zIndex: 18,
+  },
+
   floatingUtilityBtn: {
     width: '48px',
     minHeight: '48px',
@@ -3392,17 +3527,17 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: '2px',
-    background: 'linear-gradient(145deg, rgba(76, 205, 255, 0.96), rgba(116, 131, 255, 0.96))',
+    background: 'linear-gradient(145deg, rgba(135, 223, 255, 0.98), rgba(176, 168, 255, 0.98))',
     color: '#ffffff',
     border: 'none',
     borderRadius: radius.button,
-    boxShadow: '0 4px 12px rgba(76, 205, 255, 0.28)',
+    boxShadow: '0 10px 22px rgba(143, 114, 255, 0.16)',
     cursor: 'pointer',
     transition: animation.transition.fast,
   },
 
   floatingUtilityBtnActive: {
-    background: 'linear-gradient(145deg, rgba(255, 176, 92, 0.98), rgba(255, 104, 139, 0.98))',
+    background: 'linear-gradient(145deg, rgba(255, 198, 143, 0.98), rgba(255, 151, 189, 0.98))',
     boxShadow: '0 4px 12px rgba(255, 132, 112, 0.32)',
   },
 
@@ -3421,76 +3556,84 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'rgba(255,255,255,0.88)',
   },
 
-  floatingPanel: {
-    position: 'absolute',
-    top: '8px',
-    left: '62px',
-    right: '8px',
-    maxHeight: 'calc(100% - 16px)',
-    padding: '12px',
+  drawerPanel: {
+    position: 'fixed',
+    left: '16px',
+    right: '16px',
+    bottom: '92px',
+    maxHeight: '48vh',
+    padding: '14px',
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
-    background: 'rgba(14, 20, 39, 0.94)',
-    border: '1px solid ' + colors.border.soft,
-    borderRadius: radius.card,
-    boxShadow: shadows.lg,
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
-    overflow: 'hidden',
-    zIndex: 12,
+    background: 'rgba(255, 251, 247, 0.98)',
+    border: '1px solid rgba(154, 214, 255, 0.55)',
+    borderRadius: '24px',
+    boxShadow: '0 20px 48px rgba(149, 116, 195, 0.18)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    overflowY: 'auto',
+    zIndex: 19,
   },
 
-  floatingPanelHeader: {
+  drawerHandle: {
+    width: '46px',
+    height: '5px',
+    alignSelf: 'center',
+    background: 'rgba(152, 171, 214, 0.6)',
+    borderRadius: '999px',
+  },
+
+  drawerPanelHeader: {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: '8px',
+    gap: '4px',
   },
 
-  floatingPanelTitleGroup: {
+  drawerPanelTitleGroup: {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '8px',
     minWidth: 0,
   },
 
-  floatingPanelTextGroup: {
+  drawerPanelTextGroup: {
     display: 'flex',
     flexDirection: 'column',
     gap: '2px',
     minWidth: 0,
   },
 
-  floatingPanelTitle: {
+  drawerPanelTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: editorCandy.text,
   },
 
-  floatingPanelSummary: {
+  drawerPanelSummary: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
   },
 
-  floatingPanelActions: {
+  drawerPanelActions: {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
     flexShrink: 0,
   },
 
-  floatingPanelCloseBtn: {
+  drawerPanelCloseBtn: {
     width: '28px',
     height: '28px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'rgba(255,255,255,0.08)',
-    border: '1px solid ' + colors.border.soft,
+    background: 'rgba(255, 241, 231, 0.96)',
+    border: '1px solid ' + editorCandy.border,
     borderRadius: radius.bead,
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
     cursor: 'pointer',
     flexShrink: 0,
   },
@@ -3500,8 +3643,8 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: '8px',
     padding: '10px 12px',
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid ' + colors.border.soft,
+    background: 'rgba(255, 248, 241, 0.92)',
+    border: '1px solid ' + editorCandy.border,
     borderRadius: radius.button,
   },
 
@@ -3515,13 +3658,13 @@ const styles: Record<string, React.CSSProperties> = {
 
   statsOverviewLabel: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
   },
 
   statsOverviewValue: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
+    color: editorCandy.text,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
   },
@@ -3553,7 +3696,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     borderRadius: radius.card,
 
-    boxShadow: shadows.lg,
+    boxShadow: editorCandy.shadow,
 
     border: '1px solid rgba(255, 255, 255, 0.1)',
 
@@ -3593,7 +3736,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontWeight: typography.fontWeight.bold,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
   },
 
@@ -3833,17 +3976,17 @@ const styles: Record<string, React.CSSProperties> = {
 
   controlPanel: {
 
-    background: colors.bg.card,
+    background: editorCandy.panel,
 
     borderRadius: radius.card,
 
-    padding: '10px',
+    padding: '8px 8px 6px',
 
-    marginBottom: '8px',
+    marginBottom: '6px',
 
-    boxShadow: shadows.sm,
+    boxShadow: editorCandy.shadow,
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
   },
 
@@ -3861,8 +4004,8 @@ const styles: Record<string, React.CSSProperties> = {
     height: '32px',
     border: 'none',
     borderRadius: radius.bead,
-    background: colors.bg.tertiary,
-    color: colors.text.primary,
+    background: 'rgba(255,255,255,0.96)',
+    color: editorCandy.text,
     fontSize: typography.fontSize.lg,
     cursor: 'pointer',
     flexShrink: 0,
@@ -3875,10 +4018,10 @@ const styles: Record<string, React.CSSProperties> = {
 
   previewZoomChip: {
     padding: '7px 10px',
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
     borderRadius: radius.button,
-    background: colors.bg.tertiary,
-    color: colors.text.primary,
+    background: 'rgba(255,255,255,0.96)',
+    color: editorCandy.text,
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold,
     cursor: 'pointer',
@@ -3887,7 +4030,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   controlItem: {
 
-    marginBottom: '8px',
+    marginBottom: '6px',
 
   },
 
@@ -3901,7 +4044,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     gap: '6px',
 
-    marginBottom: '8px',
+    marginBottom: '6px',
 
   },
 
@@ -3917,7 +4060,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
   },
 
@@ -3925,13 +4068,17 @@ const styles: Record<string, React.CSSProperties> = {
 
   controlValue: {
 
+    width: '64px',
+
     fontSize: typography.fontSize.sm,
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.bead.cyan,
+    color: editorCandy.cyan,
 
     fontWeight: typography.fontWeight.bold,
+
+    textAlign: 'right',
 
   },
 
@@ -3939,11 +4086,23 @@ const styles: Record<string, React.CSSProperties> = {
 
     display: 'grid',
 
-    gridTemplateColumns: '40px minmax(0, 1fr) 40px 64px',
+    gridTemplateColumns: '40px minmax(0, 1fr) 40px',
 
     alignItems: 'center',
 
     gap: '8px',
+
+  },
+
+  gridSizeInputRow: {
+
+    display: 'flex',
+
+    alignItems: 'center',
+
+    gap: '10px',
+
+    marginTop: '8px',
 
   },
 
@@ -3953,19 +4112,77 @@ const styles: Record<string, React.CSSProperties> = {
 
   },
 
+  gridSliderMarkerArea: {
+    position: 'relative',
+    minWidth: 0,
+    paddingTop: '18px',
+    paddingBottom: '18px',
+    display: 'flex',
+    alignItems: 'center',
+  },
+
+  gridSliderMarkerAnchor: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    transform: 'translateX(-50%)',
+    width: '34px',
+    pointerEvents: 'none',
+    zIndex: 2,
+    display: 'flex',
+    justifyContent: 'center',
+  },
+
+  gridSliderMarkerBtn: {
+    position: 'absolute',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    minWidth: '32px',
+    height: '20px',
+    padding: '0 5px',
+    borderRadius: '999px',
+    border: '1px solid ' + editorCandy.border,
+    background: colors.bg.secondary,
+    color: editorCandy.textSoft,
+    fontSize: '10px',
+    fontFamily: typography.fontFamilyAlt,
+    fontWeight: typography.fontWeight.bold,
+    cursor: 'pointer',
+    pointerEvents: 'auto',
+    zIndex: 3,
+    boxShadow: shadows.soft,
+  },
+
+  gridSliderMarkerLine: {
+    position: 'absolute',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    width: '2px',
+    height: '10px',
+    background: colors.bead.cyan + '99',
+    borderRadius: '999px',
+    opacity: 1,
+  },
+
+  gridSliderMarkerBtnActive: {
+    background: "linear-gradient(145deg, " + colors.bead.cyan + "22, " + colors.bead.green + "18)",
+    borderColor: colors.bead.cyan,
+    color: editorCandy.cyan,
+  },
+
   gridSizeStepBtn: {
 
     minWidth: '40px',
 
     height: '40px',
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
     fontSize: typography.fontSize.lg,
 
@@ -3983,13 +4200,13 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '0 8px',
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
     fontSize: typography.fontSize.sm,
 
@@ -4025,13 +4242,13 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '0 10px',
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     fontSize: typography.fontSize.xs,
 
@@ -4061,7 +4278,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
   },
 
@@ -4077,7 +4294,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     appearance: 'none',
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
     borderRadius: radius.full,
 
@@ -4113,44 +4330,6 @@ const styles: Record<string, React.CSSProperties> = {
 
 
 
-  sliderLabels: {
-
-    display: 'flex',
-
-    justifyContent: 'space-between',
-
-    marginTop: '4px',
-
-    fontSize: '9px',
-
-    fontFamily: typography.fontFamilyAlt,
-
-  },
-
-
-
-  sliderLabelGreen: {
-
-    color: colors.bead.cyan,
-
-  },
-
-
-
-  sliderLabelYellow: {
-
-    color: colors.bead.yellow,
-
-  },
-
-
-
-  sliderLabelRed: {
-
-    color: '#ff6b6b',
-
-  },
-
 
 
   paletteSettingsCard: {
@@ -4163,7 +4342,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     background: "linear-gradient(145deg, " + colors.bead.purple + "12, " + colors.bg.tertiary + ")",
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
   },
 
@@ -4185,7 +4364,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     border: 'none',
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
     cursor: 'pointer',
 
@@ -4215,7 +4394,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontWeight: typography.fontWeight.semibold,
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
   },
 
@@ -4227,7 +4406,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
   },
 
@@ -4253,7 +4432,29 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
+
+  },
+
+
+
+  paletteModeHint: {
+
+    padding: '10px 12px',
+
+    fontSize: typography.fontSize.xs,
+
+    lineHeight: 1.6,
+
+    fontFamily: typography.fontFamilyAlt,
+
+    color: editorCandy.textSoft,
+
+    background: 'rgba(255, 248, 241, 0.92)',
+
+    border: '1px solid ' + editorCandy.border,
+
+    borderRadius: radius.button,
 
   },
 
@@ -4291,7 +4492,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontSize: typography.fontSize.sm,
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
   },
 
@@ -4305,7 +4506,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     background: colors.bead.cyan + "20",
 
-    color: colors.bead.cyan,
+    color: editorCandy.cyan,
 
     fontSize: typography.fontSize.xs,
 
@@ -4331,11 +4532,11 @@ const styles: Record<string, React.CSSProperties> = {
 
     borderRadius: radius.button,
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     cursor: 'pointer',
 
@@ -4353,11 +4554,11 @@ const styles: Record<string, React.CSSProperties> = {
 
     borderRadius: radius.button,
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     cursor: 'pointer',
 
@@ -4375,7 +4576,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     border: '1px solid ' + colors.bead.cyan,
 
-    color: colors.bead.cyan,
+    color: editorCandy.cyan,
 
   },
 
@@ -4393,7 +4594,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     background: "linear-gradient(145deg, " + colors.bead.purple + ", " + colors.bead.cyan + ")",
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
     cursor: 'pointer',
 
@@ -4423,9 +4624,9 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '6px 2px',
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
@@ -4437,7 +4638,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     transition: animation.transition.fast,
 
@@ -4476,7 +4677,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
     whiteSpace: 'nowrap',
 
@@ -4490,7 +4691,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
     margin: '6px 0 0',
 
@@ -4520,7 +4721,7 @@ const styles: Record<string, React.CSSProperties> = {
   aiCutoutRestoreHint: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
     lineHeight: 1.5,
   },
 
@@ -4542,7 +4743,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   statsSection: {
 
-    background: colors.bg.card,
+    background: editorCandy.panel,
 
     borderRadius: radius.card,
 
@@ -4550,7 +4751,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     boxShadow: shadows.sm,
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     overflow: 'hidden',
 
@@ -4676,7 +4877,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
   },
 
@@ -4688,11 +4889,11 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
     padding: '2px 8px',
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
     borderRadius: radius.full,
 
@@ -4704,7 +4905,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontSize: '10px',
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
     transition: animation.transition.fast,
 
@@ -4769,7 +4970,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
     textAlign: 'center',
 
@@ -4799,7 +5000,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
     minWidth: '48px',
 
@@ -4817,7 +5018,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
     overflow: 'hidden',
 
@@ -4837,7 +5038,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
     minWidth: '28px',
 
@@ -4853,7 +5054,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
     minWidth: '32px',
 
@@ -4890,7 +5091,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.bead.cyan,
+    color: editorCandy.cyan,
 
     transition: animation.transition.fast,
 
@@ -4995,7 +5196,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     cursor: 'pointer',
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
     transition: animation.transition.fast,
 
@@ -5046,119 +5247,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     gap: '6px',
 
-    paddingBottom: '6px',
-
-  },
-
-
-
-  primaryFlowHint: {
-
-    display: 'flex',
-
-    alignItems: 'center',
-
-    justifyContent: 'center',
-
-    gap: '6px',
-
-    padding: '6px 10px',
-
-    marginBottom: '8px',
-
-    background: colors.bead.cyan + "12",
-
-    border: "1px solid " + colors.bead.cyan + "30",
-
-    borderRadius: radius.button,
-
-    color: colors.bead.cyan,
-
-    fontSize: typography.fontSize.xs,
-
-    fontWeight: typography.fontWeight.medium,
-
-    fontFamily: typography.fontFamilyAlt,
-
-  },
-
-
-
-  subActions: {
-
-    display: 'flex',
-
-    justifyContent: 'center',
-
-    paddingBottom: '12px',
-
-  },
-
-
-
-  ghostLinkBtn: {
-
-    display: 'inline-flex',
-
-    alignItems: 'center',
-
-    gap: '4px',
-
-    padding: '4px 10px',
-
-    background: 'transparent',
-
-    border: 'none',
-
-    color: colors.text.muted,
-
-    fontSize: typography.fontSize.xs,
-
-    fontWeight: typography.fontWeight.medium,
-
-    fontFamily: typography.fontFamilyAlt,
-
-    cursor: 'pointer',
-
-    transition: animation.transition.fast,
-
-  },
-
-
-
-  secondaryBtn: {
-
-    flex: 1,
-
-    display: 'flex',
-
-    alignItems: 'center',
-
-    justifyContent: 'center',
-
-    gap: '4px',
-
-    padding: '8px 6px',
-
-    background: colors.bg.tertiary,
-
-    border: '1px solid ' + colors.border.soft,
-
-    borderRadius: radius.button,
-
-    color: colors.text.primary,
-
-    fontSize: typography.fontSize.xs,
-
-    fontWeight: typography.fontWeight.semibold,
-
-    fontFamily: typography.fontFamilyAlt,
-
-    cursor: 'pointer',
-
-    boxShadow: shadows.sm,
-
-    transition: animation.transition.fast,
+    paddingBottom: 0,
 
   },
 
@@ -5215,7 +5304,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     bottom: 0,
 
-    background: colors.bg.primary,
+    background: `linear-gradient(180deg, ${editorCandy.bg} 0%, ${editorCandy.bgSoft} 100%)`,
 
     zIndex: 1200,
 
@@ -5259,13 +5348,13 @@ const styles: Record<string, React.CSSProperties> = {
 
     height: '36px',
 
-    background: colors.bg.card,
+    background: editorCandy.panel,
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
     cursor: 'pointer',
 
@@ -5275,7 +5364,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   bgModeTitle: {
 
-    fontSize: typography.fontSize.md,
+    fontSize: typography.fontSize.sm,
 
     fontWeight: typography.fontWeight.bold,
 
@@ -5295,11 +5384,11 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     padding: '4px 10px',
 
-    background: colors.bg.card,
+    background: editorCandy.panel,
 
     borderRadius: radius.full,
 
@@ -5312,6 +5401,8 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minHeight: 0,
 
+    position: 'relative',
+
     display: 'flex',
 
     alignItems: 'center',
@@ -5322,6 +5413,46 @@ const styles: Record<string, React.CSSProperties> = {
 
     overflow: 'auto',
 
+  },
+
+  bgModePreviewFloatingBtn: {
+    position: 'absolute',
+    top: '8px',
+    right: '8px',
+    zIndex: 3,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '28px',
+    padding: '0 10px',
+    borderRadius: radius.full,
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: colors.border.soft,
+    background: 'rgba(255, 255, 255, 0.82)',
+    color: editorCandy.textSoft,
+    fontSize: '10px',
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
+    backdropFilter: 'blur(10px)',
+    boxShadow: '0 4px 10px rgba(21, 29, 52, 0.12)',
+    cursor: 'pointer',
+  },
+
+  bgModePreviewFloatingBtnActive: {
+    background: 'linear-gradient(135deg, rgba(110, 231, 255, 0.96), rgba(120, 194, 255, 0.96))',
+    borderColor: 'rgba(82, 153, 255, 0.36)',
+    color: '#124f8c',
+  },
+
+  bgModeZoomPanel: {
+    padding: '10px 16px 12px',
+    background: colors.bg.card,
+    borderTop: '1px solid ' + colors.border.soft,
+    borderBottom: '1px solid ' + colors.border.soft,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
   },
 
 
@@ -5342,7 +5473,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
   },
 
@@ -5354,7 +5485,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     lineHeight: 1.5,
 
-    color: colors.bead.cyan,
+    color: editorCandy.cyan,
 
   },
 
@@ -5387,8 +5518,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '8px',
-    padding: '10px 14px',
-    background: 'rgba(255,255,255,0.04)',
+    padding: '10px 8px',
+    background: 'rgba(255, 248, 241, 0.92)',
     borderBottom: '1px solid ' + colors.border.soft,
     flexWrap: 'wrap',
   },
@@ -5404,13 +5535,13 @@ const styles: Record<string, React.CSSProperties> = {
   bgModeEntryTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: editorCandy.text,
     fontFamily: typography.fontFamilyAlt,
   },
 
   bgModeEntryDesc: {
     fontSize: '11px',
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
     fontFamily: typography.fontFamilyAlt,
     lineHeight: 1.4,
   },
@@ -5454,7 +5585,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
   },
 
@@ -5470,7 +5601,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     fontFamily: typography.fontFamilyAlt,
 
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
 
   },
 
@@ -5496,7 +5627,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '10px 12px',
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
     borderWidth: '1px',
     borderStyle: 'solid',
@@ -5504,7 +5635,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     borderRadius: radius.button,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     fontSize: typography.fontSize.sm,
 
@@ -5524,7 +5655,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderStyle: 'solid',
     borderColor: colors.bead.cyan,
 
-    color: colors.bead.cyan,
+    color: editorCandy.cyan,
 
   },
 
@@ -5550,7 +5681,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '10px 12px',
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
     borderWidth: '1px',
     borderStyle: 'solid',
@@ -5558,7 +5689,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     borderRadius: radius.button,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     fontSize: typography.fontSize.sm,
 
@@ -5606,7 +5737,7 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: '160px',
     fontSize: '11px',
     lineHeight: 1.4,
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
   },
 
@@ -5621,14 +5752,14 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: typography.fontSize.sm,
     lineHeight: 1.7,
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
   },
 
   aiCutoutStatusCard: {
     padding: '12px',
     borderRadius: radius.button,
-    background: colors.bg.tertiary,
-    border: '1px solid ' + colors.border.soft,
+    background: 'rgba(255,255,255,0.88)',
+    border: '1px solid ' + editorCandy.border,
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
@@ -5643,13 +5774,13 @@ const styles: Record<string, React.CSSProperties> = {
 
   aiCutoutStatusLabel: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: editorCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
   },
 
   aiCutoutStatusValue: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
+    color: editorCandy.text,
     fontWeight: typography.fontWeight.semibold,
     textAlign: 'right',
   },
@@ -5658,7 +5789,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: typography.fontSize.xs,
     lineHeight: 1.6,
-    color: colors.bead.cyan,
+    color: editorCandy.cyan,
   },
 
 
@@ -5667,7 +5798,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     display: 'flex',
 
-    flexWrap: 'wrap',
+    flexDirection: 'column',
 
     gap: '8px',
 
@@ -5682,6 +5813,48 @@ const styles: Record<string, React.CSSProperties> = {
     bottom: 'calc(66px + env(safe-area-inset-bottom, 0px))',
     zIndex: 1202,
     boxShadow: '0 -10px 24px rgba(6, 12, 24, 0.28)',
+
+  },
+
+  bgModeMinorRow: {
+
+    display: 'flex',
+
+    justifyContent: 'flex-end',
+
+    minHeight: '16px',
+
+  },
+
+  bgModeClearLinkBtn: {
+
+    padding: '0',
+
+    background: 'transparent',
+
+    border: 'none',
+
+    color: editorCandy.textMuted,
+
+    fontSize: typography.fontSize.xs,
+
+    fontWeight: typography.fontWeight.semibold,
+
+    fontFamily: typography.fontFamilyAlt,
+
+    cursor: 'pointer',
+
+  },
+
+  bgModePrimaryActionRow: {
+
+    display: 'flex',
+
+    alignItems: 'stretch',
+
+    gap: '8px',
+
+    flexWrap: 'nowrap',
 
   },
 
@@ -5701,7 +5874,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '8px 10px',
 
-    background: "linear-gradient(145deg, " + colors.bead.green + ", " + colors.bead.cyan + ")",
+    background: 'linear-gradient(145deg, #8ddfc3, #77d6ff)',
 
     border: 'none',
 
@@ -5759,7 +5932,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   bgModeHistoryBtn: {
 
-    flex: '0 0 auto',
+    flex: '1 1 0',
 
     display: 'flex',
 
@@ -5769,21 +5942,21 @@ const styles: Record<string, React.CSSProperties> = {
 
     gap: '6px',
 
-    minWidth: '72px',
+    minWidth: '0',
 
-    minHeight: '44px',
+    minHeight: '42px',
 
-    padding: '10px 12px',
+    padding: '10px 8px',
 
-    background: colors.bg.card,
+    background: editorCandy.panel,
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.xs,
 
     fontWeight: typography.fontWeight.semibold,
 
@@ -5819,13 +5992,13 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '12px 14px',
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     fontSize: typography.fontSize.sm,
 
@@ -5847,7 +6020,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     border: '1px solid ' + colors.bead.cyan,
 
-    color: colors.bead.cyan,
+    color: editorCandy.cyan,
 
   },
 
@@ -5855,7 +6028,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   bgModeClearBtn: {
 
-    flex: '0 0 auto',
+    flex: '1 1 0',
 
     display: 'flex',
 
@@ -5867,13 +6040,13 @@ const styles: Record<string, React.CSSProperties> = {
 
     padding: '10px 12px',
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
-    color: colors.text.secondary,
+    color: editorCandy.textSoft,
 
     fontSize: typography.fontSize.sm,
 
@@ -5889,7 +6062,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   bgModeConfirmBtn: {
 
-    flex: '1 1 0',
+    flex: '1.15 1 0',
 
     display: 'flex',
 
@@ -5897,13 +6070,15 @@ const styles: Record<string, React.CSSProperties> = {
 
     justifyContent: 'center',
 
-    minHeight: '44px',
+    minWidth: '0',
 
-    padding: '10px 14px',
+    minHeight: '48px',
 
-    background: "linear-gradient(145deg, " + colors.bead.magenta + ", " + colors.bead.purple + ")",
+    padding: '10px 10px',
 
-    border: 'none',
+    background: 'linear-gradient(145deg, #ff8fb7, #7ea9ff)',
+
+    border: '1px solid rgba(255,255,255,0.78)',
 
     borderRadius: radius.button,
 
@@ -5917,15 +6092,15 @@ const styles: Record<string, React.CSSProperties> = {
 
     cursor: 'pointer',
 
-    boxShadow: shadows.button,
+    boxShadow: '0 14px 28px rgba(126, 169, 255, 0.24)',
+
+    letterSpacing: '0.08em',
 
   },
 
-
-
   bgModeExitBtn: {
 
-    flex: '0 0 auto',
+    flex: '1 1 0',
 
     display: 'flex',
 
@@ -5933,21 +6108,21 @@ const styles: Record<string, React.CSSProperties> = {
 
     justifyContent: 'center',
 
-    minWidth: '88px',
+    minWidth: '0',
 
-    minHeight: '44px',
+    minHeight: '42px',
 
-    padding: '10px 14px',
+    padding: '10px 8px',
 
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.88)',
 
-    border: '1px solid ' + colors.border.soft,
+    border: '1px solid ' + editorCandy.border,
 
     borderRadius: radius.button,
 
-    color: colors.text.primary,
+    color: editorCandy.text,
 
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.xs,
 
     fontWeight: typography.fontWeight.semibold,
 
@@ -5977,4 +6152,5 @@ if (!document.querySelector('#editor-styles')) {
 
 
 export default EditorPage;
+
 

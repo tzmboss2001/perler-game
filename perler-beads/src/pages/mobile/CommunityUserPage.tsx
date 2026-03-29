@@ -387,10 +387,23 @@ const CommunityUserPage: React.FC = () => {
   );
 };
 
+const userCandy = {
+  pageBg: 'linear-gradient(180deg, #fff9f1 0%, #fef4ff 46%, #f3fbff 100%)',
+  panel: 'rgba(255,255,255,0.9)',
+  panelSoft: 'rgba(255,255,255,0.78)',
+  border: 'rgba(126, 103, 173, 0.16)',
+  text: '#4f4668',
+  textSoft: '#716884',
+  textMuted: '#978da8',
+  accent: '#64c8ff',
+  accentAlt: '#ff8eb8',
+  shadow: '0 18px 42px rgba(137, 112, 167, 0.12)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100%',
-    background: colors.bg.primary,
+    background: userCandy.pageBg,
     padding: '14px 12px 80px',
   },
   header: {
@@ -400,9 +413,9 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '12px',
   },
   backBtn: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.primary,
+    border: `1px solid ${userCandy.border}`,
+    background: userCandy.panel,
+    color: userCandy.text,
     width: '32px',
     height: '32px',
     borderRadius: radius.bead,
@@ -415,19 +428,19 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: userCandy.text,
   },
   center: {
     textAlign: 'center',
-    color: colors.text.muted,
+    color: userCandy.textMuted,
     padding: '40px 0',
   },
   profileCard: {
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: userCandy.panel,
+    border: `1px solid ${userCandy.border}`,
     borderRadius: radius.card,
     padding: '14px',
-    boxShadow: shadows.sm,
+    boxShadow: userCandy.shadow,
     marginBottom: '12px',
   },
   profileTop: {
@@ -441,7 +454,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: '56px',
     borderRadius: '50%',
     overflow: 'hidden',
-    background: colors.bg.tertiary,
+    background: userCandy.panelSoft,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -453,7 +466,7 @@ const styles: Record<string, React.CSSProperties> = {
     objectFit: 'cover',
   },
   avatarFallback: {
-    color: colors.text.primary,
+    color: userCandy.text,
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
   },
@@ -466,27 +479,27 @@ const styles: Record<string, React.CSSProperties> = {
   nickname: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: userCandy.text,
   },
   joinedText: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: userCandy.textMuted,
   },
   bioCard: {
-    background: colors.bg.tertiary,
-    border: `1px solid ${colors.border.soft}`,
+    background: userCandy.panelSoft,
+    border: `1px solid ${userCandy.border}`,
     borderRadius: radius.md,
     padding: '10px 12px',
     marginBottom: '12px',
   },
   bioLabel: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: userCandy.textMuted,
     marginBottom: '4px',
   },
   bioText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
+    color: userCandy.textSoft,
     lineHeight: 1.6,
   },
   statsGrid: {
@@ -495,14 +508,14 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '8px',
   },
   statBox: {
-    background: colors.bg.tertiary,
-    border: `1px solid ${colors.border.soft}`,
+    background: userCandy.panelSoft,
+    border: `1px solid ${userCandy.border}`,
     borderRadius: radius.md,
     padding: '10px',
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
-    color: colors.text.secondary,
+    color: userCandy.textSoft,
     fontSize: typography.fontSize.xs,
   },
   tabBar: {
@@ -512,9 +525,9 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '10px',
   },
   tabBtn: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.secondary,
+    border: `1px solid ${userCandy.border}`,
+    background: userCandy.panel,
+    color: userCandy.textSoft,
     borderRadius: radius.button,
     padding: '10px 12px',
     cursor: 'pointer',
@@ -522,9 +535,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: typography.fontWeight.medium,
   },
   tabBtnActive: {
-    color: colors.bead.cyan,
+    color: userCandy.accent,
     borderColor: `${colors.bead.cyan}66`,
-    boxShadow: `0 0 0 1px ${colors.bead.cyan}22 inset`,
+    boxShadow: '0 0 0 1px rgba(100, 200, 255, 0.28) inset',
   },
   sortBar: {
     display: 'flex',
@@ -536,7 +549,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sectionHint: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: userCandy.textMuted,
   },
   sortOptions: {
     display: 'flex',
@@ -544,18 +557,18 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
   },
   sortBtn: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.secondary,
+    border: `1px solid ${userCandy.border}`,
+    background: userCandy.panel,
+    color: userCandy.textSoft,
     borderRadius: radius.sm,
     padding: '5px 10px',
     cursor: 'pointer',
     fontSize: typography.fontSize.xs,
   },
   sortBtnActive: {
-    color: colors.bead.purple,
+    color: userCandy.accentAlt,
     borderColor: `${colors.bead.purple}66`,
-    background: `${colors.bead.purple}14`,
+    background: 'rgba(255, 142, 184, 0.12)',
   },
   filterPanel: {
     display: 'flex',
@@ -565,9 +578,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   searchInput: {
     width: '100%',
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.primary,
+    border: `1px solid ${userCandy.border}`,
+    background: userCandy.panel,
+    color: userCandy.text,
     borderRadius: radius.button,
     padding: '10px 12px',
     outline: 'none',
@@ -580,25 +593,25 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '6px',
   },
   categoryBtn: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.secondary,
+    border: `1px solid ${userCandy.border}`,
+    background: userCandy.panel,
+    color: userCandy.textSoft,
     borderRadius: radius.sm,
     padding: '5px 10px',
     cursor: 'pointer',
     fontSize: typography.fontSize.xs,
   },
   categoryBtnActive: {
-    color: colors.bead.cyan,
+    color: userCandy.accent,
     borderColor: `${colors.bead.cyan}66`,
-    background: `${colors.bead.cyan}14`,
+    background: 'rgba(100, 200, 255, 0.12)',
   },
   emptyCard: {
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: userCandy.panel,
+    border: `1px solid ${userCandy.border}`,
     borderRadius: radius.card,
     padding: '24px 16px',
-    color: colors.text.muted,
+    color: userCandy.textMuted,
     textAlign: 'center',
   },
   grid: {
@@ -607,10 +620,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '10px',
   },
   card: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
+    border: `1px solid ${userCandy.border}`,
+    background: userCandy.panel,
     borderRadius: radius.card,
-    boxShadow: shadows.sm,
+    boxShadow: userCandy.shadow,
     overflow: 'hidden',
     padding: 0,
     cursor: 'pointer',
@@ -640,7 +653,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
+    color: userCandy.text,
     marginBottom: '4px',
     display: '-webkit-box',
     WebkitLineClamp: 2,
@@ -650,7 +663,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   metaText: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: userCandy.textMuted,
     marginBottom: '6px',
   },
   statRow: {
@@ -664,11 +677,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '4px',
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: userCandy.textMuted,
   },
   timeText: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: userCandy.textMuted,
   },
 };
 

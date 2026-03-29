@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, MagnifyingGlass, Spinner } from '@phosphor-icons/react';
 import { finishedWorkApi, FinishedWorkItem } from '../../services/api/finishedWorkApi';
-import { colors, typography, radius, shadows, animation } from '../../styles/designSystem';
+import { colors, typography, radius, animation } from '../../styles/designSystem';
 import { sanitizeDisplayTitle } from '../../utils/textUtils';
 
 const FinishedWorksPage: React.FC = () => {
@@ -70,7 +70,7 @@ const FinishedWorksPage: React.FC = () => {
 
       <div style={styles.toolbar}>
         <div style={styles.searchBar}>
-          <MagnifyingGlass size={16} color={colors.text.muted} />
+          <MagnifyingGlass size={16} color={finishedListCandy.textMuted} />
           <input
             value={keywordInput}
             onChange={(event) => setKeywordInput(event.target.value)}
@@ -91,25 +91,17 @@ const FinishedWorksPage: React.FC = () => {
                 setKeyword('');
               }}
             >
-              {"清除"}
+              清除
             </button>
           ) : null}
         </div>
 
         <div style={styles.sortBar}>
-          <button
-            type="button"
-            style={sort === 'latest' ? styles.sortBtnActive : styles.sortBtn}
-            onClick={() => setSort('latest')}
-          >
-            {"最新"}
+          <button type="button" style={sort === 'latest' ? styles.sortBtnActive : styles.sortBtn} onClick={() => setSort('latest')}>
+            最新
           </button>
-          <button
-            type="button"
-            style={sort === 'hottest' ? styles.sortBtnActive : styles.sortBtn}
-            onClick={() => setSort('hottest')}
-          >
-            {"最热"}
+          <button type="button" style={sort === 'hottest' ? styles.sortBtnActive : styles.sortBtn} onClick={() => setSort('hottest')}>
+            最热
           </button>
         </div>
       </div>
@@ -121,7 +113,11 @@ const FinishedWorksPage: React.FC = () => {
           {list.map(item => (
             <div key={item.id} style={styles.card} onClick={() => navigate(`/mobile/finished/${item.id}`)}>
               <div style={styles.thumbWrap}>
-                {item.cover_url ? <img src={item.cover_url} alt={sanitizeDisplayTitle(item.title)} style={styles.thumb} loading="lazy" /> : <div style={styles.thumbEmpty}>{"无图"}</div>}
+                {item.cover_url ? (
+                  <img src={item.cover_url} alt={sanitizeDisplayTitle(item.title)} style={styles.thumb} loading="lazy" />
+                ) : (
+                  <div style={styles.thumbEmpty}>无图</div>
+                )}
               </div>
               <div style={styles.cardBody}>
                 <div style={styles.cardTitle}>{sanitizeDisplayTitle(item.title)}</div>
@@ -138,8 +134,8 @@ const FinishedWorksPage: React.FC = () => {
                   >
                     {item.user?.nickname || '用户'}
                   </button>
-                  <span>?</span>
-                  <span>{item.image_count} {"张"}</span>
+                  <span>·</span>
+                  <span>{item.image_count} 张</span>
                 </div>
               </div>
             </div>
@@ -150,22 +146,34 @@ const FinishedWorksPage: React.FC = () => {
       {loading ? (
         <div style={styles.loading}>
           <Spinner size={16} style={{ animation: 'spin 1s linear infinite' }} />
-          <span>{"加载中..."}</span>
+          <span>加载中...</span>
         </div>
       ) : null}
 
-      {!hasMore && list.length > 0 ? <div style={styles.end}>{"已经到底了"}</div> : null}
+      {!hasMore && list.length > 0 ? <div style={styles.end}>已经到底了</div> : null}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };
 
+const finishedListCandy = {
+  pageBg: 'linear-gradient(180deg, #fffaf3 0%, #fef4ff 46%, #f3fbff 100%)',
+  panel: 'rgba(255,255,255,0.9)',
+  panelSoft: 'rgba(255,255,255,0.8)',
+  border: 'rgba(126, 103, 173, 0.16)',
+  text: '#4f4668',
+  textSoft: '#716884',
+  textMuted: '#978da8',
+  accent: '#64c8ff',
+  shadow: '0 18px 42px rgba(137, 112, 167, 0.12)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    minHeight: '100%',
-    background: colors.bg.primary,
-    padding: '14px 12px 80px',
+    minHeight: 'calc(100vh - 82px)',
+    background: finishedListCandy.pageBg,
+    padding: '14px 12px 12px',
   },
   header: {
     display: 'flex',
@@ -174,9 +182,9 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '12px',
   },
   backBtn: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.primary,
+    border: `1px solid ${finishedListCandy.border}`,
+    background: finishedListCandy.panel,
+    color: finishedListCandy.text,
     width: '32px',
     height: '32px',
     borderRadius: radius.bead,
@@ -189,7 +197,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: finishedListCandy.text,
   },
   toolbar: {
     display: 'grid',
@@ -200,24 +208,25 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
+    border: `1px solid ${finishedListCandy.border}`,
+    background: finishedListCandy.panel,
     borderRadius: radius.button,
     padding: '10px 12px',
+    boxShadow: finishedListCandy.shadow,
   },
   searchInput: {
     flex: 1,
     border: 'none',
     outline: 'none',
     background: 'transparent',
-    color: colors.text.primary,
+    color: finishedListCandy.text,
     fontSize: typography.fontSize.sm,
   },
   clearBtn: {
     border: 'none',
     background: 'transparent',
     padding: 0,
-    color: colors.bead.cyan,
+    color: finishedListCandy.accent,
     fontSize: typography.fontSize.xs,
     cursor: 'pointer',
   },
@@ -227,9 +236,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '8px',
   },
   sortBtn: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.secondary,
+    border: `1px solid ${finishedListCandy.border}`,
+    background: finishedListCandy.panel,
+    color: finishedListCandy.textSoft,
     borderRadius: radius.button,
     padding: '6px 12px',
     fontSize: typography.fontSize.xs,
@@ -237,8 +246,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sortBtnActive: {
     border: `1px solid ${colors.bead.cyan}`,
-    background: `${colors.bead.cyan}22`,
-    color: colors.bead.cyan,
+    background: 'rgba(100, 200, 255, 0.14)',
+    color: finishedListCandy.accent,
     borderRadius: radius.button,
     padding: '6px 12px',
     fontSize: typography.fontSize.xs,
@@ -250,18 +259,18 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '10px',
   },
   card: {
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: finishedListCandy.panel,
+    border: `1px solid ${finishedListCandy.border}`,
     borderRadius: radius.lg,
     overflow: 'hidden',
-    boxShadow: shadows.sm,
+    boxShadow: finishedListCandy.shadow,
     cursor: 'pointer',
     transition: animation.transition.fast,
   },
   thumbWrap: {
     width: '100%',
     aspectRatio: '1',
-    background: colors.bg.elevated,
+    background: 'linear-gradient(145deg, rgba(255,255,255,0.92), rgba(244,251,255,0.88))',
   },
   thumb: {
     width: '100%',
@@ -274,7 +283,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: colors.text.muted,
+    color: finishedListCandy.textMuted,
     fontSize: typography.fontSize.sm,
   },
   cardBody: {
@@ -283,7 +292,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
+    color: finishedListCandy.text,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -294,13 +303,13 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '4px',
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: finishedListCandy.textMuted,
   },
   authorBtn: {
     border: 'none',
     background: 'transparent',
     padding: 0,
-    color: colors.bead.cyan,
+    color: finishedListCandy.accent,
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
     cursor: 'pointer',
@@ -308,20 +317,20 @@ const styles: Record<string, React.CSSProperties> = {
   empty: {
     padding: '40px 0',
     textAlign: 'center',
-    color: colors.text.muted,
+    color: finishedListCandy.textMuted,
   },
   loading: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: '8px',
-    color: colors.text.muted,
+    color: finishedListCandy.textMuted,
     padding: '14px 0',
   },
   end: {
     textAlign: 'center',
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: finishedListCandy.textMuted,
     paddingTop: '12px',
   },
 };

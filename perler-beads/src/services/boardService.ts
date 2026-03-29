@@ -39,6 +39,56 @@ export interface BoardRecommendation {
   needSplice: boolean;
 }
 
+/** 现实豆板分区线规则 */
+export interface PhysicalBoardGuideSpec {
+  boardSize: number;
+  segments: number[];
+}
+
+/**
+ * 现实常见方板的分区规则。
+ * 54 板：2 / 10 / 10 / 10 / 10 / 10 / 2
+ * 78 板：4 / 10 / 10 / 10 / 10 / 10 / 10 / 10 / 4
+ * 104 板：2 / 10 × 10 / 2
+ */
+export const PHYSICAL_BOARD_GUIDE_SPECS: PhysicalBoardGuideSpec[] = [
+  { boardSize: 54, segments: [2, 10, 10, 10, 10, 10, 2] },
+  { boardSize: 78, segments: [4, 10, 10, 10, 10, 10, 10, 10, 4] },
+  { boardSize: 104, segments: [2, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 2] },
+];
+
+/**
+ * 为制作模式返回现实豆板画线所用的基准板尺寸。
+ * 小于等于 54 用 54 板；小于等于 78 用 78 板；更大的作品统一按 104 板重复。
+ */
+export function getPhysicalBoardDrawSize(width: number, height: number): number {
+  const longestSide = Math.max(width, height);
+  if (longestSide <= 54) return 54;
+  if (longestSide <= 78) return 78;
+  return 104;
+}
+
+/**
+ * 计算单块现实豆板内部的分区线偏移位置。
+ * 只返回内部线，不包含 0 和 boardSize 本身。
+ */
+export function getPhysicalBoardGuideOffsets(boardSize: number): number[] {
+  const spec = PHYSICAL_BOARD_GUIDE_SPECS.find((item) => item.boardSize === boardSize);
+  if (!spec) {
+    return [];
+  }
+
+  const offsets: number[] = [];
+  let cursor = 0;
+  for (const segment of spec.segments) {
+    cursor += segment;
+    if (cursor > 0 && cursor < boardSize) {
+      offsets.push(cursor);
+    }
+  }
+  return offsets;
+}
+
 /**
  * 智能推荐拼豆板配置
  *

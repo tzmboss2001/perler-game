@@ -129,10 +129,20 @@ const AboutPage: React.FC = () => {
   );
 };
 
+const aboutCandy = {
+  pageBg: 'linear-gradient(180deg, #fffaf3 0%, #fef4ff 48%, #f3fbff 100%)',
+  panel: 'rgba(255,255,255,0.9)',
+  border: 'rgba(126, 103, 173, 0.16)',
+  text: '#4f4668',
+  textSoft: '#726787',
+  textMuted: '#978da8',
+  shadow: '0 18px 42px rgba(137, 112, 167, 0.12)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    background: colors.bg.primary,
+    background: aboutCandy.pageBg,
     paddingBottom: '80px',
   },
   header: {
@@ -140,8 +150,9 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '16px',
-    background: colors.bg.secondary,
-    borderBottom: `1px solid ${colors.border.soft}`,
+    background: 'rgba(255,255,255,0.78)',
+    borderBottom: `1px solid ${aboutCandy.border}`,
+    boxShadow: '0 10px 28px rgba(137, 112, 167, 0.08)',
     position: 'fixed',
     top: 0,
     left: 0,
@@ -157,7 +168,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: aboutCandy.text,
     margin: 0,
   },
   placeholder: {
@@ -167,9 +178,9 @@ const styles: Record<string, React.CSSProperties> = {
     margin: '16px',
     padding: '24px 16px',
     borderRadius: radius.card,
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
-    boxShadow: shadows.md,
+    background: aboutCandy.panel,
+    border: `1px solid ${aboutCandy.border}`,
+    boxShadow: aboutCandy.shadow,
     textAlign: 'center',
   },
   iconWrap: {
@@ -180,7 +191,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 72,
     margin: '0 auto',
     borderRadius: radius.card,
-    background: `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.bead.purple})`,
+    background: 'linear-gradient(145deg, #78d8ff 0%, #7d9bff 55%, #ff93bf 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -190,18 +201,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
   appName: {
     margin: 0,
-    color: colors.text.primary,
+    color: aboutCandy.text,
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.bold,
   },
   appVersion: {
     margin: '6px 0 10px',
-    color: colors.text.secondary,
+    color: aboutCandy.textSoft,
     fontSize: typography.fontSize.sm,
   },
   appDesc: {
     margin: 0,
-    color: colors.text.secondary,
+    color: aboutCandy.textSoft,
     fontSize: typography.fontSize.sm,
     lineHeight: 1.6,
   },
@@ -210,15 +221,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sectionTitle: {
     margin: '0 0 10px',
-    color: colors.text.primary,
+    color: aboutCandy.text,
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
   },
   infoCard: {
     padding: '14px',
     borderRadius: radius.card,
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: aboutCandy.panel,
+    border: `1px solid ${aboutCandy.border}`,
   },
   infoRow: {
     display: 'flex',
@@ -227,12 +238,12 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 8,
   },
   infoLabel: {
-    color: colors.text.muted,
+    color: aboutCandy.textMuted,
     fontSize: typography.fontSize.sm,
     minWidth: 64,
   },
   infoValue: {
-    color: colors.text.primary,
+    color: aboutCandy.text,
     fontSize: typography.fontSize.sm,
     wordBreak: 'break-all',
   },
@@ -248,8 +259,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     padding: '12px',
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
+    border: `1px solid ${aboutCandy.border}`,
+    background: aboutCandy.panel,
     cursor: 'pointer',
     textAlign: 'left',
   },
@@ -264,12 +275,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   linkLabel: {
     flex: 1,
-    color: colors.text.primary,
+    color: aboutCandy.text,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
   },
   linkArrow: {
-    color: colors.text.muted,
+    color: aboutCandy.textMuted,
     fontSize: typography.fontSize.sm,
   },
   footer: {
@@ -279,7 +290,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   footerText: {
     margin: '4px 0',
-    color: colors.text.muted,
+    color: aboutCandy.textMuted,
     fontSize: typography.fontSize.xs,
   },
 };

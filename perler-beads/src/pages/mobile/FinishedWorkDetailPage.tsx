@@ -266,10 +266,22 @@ const FinishedWorkDetailPage: React.FC = () => {
   );
 };
 
+const finishedCandy = {
+  pageBg: 'linear-gradient(180deg, #fffaf4 0%, #fdf4ff 48%, #f3fbff 100%)',
+  panel: 'rgba(255,255,255,0.9)',
+  panelSoft: 'rgba(255,255,255,0.8)',
+  border: 'rgba(126, 103, 173, 0.16)',
+  text: '#4e4568',
+  textSoft: '#726787',
+  textMuted: '#978da8',
+  accent: '#64c8ff',
+  shadow: '0 18px 42px rgba(137, 112, 167, 0.12)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100%',
-    background: colors.bg.primary,
+    background: finishedCandy.pageBg,
     padding: '14px 12px 80px',
   },
   header: {
@@ -279,9 +291,9 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '12px',
   },
   backBtn: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.primary,
+    border: `1px solid ${finishedCandy.border}`,
+    background: finishedCandy.panel,
+    color: finishedCandy.text,
     width: '32px',
     height: '32px',
     borderRadius: radius.bead,
@@ -294,7 +306,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: finishedCandy.text,
   },
   center: {
     display: 'flex',
@@ -302,25 +314,25 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     gap: '8px',
     padding: '50px 0',
-    color: colors.text.muted,
+    color: finishedCandy.textMuted,
   },
   infoCard: {
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: finishedCandy.panel,
+    border: `1px solid ${finishedCandy.border}`,
     borderRadius: radius.card,
-    boxShadow: shadows.sm,
+    boxShadow: finishedCandy.shadow,
     padding: '12px',
     marginBottom: '12px',
   },
   workTitle: {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: finishedCandy.text,
     marginBottom: '6px',
   },
   meta: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: finishedCandy.textMuted,
     marginBottom: '6px',
   },
   authorLink: {
@@ -328,14 +340,14 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'transparent',
     padding: 0,
     fontSize: typography.fontSize.xs,
-    color: colors.bead.cyan,
+    color: finishedCandy.accent,
     marginBottom: '6px',
     cursor: 'pointer',
     textAlign: 'left',
   },
   desc: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
+    color: finishedCandy.textSoft,
     lineHeight: 1.5,
     marginBottom: '10px',
   },
@@ -346,9 +358,9 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
   },
   actionBtn: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.tertiary,
-    color: colors.text.secondary,
+    border: `1px solid ${finishedCandy.border}`,
+    background: finishedCandy.panelSoft,
+    color: finishedCandy.textSoft,
     borderRadius: radius.button,
     padding: '6px 10px',
     display: 'inline-flex',
@@ -364,8 +376,8 @@ const styles: Record<string, React.CSSProperties> = {
   imageCard: {
     borderRadius: radius.card,
     overflow: 'hidden',
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
+    border: `1px solid ${finishedCandy.border}`,
+    background: finishedCandy.panel,
   },
   image: {
     width: '100%',
@@ -373,10 +385,10 @@ const styles: Record<string, React.CSSProperties> = {
     objectFit: 'contain',
   },
   moreSection: {
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: finishedCandy.panel,
+    border: `1px solid ${finishedCandy.border}`,
     borderRadius: radius.card,
-    boxShadow: shadows.sm,
+    boxShadow: finishedCandy.shadow,
     padding: '12px',
     marginTop: '12px',
   },
@@ -390,23 +402,23 @@ const styles: Record<string, React.CSSProperties> = {
   moreSectionTitle: {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: finishedCandy.text,
   },
   moreLinkBtn: {
     border: 'none',
     background: 'transparent',
-    color: colors.bead.cyan,
+    color: finishedCandy.accent,
     fontSize: typography.fontSize.sm,
     cursor: 'pointer',
     padding: 0,
   },
   moreLoading: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.muted,
+    color: finishedCandy.textMuted,
   },
   moreEmpty: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.muted,
+    color: finishedCandy.textMuted,
   },
   moreGrid: {
     display: 'grid',
@@ -414,19 +426,19 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '10px',
   },
   moreCard: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.secondary,
+    border: `1px solid ${finishedCandy.border}`,
+    background: 'rgba(255,255,255,0.82)',
     borderRadius: radius.card,
     padding: 0,
     overflow: 'hidden',
     cursor: 'pointer',
     textAlign: 'left',
-    color: colors.text.primary,
+    color: finishedCandy.text,
   },
   moreThumbWrap: {
     width: '100%',
     aspectRatio: '1 / 1',
-    background: colors.bg.tertiary,
+    background: finishedCandy.panelSoft,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -439,7 +451,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   moreThumbEmpty: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: finishedCandy.textMuted,
   },
   moreCardBody: {
     padding: '8px',
@@ -449,13 +461,13 @@ const styles: Record<string, React.CSSProperties> = {
   moreCardTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
+    color: finishedCandy.text,
     lineHeight: 1.4,
     wordBreak: 'break-word',
   },
   moreCardMeta: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: finishedCandy.textMuted,
   },
 };
 

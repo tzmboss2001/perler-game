@@ -7,6 +7,7 @@ import ImageCropper from '../../components/ImageCropper';
 import { analyzeImage } from '../../services/imageAnalysisService';
 import { imageOptimizationConfig, prepareImageForCreation } from '../../services/imageOptimizationService';
 import EditorPage, { EditorStateData } from './EditorPage';
+import BannerAd from '../../components/ads/BannerAd';
 
 const CreatePage: React.FC = () => {
   const navigate = useNavigate();
@@ -201,6 +202,8 @@ const CreatePage: React.FC = () => {
                 <p style={styles.tipItem}><span style={styles.tipDot} />高清大图会先自动优化，再进入裁剪和编辑</p>
               </div>
             </div>
+
+            <BannerAd placement="create_inline" />
           </div>
         ) : croppedImage ? (
           <div style={styles.generatingCard}>

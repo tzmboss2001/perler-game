@@ -58,6 +58,9 @@ function drawOptimizedCanvas(img: HTMLImageElement, width: number, height: numbe
   }
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+  // JPEG 不支持透明通道，先铺白底避免透明区域被压成黑底。
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
   ctx.drawImage(img, 0, 0, width, height);
   return canvas;
 }

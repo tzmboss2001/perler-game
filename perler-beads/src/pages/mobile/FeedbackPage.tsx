@@ -12,6 +12,18 @@ const feedbackTypes = [
   { id: 'other', label: '其他反馈', icon: Heart, color: colors.bead.pink, desc: '表扬、吐槽、随便聊聊' },
 ];
 
+const feedbackCandy = {
+  pageBg: 'linear-gradient(180deg, #fffaf3 0%, #fef4ff 44%, #f3fbff 100%)',
+  panel: 'rgba(255,255,255,0.9)',
+  panelSoft: 'rgba(255,255,255,0.78)',
+  border: 'rgba(126, 103, 173, 0.16)',
+  text: '#4f4668',
+  textSoft: '#726787',
+  textMuted: '#978da8',
+  shadow: '0 18px 42px rgba(137, 112, 167, 0.12)',
+  strongShadow: '0 12px 30px rgba(133, 183, 255, 0.22)',
+};
+
 const FeedbackPage: React.FC = () => {
   const navigate = useNavigate();
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -42,22 +54,17 @@ const FeedbackPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
-
     try {
       const response = await fetch('/api/v1/feedback/create', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: selectedType,
           content: content.trim(),
           contact: contact.trim(),
         }),
       });
-
       const result = await response.json();
-
       if (result.code === 0) {
         setIsSuccess(true);
       } else {
@@ -81,9 +88,10 @@ const FeedbackPage: React.FC = () => {
   const typeItemStyle = (selected: boolean, color: string): React.CSSProperties => ({
     ...styles.typeItem,
     padding: isCompactPhone ? '12px 13px' : styles.typeItem.padding,
-    borderColor: selected ? color : colors.border.soft,
-    background: selected ? `${color}10` : colors.bg.card,
+    borderColor: selected ? `${color}80` : feedbackCandy.border,
+    background: selected ? `linear-gradient(135deg, ${color}18, rgba(255,255,255,0.95))` : feedbackCandy.panel,
     alignItems: isNarrowPhone ? 'flex-start' : styles.typeItem.alignItems,
+    boxShadow: selected ? `0 14px 28px ${color}20` : feedbackCandy.shadow,
   });
 
   const typeIconBoxStyle: React.CSSProperties = {
@@ -133,9 +141,7 @@ const FeedbackPage: React.FC = () => {
           <p style={styles.successDesc}>我们已收到你的意见，会认真阅读并持续改进产品。</p>
           <p style={styles.successHint}>
             如有紧急问题，请发送邮件至：<br />
-            <a href="mailto:support@example.com" style={styles.emailLink}>
-              support@example.com
-            </a>
+            <a href="mailto:support@example.com" style={styles.emailLink}>support@example.com</a>
           </p>
           <button style={styles.backHomeBtn} onClick={() => navigate('/mobile/home')}>
             返回首页
@@ -166,18 +172,11 @@ const FeedbackPage: React.FC = () => {
             const isSelected = selectedType === type.id;
             return (
               <div key={type.id} style={typeItemStyle(isSelected, type.color)} onClick={() => setSelectedType(type.id)}>
-                <div
-                  style={{
-                    ...typeIconBoxStyle,
-                    background: `linear-gradient(145deg, ${type.color}30, ${type.color}15)`,
-                  }}
-                >
+                <div style={{ ...typeIconBoxStyle, background: `linear-gradient(145deg, ${type.color}22, rgba(255,255,255,0.92))` }}>
                   <type.icon size={20} weight="fill" style={{ color: type.color }} />
                 </div>
                 <div style={styles.typeContent}>
-                  <span style={{ ...styles.typeLabel, color: isSelected ? type.color : colors.text.primary }}>
-                    {type.label}
-                  </span>
+                  <span style={{ ...styles.typeLabel, color: isSelected ? type.color : feedbackCandy.text }}>{type.label}</span>
                   <span style={styles.typeDesc}>{type.desc}</span>
                 </div>
                 {isSelected && (
@@ -208,7 +207,7 @@ const FeedbackPage: React.FC = () => {
       <div style={sectionStyle}>
         <h2 style={styles.sectionTitle}>联系方式（选填）</h2>
         <div style={inputWrapperStyle}>
-          <EnvelopeSimple size={18} style={{ color: colors.text.muted }} />
+          <EnvelopeSimple size={18} style={{ color: feedbackCandy.textMuted }} />
           <input
             id="feedback-contact"
             name="feedback-contact"
@@ -223,14 +222,7 @@ const FeedbackPage: React.FC = () => {
       </div>
 
       <div style={submitSectionStyle}>
-        <button
-          style={{
-            ...styles.submitBtn,
-            opacity: isSubmitting || !content.trim() ? 0.6 : 1,
-          }}
-          onClick={handleSubmit}
-          disabled={isSubmitting || !content.trim()}
-        >
+        <button style={{ ...styles.submitBtn, opacity: isSubmitting || !content.trim() ? 0.6 : 1 }} onClick={handleSubmit} disabled={isSubmitting || !content.trim()}>
           {isSubmitting ? (
             <>
               <Spinner size={18} style={{ animation: 'spin 1s linear infinite' }} />
@@ -254,63 +246,49 @@ const FeedbackPage: React.FC = () => {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    background: colors.bg.primary,
-    paddingBottom: '100px',
+    background: feedbackCandy.pageBg,
+    paddingBottom: '104px',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '16px',
-    background: colors.bg.secondary,
-    borderBottom: `1px solid ${colors.border.soft}`,
+    background: feedbackCandy.panelSoft,
+    borderBottom: `1px solid ${feedbackCandy.border}`,
+    boxShadow: '0 10px 28px rgba(137, 112, 167, 0.08)',
     position: 'fixed',
     top: 0,
     left: 0,
     right: 0,
     zIndex: 100,
   },
-  headerSpacer: {
-    height: '56px',
-  },
-  backBtn: {
-    ...mixins.backButton,
-  },
+  headerSpacer: { height: '56px' },
+  backBtn: { ...mixins.backButton },
   title: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
-    background: colors.gradients.primary,
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
+    color: feedbackCandy.text,
     margin: 0,
   },
-  placeholder: {
-    width: 40,
-  },
-  section: {
-    margin: '20px 16px',
-  },
+  placeholder: { width: 40 },
+  section: { margin: '20px 16px' },
   sectionTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
+    color: feedbackCandy.textSoft,
     margin: '0 0 12px',
     paddingLeft: '4px',
   },
-  typeList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
+  typeList: { display: 'flex', flexDirection: 'column', gap: '12px' },
   typeItem: {
     display: 'flex',
     alignItems: 'center',
     padding: '14px 16px',
     borderRadius: radius.card,
-    border: '2px solid',
+    border: '1px solid',
     cursor: 'pointer',
     transition: animation.transition.fast,
     position: 'relative',
@@ -324,12 +302,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     marginRight: '12px',
   },
-  typeContent: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    minWidth: 0,
-  },
+  typeContent: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
   typeLabel: {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
@@ -339,7 +312,7 @@ const styles: Record<string, React.CSSProperties> = {
   typeDesc: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: feedbackCandy.textMuted,
     lineHeight: 1.5,
   },
   checkMark: {
@@ -354,12 +327,13 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     minHeight: '150px',
     padding: '16px',
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: feedbackCandy.panel,
+    border: `1px solid ${feedbackCandy.border}`,
     borderRadius: radius.card,
+    boxShadow: feedbackCandy.shadow,
     fontSize: typography.fontSize.md,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: feedbackCandy.text,
     resize: 'vertical',
     outline: 'none',
     boxSizing: 'border-box',
@@ -368,7 +342,7 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'right',
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: feedbackCandy.textMuted,
     marginTop: '8px',
   },
   inputWrapper: {
@@ -376,9 +350,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '12px',
     padding: '14px 16px',
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: feedbackCandy.panel,
+    border: `1px solid ${feedbackCandy.border}`,
     borderRadius: radius.card,
+    boxShadow: feedbackCandy.shadow,
   },
   input: {
     flex: 1,
@@ -386,23 +361,21 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     fontSize: typography.fontSize.md,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: feedbackCandy.text,
     outline: 'none',
     minWidth: 0,
   },
   inputHint: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: feedbackCandy.textMuted,
     margin: '8px 0 0 4px',
   },
-  submitSection: {
-    margin: '32px 16px',
-  },
+  submitSection: { margin: '32px 16px' },
   submitBtn: {
     width: '100%',
     padding: '16px',
-    background: `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.pixel.blue})`,
+    background: 'linear-gradient(145deg, #78d8ff 0%, #85b7ff 55%, #ff93bf 100%)',
     border: 'none',
     borderRadius: radius.card,
     color: '#ffffff',
@@ -414,46 +387,26 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: '8px',
-    boxShadow: `0 4px 16px ${colors.bead.cyan}40`,
+    boxShadow: feedbackCandy.strongShadow,
     transition: animation.transition.fast,
   },
   successBox: {
     margin: '32px 16px',
     padding: '32px 20px',
-    background: colors.bg.card,
+    background: feedbackCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    boxShadow: shadows.md,
+    border: `1px solid ${feedbackCandy.border}`,
+    boxShadow: feedbackCandy.shadow,
     textAlign: 'center',
   },
-  successIcon: {
-    marginBottom: '16px',
-  },
-  successTitle: {
-    margin: '0 0 10px',
-    color: colors.text.primary,
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-  },
-  successDesc: {
-    margin: '0 0 12px',
-    color: colors.text.secondary,
-    fontSize: typography.fontSize.sm,
-    lineHeight: 1.7,
-  },
-  successHint: {
-    margin: '0 0 18px',
-    color: colors.text.muted,
-    fontSize: typography.fontSize.xs,
-    lineHeight: 1.7,
-  },
-  emailLink: {
-    color: colors.bead.cyan,
-    textDecoration: 'none',
-  },
+  successIcon: { marginBottom: '16px' },
+  successTitle: { margin: '0 0 10px', color: feedbackCandy.text, fontSize: typography.fontSize.xl, fontWeight: typography.fontWeight.bold },
+  successDesc: { margin: '0 0 12px', color: feedbackCandy.textSoft, fontSize: typography.fontSize.sm, lineHeight: 1.7 },
+  successHint: { margin: '0 0 18px', color: feedbackCandy.textMuted, fontSize: typography.fontSize.xs, lineHeight: 1.7 },
+  emailLink: { color: colors.bead.cyan, textDecoration: 'none' },
   backHomeBtn: {
     padding: '12px 20px',
-    background: `linear-gradient(145deg, ${colors.bead.green}, ${colors.bead.green}cc)`,
+    background: 'linear-gradient(145deg, #7ed6a5 0%, #78d8ff 100%)',
     border: 'none',
     borderRadius: radius.button,
     color: '#fff',

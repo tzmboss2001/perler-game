@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"perler-beads-server/global"
 	"perler-beads-server/model/entity"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -48,6 +49,14 @@ func Gorm() *gorm.DB {
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxIdleConns(m.MaxIdleConns)
 	sqlDB.SetMaxOpenConns(m.MaxOpenConns)
+	// Recycle pooled connections proactively to avoid reusing stale MySQL sockets.
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(2 * time.Minute)
+
+	if err := sqlDB.Ping(); err != nil {
+		global.GVA_LOG.Error("MySQL ping failed after connect: " + err.Error())
+		return nil
+	}
 
 	global.GVA_LOG.Info("MySQL connected successfully")
 

@@ -418,12 +418,27 @@ const PostCard: React.FC<PostCardProps> = ({
 };
 
 // 页面样式
+const communityCandy = {
+  bg: '#fffaf4',
+  bgSoft: '#fff2e8',
+  panel: '#ffffff',
+  border: 'rgba(255, 187, 167, 0.34)',
+  borderStrong: 'rgba(95, 200, 255, 0.38)',
+  text: '#4b3f5f',
+  textSoft: '#7f7293',
+  textMuted: '#a093af',
+  cyan: '#4faee1',
+  purple: '#8f72ff',
+  shadow: '0 16px 38px rgba(255, 190, 154, 0.16)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
     flexDirection: 'column',
     minHeight: '100%',
-    color: colors.text.primary,
+    background: `linear-gradient(180deg, ${communityCandy.bg} 0%, ${communityCandy.bgSoft} 100%)`,
+    color: communityCandy.text,
     width: '100%',
     overflowX: 'hidden',
     boxSizing: 'border-box',
@@ -433,7 +448,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '12px 16px',
-    borderBottom: `1px solid ${colors.border.soft}`,
+    borderBottom: `1px solid ${communityCandy.border}`,
   },
   headerTitle: {
     fontSize: typography.fontSize.lg,
@@ -452,8 +467,8 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '8px',
     padding: '8px 10px',
     borderRadius: radius.lg,
-    border: `1px solid ${colors.border.soft}`,
-    background: `${colors.bg.card}e6`,
+    border: `1px solid ${communityCandy.border}`,
+    background: 'rgba(255,255,255,0.84)',
     marginBottom: '10px',
   },
   searchInput: {
@@ -462,7 +477,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'transparent',
     border: 'none',
     outline: 'none',
-    color: colors.text.primary,
+    color: communityCandy.text,
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
   },
@@ -490,7 +505,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: radius.sm,
     border: 'none',
     background: 'transparent',
-    color: colors.text.muted,
+    color: communityCandy.textMuted,
     fontSize: '11px',
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamilyAlt,
@@ -498,13 +513,13 @@ const styles: Record<string, React.CSSProperties> = {
     transition: animation.transition.fast,
   },
   sortButtonActive: {
-    background: `${colors.bead.purple}20`,
-    color: colors.bead.purple,
+    background: 'rgba(179, 136, 255, 0.14)',
+    color: communityCandy.purple,
     fontWeight: typography.fontWeight.bold,
   },
   statsText: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: communityCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
     flexShrink: 0,
   },
@@ -538,7 +553,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   loadingText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.muted,
+    color: communityCandy.textMuted,
   },
   noMore: {
     textAlign: 'center',
@@ -546,7 +561,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   noMoreText: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: communityCandy.textMuted,
   },
   empty: {
     display: 'flex',
@@ -560,20 +575,21 @@ const styles: Record<string, React.CSSProperties> = {
   emptyTitle: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.secondary,
+    color: communityCandy.textSoft,
   },
   emptyText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.muted,
+    color: communityCandy.textMuted,
   },
 };
 
 // 卡片样式
 const cardStyles: Record<string, React.CSSProperties> = {
   card: {
-    background: colors.bg.card,
+    background: communityCandy.panel,
     borderRadius: radius.lg,
-    border: `1px solid ${colors.border.soft}`,
+    border: `1px solid ${communityCandy.border}`,
+    boxShadow: communityCandy.shadow,
     overflow: 'hidden',
     cursor: 'pointer',
     transition: animation.transition.fast,
@@ -585,7 +601,7 @@ const cardStyles: Record<string, React.CSSProperties> = {
     position: 'relative',
     width: '100%',
     aspectRatio: '1',
-    background: colors.bg.elevated,
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(248,244,255,0.98))',
     overflow: 'hidden',
   },
   image: {
@@ -599,7 +615,7 @@ const cardStyles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: `linear-gradient(135deg, ${colors.bg.card}, ${colors.bg.elevated})`,
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(247,241,255,0.98))',
   },
   diffBadge: {
     position: 'absolute',
@@ -619,7 +635,7 @@ const cardStyles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: communityCandy.text,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -630,15 +646,15 @@ const cardStyles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '4px',
     fontSize: '11px',
-    color: colors.text.muted,
+    color: communityCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
     marginBottom: '6px',
   },
   size: {
-    color: colors.bead.cyan,
+    color: communityCandy.cyan,
   },
   dot: {
-    color: colors.text.muted,
+    color: communityCandy.textMuted,
   },
   colorCount: {
     color: colors.bead.orange,
@@ -653,14 +669,14 @@ const cardStyles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '3px',
     fontSize: '11px',
-    color: colors.text.muted,
+    color: communityCandy.textMuted,
   },
   authorBtn: {
     marginLeft: 'auto',
     border: 'none',
     background: 'transparent',
     padding: 0,
-    color: colors.bead.cyan,
+    color: communityCandy.cyan,
     fontSize: '11px',
     fontFamily: typography.fontFamilyAlt,
     cursor: 'pointer',

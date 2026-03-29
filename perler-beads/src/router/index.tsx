@@ -1,12 +1,12 @@
 ﻿import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import MakingPage from '../pages/mobile/MakingPage';
 
 // Lazy load components
 const MobileLayout = lazy(() => import('../pages/mobile/MobileLayout'));
 const HomePage = lazy(() => import('../pages/mobile/HomePage'));
 const CreatePage = lazy(() => import('../pages/mobile/CreatePage'));
 const EditorPage = lazy(() => import('../pages/mobile/EditorPage'));
-const MakingPage = lazy(() => import('../pages/mobile/MakingPage'));
 const ProfilePage = lazy(() => import('../pages/mobile/ProfilePage'));
 const LoginPage = lazy(() => import('../pages/mobile/LoginPage'));
 const SettingsPage = lazy(() => import('../pages/mobile/SettingsPage'));
@@ -117,7 +117,9 @@ const AppRouter: React.FC = () => {
           <Route path="/mobile/community/user/:userId" element={<CommunityUserPage />} />
           <Route path="/mobile/community/moderation" element={<Navigate to="/admin" replace />} />
           <Route path="/mobile/finished" element={<FinishedWorksPage />} />
+          <Route path="/mobile/finished-works" element={<FinishedWorksPage />} />
           <Route path="/mobile/finished/:id" element={<FinishedWorkDetailPage />} />
+          <Route path="/mobile/finished-works/:id" element={<FinishedWorkDetailPage />} />
           <Route path="/admin" element={<AdminConsolePage />} />
 
           {/* 3D 功能页面：默认关闭，避免实验性能力在正式环境误暴露 */}
@@ -138,4 +140,5 @@ const AppRouter: React.FC = () => {
 };
 
 export default AppRouter;
+
 

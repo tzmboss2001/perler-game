@@ -24,7 +24,7 @@ const HelpPage: React.FC = () => {
       icon: Camera,
       title: '上传图片',
       description: '点击首页的“开始创作”，选择照片或直接拍摄。支持 JPG、PNG 格式，建议使用清晰图片。',
-      color: colors.bead.cyan,
+      color: '#56b7ef',
     },
     {
       icon: Palette,
@@ -235,10 +235,21 @@ const HelpPage: React.FC = () => {
   );
 };
 
+const helpCandy = {
+  pageBg: 'linear-gradient(180deg, #fffaf3 0%, #fef4ff 48%, #f3fbff 100%)',
+  panel: 'rgba(255,255,255,0.9)',
+  panelSoft: 'rgba(255,255,255,0.78)',
+  border: 'rgba(126, 103, 173, 0.16)',
+  text: '#4f4668',
+  textSoft: '#726787',
+  textMuted: '#978da8',
+  shadow: '0 18px 42px rgba(137, 112, 167, 0.12)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    background: colors.bg.primary,
+    background: helpCandy.pageBg,
     paddingBottom: '80px',
   },
   header: {
@@ -246,8 +257,9 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '16px',
-    background: colors.bg.secondary,
-    borderBottom: `1px solid ${colors.border.soft}`,
+    background: 'rgba(255,255,255,0.78)',
+    borderBottom: `1px solid ${helpCandy.border}`,
+    boxShadow: '0 10px 28px rgba(137, 112, 167, 0.08)',
     position: 'fixed',
     top: 0,
     left: 0,
@@ -323,10 +335,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   stepContent: {
     flex: 1,
-    background: colors.bg.card,
+    background: helpCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    boxShadow: shadows.sm,
+    border: `1px solid ${helpCandy.border}`,
+    boxShadow: helpCandy.shadow,
     padding: '16px',
   },
   stepHeader: {
@@ -347,25 +359,26 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: helpCandy.text,
     margin: 0,
   },
   stepDesc: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: helpCandy.textMuted,
     margin: 0,
     lineHeight: 1.6,
   },
   faqList: {
-    background: colors.bg.card,
+    background: helpCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    boxShadow: shadows.sm,
+    border: `1px solid ${helpCandy.border}`,
+    boxShadow: helpCandy.shadow,
     overflow: 'hidden',
   },
   faqItem: {
-    borderBottom: `1px solid ${colors.border.soft}`,
+    borderBottom: `1px solid ${helpCandy.border}`,
+    boxShadow: '0 10px 28px rgba(137, 112, 167, 0.08)',
     cursor: 'pointer',
   },
   faqHeader: {
@@ -380,7 +393,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: helpCandy.text,
     paddingRight: '12px',
   },
   faqAnswer: {
@@ -392,31 +405,31 @@ const styles: Record<string, React.CSSProperties> = {
   faqAnswerText: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: helpCandy.textMuted,
     margin: 0,
     lineHeight: 1.7,
   },
   contactSection: {
     margin: '32px 16px 0',
     padding: '20px',
-    background: colors.bg.card,
+    background: helpCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.bead.cyan}30`,
-    boxShadow: `${shadows.sm}, 0 4px 16px ${colors.bead.cyan}10`,
+    border: '1px solid rgba(120, 216, 255, 0.28)',
+    boxShadow: '0 18px 42px rgba(137, 112, 167, 0.12)',
     textAlign: 'center',
   },
   contactText: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: helpCandy.textMuted,
     margin: '0 0 16px',
   },
   contactBtn: {
     padding: '12px 24px',
-    background: `linear-gradient(145deg, ${colors.bead.cyan}20, ${colors.bead.cyan}10)`,
+    background: 'linear-gradient(145deg, rgba(120,216,255,0.18), rgba(255,147,191,0.12))',
     border: `1px solid ${colors.bead.cyan}40`,
     borderRadius: radius.button,
-    color: colors.bead.cyan,
+    color: '#56b7ef',
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,

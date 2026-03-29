@@ -42,7 +42,11 @@ import {
   canSpeak,
 } from "../../utils/colorUtils";
 import BottomNav from "../../components/BottomNav";
-import { recommendBoard } from "../../services/boardService";
+import {
+  recommendBoard,
+  getPhysicalBoardDrawSize,
+  getPhysicalBoardGuideOffsets,
+} from "../../services/boardService";
 import { getToken } from "../../services/api/authApi";
 import BannerAd from "../../components/ads/BannerAd";
 import RewardedUnlockModal from "../../components/ads/RewardedUnlockModal";
@@ -80,6 +84,11 @@ interface SelectionState {
   blockY: number;
   colorHex?: string;
   colorId?: string;
+}
+
+interface ReplaceHistoryState {
+  beadData: BeadPixelData;
+  selection: SelectionState;
 }
 
 // 缩放阈值：大于该值时点击选颜色，否则选区块
@@ -239,6 +248,10 @@ const MakingPage: React.FC = () => {
   const pendingExportAfterRewardRef = useRef<(() => void) | null>(null);
   const [showReplaceModal, setShowReplaceModal] = useState(false);
   const [showVisionAssist, setShowVisionAssist] = useState(false);
+  const [lastReplaceSnapshot, setLastReplaceSnapshot] =
+    useState<ReplaceHistoryState | null>(null);
+  const [redoReplaceSnapshot, setRedoReplaceSnapshot] =
+    useState<ReplaceHistoryState | null>(null);
   const [scale, setScale] = useState(1);
   const [translateX, setTranslateX] = useState(0);
   const [translateY, setTranslateY] = useState(0);
@@ -256,18 +269,31 @@ const MakingPage: React.FC = () => {
     visible: boolean;
     row: number;
     col: number;
+    boardNumber: number;
+    localRow: number;
+    localCol: number;
     screenX: number;
     screenY: number;
   }>({
     visible: false,
     row: 0,
     col: 0,
+    boardNumber: 0,
+    localRow: 0,
+    localCol: 0,
     screenX: 0,
     screenY: 0,
   });
 
   // 基础 cellSize
   const baseCellSize = 10;
+
+  const cloneBeadData = useCallback((data: BeadPixelData): BeadPixelData => {
+    return {
+      ...data,
+      beads: data.beads.map((bead) => (bead ? { ...bead } : bead)),
+    };
+  }, []);
 
   useEffect(() => {
     scaleRef.current = scale;
@@ -427,6 +453,29 @@ const MakingPage: React.FC = () => {
     if (!beadData || !selection.colorHex) return 0;
     return beadData.beads.filter((b) => b.hex === selection.colorHex).length;
   }, [beadData, selection.colorHex]);
+
+  const physicalBoardSize = useMemo(() => {
+    if (!beadData) return 104;
+    return getPhysicalBoardDrawSize(beadData.width, beadData.height);
+  }, [beadData]);
+
+  const physicalBoardCols = useMemo(() => {
+    if (!beadData) return 1;
+    return Math.max(1, Math.ceil(beadData.width / physicalBoardSize));
+  }, [beadData, physicalBoardSize]);
+
+  const getPhysicalBoardCoordinate = useCallback(
+    (cellX: number, cellY: number) => {
+      const boardCol = Math.floor(cellX / physicalBoardSize);
+      const boardRow = Math.floor(cellY / physicalBoardSize);
+      return {
+        boardNumber: boardRow * physicalBoardCols + boardCol + 1,
+        localCol: (cellX % physicalBoardSize) + 1,
+        localRow: (cellY % physicalBoardSize) + 1,
+      };
+    },
+    [physicalBoardCols, physicalBoardSize],
+  );
 
   // 获取选中的 BeadColor 对象
   const selectedBeadColor = useMemo((): BeadColor | null => {
@@ -736,17 +785,27 @@ const MakingPage: React.FC = () => {
         // 显示坐标提示
         const screenX = e.clientX - wrapperRect.left;
         const screenY = e.clientY - wrapperRect.top;
+        const boardCoordinate = getPhysicalBoardCoordinate(cellX, cellY);
 
         setTooltipState({
           visible: true,
           row: cellY + 1,
           col: cellX + 1,
+          boardNumber: boardCoordinate.boardNumber,
+          localRow: boardCoordinate.localRow,
+          localCol: boardCoordinate.localCol,
           screenX,
           screenY,
         });
 
         if (voiceEnabled) {
-          speakCoordinate(cellY + 1, cellX + 1);
+          speakCoordinate(
+            cellY + 1,
+            cellX + 1,
+            boardCoordinate.boardNumber,
+            boardCoordinate.localRow,
+            boardCoordinate.localCol,
+          );
         }
 
         // 点击同一颜色：取消选中（不限区块）
@@ -763,7 +822,7 @@ const MakingPage: React.FC = () => {
         }
       }
     },
-    [beadData, scale, selection, voiceEnabled, toast],
+    [beadData, getPhysicalBoardCoordinate, scale, selection, voiceEnabled, toast],
   );
 
   // 触摸拖动处理
@@ -913,17 +972,27 @@ const MakingPage: React.FC = () => {
 
               const screenX = touch.clientX - wrapperRect.left;
               const screenY = touch.clientY - wrapperRect.top;
+              const boardCoordinate = getPhysicalBoardCoordinate(cellX, cellY);
 
               setTooltipState({
                 visible: true,
                 row: cellY + 1,
                 col: cellX + 1,
+                boardNumber: boardCoordinate.boardNumber,
+                localRow: boardCoordinate.localRow,
+                localCol: boardCoordinate.localCol,
                 screenX,
                 screenY,
               });
 
               if (voiceEnabled) {
-                speakCoordinate(cellY + 1, cellX + 1);
+                speakCoordinate(
+                  cellY + 1,
+                  cellX + 1,
+                  boardCoordinate.boardNumber,
+                  boardCoordinate.localRow,
+                  boardCoordinate.localCol,
+                );
               }
 
               // 点击同一颜色：取消选中（不限区块）
@@ -954,7 +1023,7 @@ const MakingPage: React.FC = () => {
       pinchStartRef.current = null;
       dragStartPosRef.current = null;
     },
-    [beadData, scale, selection, voiceEnabled, toast],
+    [beadData, getPhysicalBoardCoordinate, scale, selection, voiceEnabled, toast],
   );
 
   // 鼠标拖动处理
@@ -1031,6 +1100,12 @@ const MakingPage: React.FC = () => {
     (newColor: BeadColor) => {
       if (!beadData || !selection.colorHex) return;
 
+      setLastReplaceSnapshot({
+        beadData: cloneBeadData(beadData),
+        selection: { ...selection },
+      });
+      setRedoReplaceSnapshot(null);
+
       // 替换所有该颜色的珠子
       const newBeads = beadData.beads.map((bead) => {
         if (bead && bead.hex === selection.colorHex) {
@@ -1053,8 +1128,34 @@ const MakingPage: React.FC = () => {
 
       toast.success(`已将 ${colorCountTotal} 颗豆子替换为 ${newColor.name}`);
     },
-    [beadData, selection, colorCountTotal, toast],
+    [beadData, selection, colorCountTotal, toast, cloneBeadData],
   );
+
+  const handleUndoLastReplace = useCallback(() => {
+    if (!lastReplaceSnapshot || !beadData) return;
+
+    setRedoReplaceSnapshot({
+      beadData: cloneBeadData(beadData),
+      selection: { ...selection },
+    });
+    setBeadData(cloneBeadData(lastReplaceSnapshot.beadData));
+    setSelection({ ...lastReplaceSnapshot.selection });
+    setLastReplaceSnapshot(null);
+    toast.info("已撤销上一次换色");
+  }, [lastReplaceSnapshot, beadData, cloneBeadData, selection, toast]);
+
+  const handleRedoLastReplace = useCallback(() => {
+    if (!redoReplaceSnapshot || !beadData) return;
+
+    setLastReplaceSnapshot({
+      beadData: cloneBeadData(beadData),
+      selection: { ...selection },
+    });
+    setBeadData(cloneBeadData(redoReplaceSnapshot.beadData));
+    setSelection({ ...redoReplaceSnapshot.selection });
+    setRedoReplaceSnapshot(null);
+    toast.info("已恢复上一次换色");
+  }, [redoReplaceSnapshot, beadData, cloneBeadData, selection, toast]);
 
   // ===== 娓叉煋 Canvas =====
   useEffect(() => {
@@ -1217,6 +1318,47 @@ const MakingPage: React.FC = () => {
       ctx.moveTo(0, y * drawCellSize);
       ctx.lineTo(canvasWidth, y * drawCellSize);
       ctx.stroke();
+    }
+
+    // 现实豆板分区线：按常见 54 / 78 / 104 板的对称结构补画。
+    // 大作品统一按 104 板重复，保证制作模式更接近真实豆板观感。
+    const physicalBoardSize = getPhysicalBoardDrawSize(width, height);
+    const physicalGuideOffsets = getPhysicalBoardGuideOffsets(physicalBoardSize);
+    if (physicalGuideOffsets.length > 0) {
+      const physicalBoardCols = Math.ceil(width / physicalBoardSize);
+      const physicalBoardRows = Math.ceil(height / physicalBoardSize);
+      ctx.save();
+      ctx.strokeStyle = "rgba(17, 24, 39, 0.98)";
+      ctx.lineWidth = Math.max(blockLine, 1.2 / Math.max(scale, 1.15));
+
+      for (let boardCol = 0; boardCol < physicalBoardCols; boardCol++) {
+        const originX = boardCol * physicalBoardSize;
+        for (const offset of physicalGuideOffsets) {
+          const guideX = originX + offset;
+          if (guideX <= 0 || guideX >= width) {
+            continue;
+          }
+          ctx.beginPath();
+          ctx.moveTo(guideX * drawCellSize, 0);
+          ctx.lineTo(guideX * drawCellSize, canvasHeight);
+          ctx.stroke();
+        }
+      }
+
+      for (let boardRow = 0; boardRow < physicalBoardRows; boardRow++) {
+        const originY = boardRow * physicalBoardSize;
+        for (const offset of physicalGuideOffsets) {
+          const guideY = originY + offset;
+          if (guideY <= 0 || guideY >= height) {
+            continue;
+          }
+          ctx.beginPath();
+          ctx.moveTo(0, guideY * drawCellSize);
+          ctx.lineTo(canvasWidth, guideY * drawCellSize);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
     }
 
     // 拼豆板边界线（智能推荐板尺寸 + 橙色虚线 + 板号标注）
@@ -1640,6 +1782,9 @@ const MakingPage: React.FC = () => {
             visible={tooltipState.visible}
             row={tooltipState.row}
             col={tooltipState.col}
+            boardNumber={tooltipState.boardNumber}
+            localRow={tooltipState.localRow}
+            localCol={tooltipState.localCol}
             cellScreenX={tooltipState.screenX}
             cellScreenY={tooltipState.screenY}
             containerWidth={wrapperRef.current?.clientWidth || 300}
@@ -1690,13 +1835,16 @@ const MakingPage: React.FC = () => {
             <span style={styles.bottomHintSmall}>再次点击可取消选中</span>
             {/* 选中颜色时显示替换按钮 */}
             {selection.type === "color" && selectedBeadColor && (
-              <button
-                style={{ ...styles.actionBtn, ...styles.actionBtnPrimary }}
-                onClick={() => setShowReplaceModal(true)}
-              >
-                <Swap size={18} />
-                替换颜色
-              </button>
+              <>
+                <button
+                  style={{ ...styles.actionBtn, ...styles.actionBtnPrimary }}
+                  onClick={() => setShowReplaceModal(true)}
+                >
+                  <Swap size={18} />
+                  替换颜色
+                </button>
+                
+              </>
             )}
           </div>
         )}
@@ -1741,6 +1889,10 @@ const MakingPage: React.FC = () => {
           currentColor={selectedBeadColor}
           totalCount={colorCountTotal}
           onReplace={handleColorReplace}
+          onUndoReplace={handleUndoLastReplace}
+          onRedoReplace={handleRedoLastReplace}
+          canUndoReplace={Boolean(lastReplaceSnapshot)}
+          canRedoReplace={Boolean(redoReplaceSnapshot)}
         />
       )}
 
@@ -1761,13 +1913,28 @@ const MakingPage: React.FC = () => {
   );
 };
 
+const makingCandy = {
+  bg: '#fdf7f1',
+  bgSoft: '#fff1e7',
+  panel: 'rgba(255,255,255,0.92)',
+  panelStrong: '#ffffff',
+  panelDark: '#453f61',
+  border: 'rgba(255, 186, 161, 0.34)',
+  borderStrong: 'rgba(95, 200, 255, 0.4)',
+  text: '#4b3f5f',
+  textSoft: '#7f7293',
+  textMuted: '#a093af',
+  cyan: '#4faee1',
+  shadow: '0 16px 36px rgba(255, 188, 154, 0.14)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     height: "100dvh",
     maxHeight: "-webkit-fill-available",
     display: "flex",
     flexDirection: "column",
-    background: colors.bg.primary,
+    background: `linear-gradient(180deg, ${makingCandy.bg} 0%, ${makingCandy.bgSoft} 100%)`,
     overflow: "hidden",
   },
 
@@ -1776,8 +1943,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "6px 12px",
-    background: colors.bg.secondary,
-    borderBottom: `1px solid ${colors.border.soft}`,
+    background: 'rgba(255,255,255,0.86)',
+    borderBottom: `1px solid ${makingCandy.border}`,
     flexShrink: 0,
   },
 
@@ -1801,7 +1968,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     padding: "0",
-    background: colors.bg.card,
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,245,236,0.94) 100%)',
     overflow: "hidden",
     position: "relative" as const,
     minHeight: 0,
@@ -1836,11 +2003,10 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 0,
     overflow: "hidden",
-    background:
-      "linear-gradient(145deg, rgba(16, 22, 36, 0.88), rgba(10, 14, 24, 0.82))",
+    background: 'linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,245,236,0.92))',
     backdropFilter: "blur(12px)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+    border: `1px solid ${makingCandy.border}`,
+    boxShadow: makingCandy.shadow,
     borderRadius: "12px",
     pointerEvents: "auto",
   },
@@ -1853,9 +2019,10 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     background:
       "linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08))",
-    border: "1px solid rgba(255,255,255,0.16)",
+    border: `1px solid ${makingCandy.border}`,
     borderRadius: radius.bead,
-    color: "#ffffff",
+    color: makingCandy.text,
+    boxShadow: makingCandy.shadowSoft,
     fontSize: "13px",
     fontWeight: "bold",
     cursor: "pointer",
@@ -1889,11 +2056,11 @@ const styles: Record<string, React.CSSProperties> = {
   zoomLabel: {
     fontSize: "11px",
     fontWeight: 700,
-    color: "#f1f6ff",
+    color: makingCandy.text,
     minWidth: "42px",
     padding: "0 6px",
     lineHeight: "20px",
-    background: "rgba(148, 163, 184, 0.18)",
+    background: 'rgba(255, 242, 233, 0.94)',
     borderRadius: "8px",
     textAlign: "center" as const,
   },
@@ -1909,11 +2076,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "6px",
     padding: "6px",
-    background:
-      "linear-gradient(145deg, rgba(16, 22, 36, 0.88), rgba(10, 14, 24, 0.82))",
+    background: 'linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,245,236,0.92))',
     backdropFilter: "blur(12px)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+    border: `1px solid ${makingCandy.border}`,
+    boxShadow: makingCandy.shadow,
     borderRadius: "12px",
     flexShrink: 0,
     pointerEvents: "auto",
@@ -1925,10 +2091,10 @@ const styles: Record<string, React.CSSProperties> = {
     right: "8px",
     width: "min(200px, calc(100vw - 16px))",
     maxWidth: "calc(100vw - 16px)",
-    background: "rgba(30, 30, 40, 0.95)",
+    background: 'rgba(255,255,255,0.96)',
     backdropFilter: "blur(12px)",
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
+    border: `1px solid ${makingCandy.border}`,
     boxShadow: shadows.lg,
     zIndex: 30,
     overflow: "hidden",
@@ -1939,13 +2105,13 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "10px 12px",
-    borderBottom: `1px solid ${colors.border.soft}`,
+    borderBottom: `1px solid ${makingCandy.border}`,
   },
 
   settingsTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.bold,
-    color: "#ffffff",
+    color: makingCandy.text,
   },
 
   closeBtn: {
@@ -1976,7 +2142,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   settingLabel: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
+    color: makingCandy.textSoft,
   },
 
   toggleBtn: {
@@ -1985,8 +2151,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: colors.bg.tertiary,
-    border: `1px solid ${colors.border.soft}`,
+    background: 'linear-gradient(145deg, rgba(255,255,255,0.96), rgba(250,244,255,0.92))',
+    border: `1px solid ${makingCandy.border}`,
     borderRadius: radius.bead,
     color: colors.text.muted,
     cursor: "pointer",
@@ -2001,7 +2167,7 @@ const styles: Record<string, React.CSSProperties> = {
   settingHint: {
     marginTop: 8,
     padding: "8px",
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.9)',
     borderRadius: radius.bead,
   },
 
@@ -2020,12 +2186,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     padding: "6px 14px",
-    background: "rgba(0, 0, 0, 0.7)",
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.92), rgba(255,244,236,0.9))',
     backdropFilter: "blur(8px)",
     borderRadius: radius.full,
     fontSize: "12px",
     fontWeight: "bold",
-    color: "#ffffff",
+    color: makingCandy.text,
     zIndex: 20,
   },
 
@@ -2036,7 +2202,7 @@ const styles: Record<string, React.CSSProperties> = {
     right: 0,
     bottom: 0,
     overflow: "hidden",
-    background: "#1a1a24",
+    background: '#fff9f1',
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -2056,10 +2222,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     flexWrap: "wrap",
-    padding: "8px 16px",
+    padding: "10px 16px",
     marginBottom: "65px", // 给底部导航栏留出空间
-    background: colors.bg.secondary,
-    borderTop: `1px solid ${colors.border.soft}`,
+    background: 'rgba(255,255,255,0.84)',
+    borderTop: `1px solid ${makingCandy.border}`,
     flexShrink: 0,
     minHeight: 44,
   },
@@ -2091,19 +2257,19 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "6px",
     padding: "10px 16px",
-    background: colors.bg.tertiary,
-    border: `1px solid ${colors.border.soft}`,
+    background: 'rgba(255,255,255,0.9)',
+    border: `1px solid ${makingCandy.border}`,
     borderRadius: radius.button,
-    color: colors.text.secondary,
+    color: makingCandy.textSoft,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     cursor: "pointer",
   },
 
   actionBtnPrimary: {
-    background: `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.bead.cyan}cc)`,
+    background: 'linear-gradient(145deg, #7fd8ff 0%, #85b7ff 55%, #ff93bf 100%)',
     border: "none",
-    color: "#ffffff",
+    color: makingCandy.text,
     boxShadow: shadows.button,
   },
 
@@ -2119,7 +2285,7 @@ const styles: Record<string, React.CSSProperties> = {
   emptyText: {
     fontSize: typography.fontSize.md,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
+    color: makingCandy.textSoft,
     marginBottom: "20px",
   },
 
@@ -2128,10 +2294,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "8px",
     padding: "12px 24px",
-    background: `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.bead.cyan}cc)`,
+    background: 'linear-gradient(145deg, #87dfff, #7ea3ff)',
     border: "none",
     borderRadius: radius.button,
-    color: "#ffffff",
+    color: makingCandy.text,
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
@@ -2141,3 +2307,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default MakingPage;
+

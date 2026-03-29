@@ -27,6 +27,7 @@ interface InteractiveCanvasProps {
   bgModeRecoverableIndices?: Set<number>;
   bgCandidateOnly?: boolean;
   bgViewMode?: 'select' | 'view' | 'erase' | 'restore'; // 鑳屾櫙妯″紡浜や簰鏂瑰紡
+  backgroundPanEnabled?: boolean;
   onBgSelectColor?: (index: number) => void; // 鑳屾櫙妯″紡閫夋嫨棰滆壊
   onBgToggleExclude?: (index: number) => void; // 鑳屾櫙妯″紡鍒囨崲鎺掗櫎
   onBgRestoreCell?: (index: number) => void;
@@ -63,6 +64,7 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   bgModeRecoverableIndices = new Set(),
   bgCandidateOnly = false,
   bgViewMode = 'select',
+  backgroundPanEnabled = false,
   onBgSelectColor,
   onBgToggleExclude,
   onBgRestoreCell,
@@ -82,6 +84,8 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [panOffsetOrigin, setPanOffsetOrigin] = useState({ x: 0, y: 0 });
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false); // 鏄惁宸插垵濮嬪寲閫傞厤缂╂斁
   const previousPatternSizeRef = useRef<{ width: number; height: number } | null>(null);
   const lastFitScaleRef = useRef(1);
@@ -91,6 +95,8 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   const [isPinching, setIsPinching] = useState(false);
   const pinchStartDistance = useRef<number>(0);
   const pinchStartScale = useRef<number>(1);
+  const pinchStartMidpoint = useRef({ x: 0, y: 0 });
+  const pinchStartOffset = useRef({ x: 0, y: 0 });
   const ABSOLUTE_MIN_SCALE = 0.1;
   const ABSOLUTE_MAX_SCALE = 6;
 
@@ -106,13 +112,12 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     const imageWidth = patternWidth * cellSize;
     const imageHeight = patternHeight * cellSize;
 
-    // 璁＄畻姘村钩鍜屽瀭鐩存柟鍚戠殑缂╂斁姣斾緥
+    // 计算水平和垂直方向的缩放比例
     const scaleX = containerWidth / imageWidth;
     const scaleY = containerHeight / imageHeight;
 
-    // 妯浘浼樺厛閫傞厤瀹藉害锛岀珫鍥句紭鍏堥€傞厤楂樺害
-    const preferWidth = imageWidth >= imageHeight;
-    let fitScale = preferWidth ? scaleX : scaleY;
+    // 统一规则：默认必须完整显示全图，取能同时放进预览区的较小值。
+    let fitScale = Math.min(scaleX, scaleY);
 
     // 闄愬埗鍦ㄥ悎鐞嗚寖鍥村唴
     fitScale = Math.max(ABSOLUTE_MIN_SCALE, Math.min(ABSOLUTE_MAX_SCALE, fitScale));
@@ -128,29 +133,38 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   const getScaleBounds = useCallback(() => {
     const fitScale = calculateFitScale();
     const isTinyPattern = beadData.width <= 24 && beadData.height <= 24;
-    const minScale = Math.max(ABSOLUTE_MIN_SCALE, fitScale * 0.8);
-    const fitBasedMaxScale = Math.min(ABSOLUTE_MAX_SCALE, fitScale * (isTinyPattern ? 2.5 : 2));
-    const maxScale = Math.max(1, fitBasedMaxScale);
+    const minScale = Math.max(ABSOLUTE_MIN_SCALE, fitScale * (isBackgroundMode ? 0.65 : 0.8));
+    const fitBasedMaxScale = Math.min(
+      ABSOLUTE_MAX_SCALE,
+      fitScale * (isBackgroundMode ? 6 : isTinyPattern ? 2.5 : 2)
+    );
+    const maxScale = Math.max(isBackgroundMode ? 3 : 1, fitBasedMaxScale);
 
     return {
       fitScale,
       minScale,
       maxScale: Math.max(minScale, maxScale),
     };
-  }, [beadData.height, beadData.width, calculateFitScale]);
+  }, [beadData.height, beadData.width, calculateFitScale, isBackgroundMode]);
 
   const clampScale = useCallback((value: number) => {
     const { minScale, maxScale } = getScaleBounds();
     return Math.min(maxScale, Math.max(minScale, value));
   }, [getScaleBounds]);
 
+  const canPanViewport = useCallback(() => {
+    if (!containerRef.current) return false;
+    if (isEditMode || isBackgroundMode) return false;
+    return true;
+  }, [isBackgroundMode, isEditMode]);
+
   const zoomOut = useCallback(() => {
-    setScale((current) => clampScale(current - 0.1));
-  }, [clampScale]);
+    setScale((current) => clampScale(current - (isBackgroundMode ? 0.15 : 0.1)));
+  }, [clampScale, isBackgroundMode]);
 
   const zoomIn = useCallback(() => {
-    setScale((current) => clampScale(current + 0.1));
-  }, [clampScale]);
+    setScale((current) => clampScale(current + (isBackgroundMode ? 0.15 : 0.1)));
+  }, [clampScale, isBackgroundMode]);
 
   const fitToViewport = useCallback(() => {
     setScale(getScaleBounds().fitScale);
@@ -182,17 +196,20 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
 
     setScale((currentScale) => {
       if (forceFit || !isInitialized) {
+        setOffset({ x: 0, y: 0 });
         return fitScale;
       }
 
       const wasNearFit = Math.abs(currentScale - previousFitScale) < 0.02;
       if (wasNearFit) {
+        setOffset({ x: 0, y: 0 });
         return fitScale;
       }
 
       if (patternChanged && Number.isFinite(previousFitScale) && previousFitScale > 0) {
         const zoomRatio = currentScale / previousFitScale;
         const targetScale = fitScale * zoomRatio;
+        setOffset({ x: 0, y: 0 });
         return Math.min(maxScale, Math.max(minScale, targetScale));
       }
 
@@ -241,40 +258,18 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     });
   }, [getScaleBounds, onScaleChange, scale]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !beadData) return;
+  // 计算实际渲染的 cellSize（考虑缩放）
+  // 不能在这里取整，否则很多相邻缩放百分比会落到同一个整数像素尺寸，用户会感觉滑杆“不灵敏”。
+  const scaledCellSize = Math.max(0.5, cellSize * scale);
 
-    const nextMetrics = {
+  useEffect(() => {
+    if (!beadData) return;
+
+    previousCanvasMetricsRef.current = {
       width: beadData.width * scaledCellSize,
       height: beadData.height * scaledCellSize,
       scale,
     };
-    const previousMetrics = previousCanvasMetricsRef.current;
-
-    requestAnimationFrame(() => {
-      if (!containerRef.current) return;
-
-      const currentContainer = containerRef.current;
-      const viewportWidth = currentContainer.clientWidth;
-      const viewportHeight = currentContainer.clientHeight;
-
-      if (!previousMetrics) {
-        currentContainer.scrollLeft = Math.max(0, (nextMetrics.width - viewportWidth) / 2);
-        currentContainer.scrollTop = Math.max(0, (nextMetrics.height - viewportHeight) / 2);
-        previousCanvasMetricsRef.current = nextMetrics;
-        return;
-      }
-
-      const centerX = currentContainer.scrollLeft + viewportWidth / 2;
-      const centerY = currentContainer.scrollTop + viewportHeight / 2;
-      const relativeCenterX = previousMetrics.width > 0 ? centerX / previousMetrics.width : 0.5;
-      const relativeCenterY = previousMetrics.height > 0 ? centerY / previousMetrics.height : 0.5;
-
-      currentContainer.scrollLeft = Math.max(0, nextMetrics.width * relativeCenterX - viewportWidth / 2);
-      currentContainer.scrollTop = Math.max(0, nextMetrics.height * relativeCenterY - viewportHeight / 2);
-      previousCanvasMetricsRef.current = nextMetrics;
-    });
   }, [beadData, scaledCellSize, scale]);
 
   useEffect(() => {
@@ -304,8 +299,33 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     };
   }, []);
 
-  // 璁＄畻瀹為檯娓叉煋鐨?cellSize锛堣€冭檻缂╂斁锛?
-  const scaledCellSize = Math.round(cellSize * scale);
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        setIsSpacePressed(true);
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        setIsSpacePressed(false);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      setIsSpacePressed(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, []);
 
   // 娓叉煋Canvas锛堝寘鍚珮浜晥鏋滐級- 浣跨敤瀹為檯鍒嗚鲸鐜囨覆鏌擄紝纭繚鏀惧ぇ鏃舵竻鏅?
   useEffect(() => {
@@ -354,11 +374,32 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
               ctx.strokeRect(px + 1, py + 1, scaledCellSize - 2, scaledCellSize - 2);
               ctx.setLineDash([]);
             } else if (isRecoverable) {
-              ctx.strokeStyle = '#FBBF24';
-              ctx.lineWidth = Math.max(1.5, scale * 0.8);
+              const recoverableTile = Math.max(2, Math.floor(scaledCellSize / 3));
+              for (let cy = 0; cy < scaledCellSize; cy += recoverableTile) {
+                for (let cx = 0; cx < scaledCellSize; cx += recoverableTile) {
+                  const useLightTile = ((Math.floor(cx / recoverableTile) + Math.floor(cy / recoverableTile)) % 2) === 0;
+                  ctx.fillStyle = useLightTile ? 'rgba(255, 214, 229, 0.78)' : 'rgba(255, 240, 246, 0.92)';
+                  ctx.fillRect(
+                    px + cx,
+                    py + cy,
+                    Math.min(recoverableTile, scaledCellSize - cx),
+                    Math.min(recoverableTile, scaledCellSize - cy)
+                  );
+                }
+              }
+              ctx.strokeStyle = '#F59E0B';
+              ctx.lineWidth = Math.max(1.5, scale * 0.9);
               ctx.setLineDash([4, 3]);
-              ctx.strokeRect(px + 2, py + 2, scaledCellSize - 4, scaledCellSize - 4);
+              ctx.strokeRect(px + 1.5, py + 1.5, scaledCellSize - 3, scaledCellSize - 3);
               ctx.setLineDash([]);
+              if (scaledCellSize >= 10) {
+                ctx.strokeStyle = 'rgba(190, 24, 93, 0.75)';
+                ctx.lineWidth = Math.max(1, scale * 0.75);
+                ctx.beginPath();
+                ctx.moveTo(px + scaledCellSize * 0.28, py + scaledCellSize * 0.72);
+                ctx.lineTo(px + scaledCellSize * 0.72, py + scaledCellSize * 0.28);
+                ctx.stroke();
+              }
             }
           }
         }
@@ -402,10 +443,27 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     return null;
   }, [beadData, scaledCellSize]);
 
+  const beginPan = useCallback((clientX: number, clientY: number) => {
+    setIsDragging(false);
+    setLastCell(null);
+    setIsPanning(true);
+    setPanStart({ x: clientX, y: clientY });
+    setPanOffsetOrigin(offset);
+  }, [offset]);
+
   // 澶勭悊鐐瑰嚮/瑙︽懜寮€濮嬶紙浠呭湪缂栬緫妯″紡涓嬶級
   const handleStart = useCallback((clientX: number, clientY: number, isTouch: boolean = false) => {
-    // 闈炵紪杈戞ā寮忎笅涓嶅鐞嗭紝璁╂祻瑙堝櫒澶勭悊婊氬姩
-    if (!isEditMode) return;
+    if (!isEditMode) {
+      if (canPanViewport() && containerRef.current) {
+        if (isTouch) {
+          // 单指拖动画布时阻止页面滚动，交给预览区平移。
+        }
+        setIsPanning(true);
+        setPanStart({ x: clientX, y: clientY });
+        setPanOffsetOrigin(offset);
+      }
+      return;
+    }
 
     const coords = getCanvasCoords(clientX, clientY);
     if (!coords) return;
@@ -414,6 +472,11 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
 
     // 鑳屾櫙澶勭悊妯″紡鐨勭偣鍑诲鐞?
     if (isBackgroundMode) {
+      if (backgroundPanEnabled) {
+        beginPan(clientX, clientY);
+        return;
+      }
+
       const bead = beadData.beads[index];
 
       if (bgViewMode === 'restore') {
@@ -435,17 +498,18 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
         return;
       }
 
-      // 濡傛灉杩樻病閫夋嫨棰滆壊锛岀偣鍑讳换鎰忛潪閫忔槑缃戞牸閫夋嫨璇ラ鑹?
-      if (!highlightedColorId) {
+      const highlightedSet = new Set(bgModeHighlightedIndices);
+
+      // 还没有任何选区时，点任意非透明格子开始第一块选择。
+      if (highlightedSet.size === 0) {
         if (bead && onBgSelectColor) {
           onBgSelectColor(index);
         }
         return;
       }
 
-      // 手动选背景模式下，点到其他未高亮格子时，允许直接重新选择新的连通区域。
+      // 手动选背景模式下，点到其他未高亮格子时，允许继续累加新的连通区域。
       if (bgViewMode === 'select' && bead && onBgSelectColor) {
-        const highlightedSet = new Set(bgModeHighlightedIndices);
         const isSelectableNewSeed = !highlightedSet.has(index) && !bgModeExcludedIndices.has(index);
         if (isSelectableNewSeed) {
           onBgSelectColor(index);
@@ -453,15 +517,7 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
         }
       }
 
-      // 宸查€夋嫨棰滆壊锛岀偣鍑婚珮浜綉鏍兼垨鍚岃壊缃戞牸杩涜鎺掗櫎/鎭㈠
-      const highlightedSet = new Set(bgModeHighlightedIndices);
-      if (highlightedSet.has(index) || (bead && bead.id === highlightedColorId && bgModeExcludedIndices.has(index))) {
-        // 鐐瑰嚮楂樹寒鐨勭綉鏍?-> 鎺掗櫎瀹?
-        // 鐐瑰嚮宸叉帓闄ょ殑鍚岃壊缃戞牸 -> 鎭㈠瀹?
-        if (onBgToggleExclude) {
-          onBgToggleExclude(index);
-        }
-      }
+      // 简化手动扣背景后，已选中的区域不再通过点击做排除切换。
       return;
     }
 
@@ -479,10 +535,20 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
       setLastCell(coords);
       onBeadClick(coords.x, coords.y);
     }
-  }, [beadData, currentTool, getCanvasCoords, onBeadClick, onPickColor, isEditMode, isBackgroundMode, highlightedColorId, bgModeHighlightedIndices, bgModeExcludedIndices, bgModeRecoverableIndices, bgViewMode, onBgSelectColor, onBgToggleExclude, onBgRestoreCell, onBgManualErase]);
+  }, [backgroundPanEnabled, beadData, beginPan, currentTool, getCanvasCoords, onBeadClick, onPickColor, isEditMode, isBackgroundMode, highlightedColorId, bgModeHighlightedIndices, bgModeExcludedIndices, bgModeRecoverableIndices, bgViewMode, onBgSelectColor, onBgToggleExclude, onBgRestoreCell, onBgManualErase, canPanViewport, offset]);
 
   // 澶勭悊绉诲姩锛堟嫋鍔ㄧ粯鍒讹級
   const handleMove = useCallback((clientX: number, clientY: number) => {
+    if (isPanning && containerRef.current) {
+      const deltaX = clientX - panStart.x;
+      const deltaY = clientY - panStart.y;
+      setOffset({
+        x: panOffsetOrigin.x + deltaX,
+        y: panOffsetOrigin.y + deltaY,
+      });
+      return;
+    }
+
     if (!isDragging || currentTool === 'fill' || currentTool === 'picker') return;
 
     const coords = getCanvasCoords(clientX, clientY);
@@ -493,19 +559,28 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
 
     setLastCell(coords);
     onBeadDrag(coords.x, coords.y);
-  }, [isDragging, currentTool, getCanvasCoords, lastCell, onBeadDrag]);
+  }, [isPanning, panStart.x, panStart.y, panOffsetOrigin.x, panOffsetOrigin.y, isDragging, currentTool, getCanvasCoords, lastCell, onBeadDrag]);
 
   // 澶勭悊缁撴潫
   const handleEnd = useCallback(() => {
+    if (isPanning) {
+      setIsPanning(false);
+    }
     if (isDragging) {
       setIsDragging(false);
       setLastCell(null);
       onDragEnd();
     }
-  }, [isDragging, onDragEnd]);
+  }, [isDragging, isPanning, onDragEnd]);
 
   // 榧犳爣浜嬩欢
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (isBackgroundMode && (e.button === 1 || (e.button === 0 && (isSpacePressed || backgroundPanEnabled)))) {
+      e.preventDefault();
+      beginPan(e.clientX, e.clientY);
+      return;
+    }
+
     if (e.button === 0) { // 宸﹂敭
       handleStart(e.clientX, e.clientY);
     }
@@ -534,19 +609,34 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       const touch = e.touches[0];
+      if (isBackgroundMode && backgroundPanEnabled) {
+        e.preventDefault();
+        beginPan(touch.clientX, touch.clientY);
+        return;
+      }
       handleStart(touch.clientX, touch.clientY, true);
     } else if (e.touches.length === 2) {
       // 鍙屾寚 - 寮€濮嬬缉鏀?
       e.preventDefault(); // 闃绘娴忚鍣ㄩ粯璁ょ缉鏀?
       setIsDragging(false);
+      setIsPanning(false);
       setIsPinching(true);
       pinchStartDistance.current = getTouchDistance(e.touches);
       pinchStartScale.current = scale;
+      pinchStartMidpoint.current = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      };
+      pinchStartOffset.current = offset;
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 1 && isDragging) {
+    if (e.touches.length === 1 && isPanning) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      handleMove(touch.clientX, touch.clientY);
+    } else if (e.touches.length === 1 && isDragging) {
       const touch = e.touches[0];
       handleMove(touch.clientX, touch.clientY);
     } else if (e.touches.length === 2 && isPinching) {
@@ -554,11 +644,19 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
       e.preventDefault();
       const currentDistance = getTouchDistance(e.touches);
       const scaleRatio = currentDistance / pinchStartDistance.current;
+      const currentMidpoint = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      };
       const { minScale, maxScale } = getScaleBounds();
       let newScale = pinchStartScale.current * scaleRatio;
       // 闄愬埗缂╂斁鑼冨洿
       newScale = Math.max(minScale, Math.min(maxScale, newScale));
       setScale(newScale);
+      setOffset({
+        x: pinchStartOffset.current.x + (currentMidpoint.x - pinchStartMidpoint.current.x),
+        y: pinchStartOffset.current.y + (currentMidpoint.y - pinchStartMidpoint.current.y),
+      });
     }
   };
 
@@ -575,11 +673,23 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   // 宸ュ叿鍏夋爣
   const getCursor = () => {
     // 鑳屾櫙妯″紡鏌ョ湅鏃舵樉绀烘姄鎵?
+    if (isPanning) {
+      return 'grabbing';
+    }
+    if (isBackgroundMode && (isSpacePressed || backgroundPanEnabled)) {
+      return 'grab';
+    }
+    if (canPanViewport()) {
+      return 'grab';
+    }
     if (isBackgroundMode && bgViewMode === 'view') {
       return 'grab';
     }
     // 鑳屾櫙妯″紡閫夋嫨鏃舵樉绀哄崄瀛?
     if (isBackgroundMode) {
+      if (backgroundPanEnabled) {
+        return 'grab';
+      }
       return 'crosshair';
     }
     switch (currentTool) {
@@ -599,6 +709,11 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   // Canvas 浣跨敤瀹為檯缂╂斁鍚庣殑灏哄锛堥珮鍒嗚鲸鐜囨覆鏌擄級
   const canvasWidth = beadData.width * scaledCellSize;
   const canvasHeight = beadData.height * scaledCellSize;
+  const containerViewportStyle: React.CSSProperties = {
+    height: isBackgroundMode ? '58vh' : '60vh',
+    minHeight: isBackgroundMode ? '350px' : '380px',
+    maxHeight: isBackgroundMode ? '66vh' : '70vh',
+  };
 
   return (
     <div style={styles.wrapper}>
@@ -607,12 +722,16 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
         ref={containerRef}
         style={{
           ...styles.container,
+          ...containerViewportStyle,
           cursor: getCursor(),
         }}
       >
         {/* 缂╂斁瀹瑰櫒 - 璁剧疆瀹為檯灏哄浠ユ敮鎸佹粴鍔紝灏忓浘鏃跺眳涓樉绀?*/}
         <div
           style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
             width: canvasWidth,
             height: canvasHeight,
             minWidth: canvasWidth,
@@ -620,7 +739,7 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
             display: 'flex',
             alignItems: 'flex-start',
             justifyContent: 'flex-start',
-            margin: 'auto', // 灏忓浘鏃跺眳涓樉绀?
+            transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
           }}
         >
           <canvas
@@ -635,8 +754,13 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
               // 缂栬緫妯″紡涓嬮樆姝㈡粴鍔紝娴忚妯″紡涓嬪厑璁告粴鍔?
               // 鑳屾櫙妯″紡鏌ョ湅鏃朵篃鍏佽婊氬姩
               // 娉ㄦ剰锛氬弻鎸囩缉鏀鹃€氳繃 e.preventDefault() 鍦ㄤ簨浠跺鐞嗕腑闃绘
-              touchAction: (isEditMode && !(isBackgroundMode && bgViewMode === 'view')) ? 'none' : 'pan-x pan-y',
+              touchAction: isBackgroundMode ? 'none' : ((isEditMode && !(isBackgroundMode && bgViewMode === 'view')) || canPanViewport() ? 'none' : 'pan-x pan-y'),
               cursor: getCursor(),
+            }}
+            onContextMenu={(e) => {
+              if (isBackgroundMode) {
+                e.preventDefault();
+              }
             }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
@@ -703,19 +827,12 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     position: 'relative',
     width: '100%',
-    height: '52vh',
-    minHeight: '320px',
-    maxHeight: '58vh',
     background: colors.bg.card,
     borderRadius: radius.card,
     border: `2px solid ${colors.bead.cyan}40`,
     padding: '4px', // 鏈€灏?padding锛岃鍥剧墖灏藉彲鑳藉ぇ
-    display: 'flex', // 鏀逛负 flex 甯冨眬鏀寔鍨傜洿灞呬腑
-    alignItems: 'center', // 鍨傜洿灞呬腑
-    justifyContent: 'center', // 姘村钩灞呬腑
-    overflow: 'auto', // 鍏佽婊氬姩鏌ョ湅鏀惧ぇ鍚庣殑鍥剧墖
+    overflow: 'hidden',
     boxShadow: shadows.md,
-    WebkitOverflowScrolling: 'touch', // iOS 骞虫粦婊氬姩
   },
 
   canvas: {

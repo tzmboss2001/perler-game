@@ -639,22 +639,39 @@ const spinKeyframes = `
   }
 `;
 
+const detailCandy = {
+  pageBg: 'linear-gradient(180deg, #fffaf3 0%, #fdf4ff 48%, #f3fbff 100%)',
+  panel: 'rgba(255,255,255,0.88)',
+  panelStrong: 'rgba(255,255,255,0.94)',
+  panelSoft: 'rgba(255,255,255,0.72)',
+  panelTint: 'linear-gradient(145deg, rgba(255,255,255,0.94), rgba(246,250,255,0.9))',
+  border: 'rgba(126, 103, 173, 0.16)',
+  text: '#4e4568',
+  textSoft: '#726787',
+  textMuted: '#978da8',
+  accent: '#64c8ff',
+  accentAlt: '#ff8eb8',
+  shadow: '0 18px 42px rgba(137, 112, 167, 0.12)',
+  shadowSoft: '0 10px 28px rgba(137, 112, 167, 0.08)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
     flexDirection: 'column',
     height: '100vh',
-    background: colors.bg.primary,
-    color: colors.text.primary,
+    background: detailCandy.pageBg,
+    color: detailCandy.text,
   },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '12px 16px',
-    background: colors.bg.glass,
+    background: 'rgba(255,255,255,0.78)',
     backdropFilter: 'blur(20px)',
-    borderBottom: `1px solid ${colors.border.soft}`,
+    borderBottom: `1px solid ${detailCandy.border}`,
+    boxShadow: detailCandy.shadowSoft,
     position: 'sticky',
     top: 0,
     zIndex: 10,
@@ -695,7 +712,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   loadingText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.muted,
+    color: detailCandy.textMuted,
   },
 
   // 错误
@@ -709,14 +726,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   errorText: {
     fontSize: typography.fontSize.md,
-    color: colors.text.secondary,
+    color: detailCandy.textSoft,
   },
   retryBtn: {
     padding: '8px 24px',
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: detailCandy.panel,
+    border: `1px solid ${detailCandy.border}`,
     borderRadius: radius.md,
-    color: colors.text.primary,
+    color: detailCandy.text,
     fontSize: typography.fontSize.sm,
     cursor: 'pointer',
   },
@@ -732,14 +749,14 @@ const styles: Record<string, React.CSSProperties> = {
   imageSection: {
     width: '100%',
     aspectRatio: '1',
-    background: colors.bg.elevated,
+    background: detailCandy.panelTint,
     overflow: 'hidden',
   },
   mainImage: {
     width: '100%',
     height: '100%',
     objectFit: 'contain',
-    background: colors.bg.card,
+    background: detailCandy.panel,
   },
   imagePlaceholder: {
     width: '100%',
@@ -747,7 +764,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: `linear-gradient(135deg, ${colors.bg.card}, ${colors.bg.elevated})`,
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.94), rgba(244,251,255,0.92))',
   },
 
   // 标题
@@ -759,7 +776,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '20px',
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: detailCandy.text,
     lineHeight: 1.3,
   },
 
@@ -779,12 +796,12 @@ const styles: Record<string, React.CSSProperties> = {
     width: '28px',
     height: '28px',
     borderRadius: '50%',
-    background: colors.bg.elevated,
+    background: detailCandy.panelTint,
     overflow: 'hidden',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    border: `1px solid ${colors.border.soft}`,
+    border: `1px solid ${detailCandy.border}`,
   },
   avatarImg: {
     width: '100%',
@@ -794,11 +811,11 @@ const styles: Record<string, React.CSSProperties> = {
   avatarFallback: {
     fontSize: '12px',
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.muted,
+    color: detailCandy.textMuted,
   },
   authorName: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
+    color: detailCandy.textSoft,
     fontFamily: typography.fontFamilyAlt,
   },
   authorMeta: {
@@ -808,7 +825,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   publishTime: {
     fontSize: '11px',
-    color: colors.text.muted,
+    color: detailCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
   },
 
@@ -824,11 +841,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '4px',
     padding: '4px 10px',
-    background: colors.bg.card,
-    border: `1px solid ${colors.border.soft}`,
+    background: detailCandy.panel,
+    border: `1px solid ${detailCandy.border}`,
     borderRadius: radius.full,
     fontSize: '12px',
-    color: colors.text.secondary,
+    color: detailCandy.textSoft,
     fontFamily: typography.fontFamilyAlt,
   },
 
@@ -839,7 +856,7 @@ const styles: Record<string, React.CSSProperties> = {
   desc: {
     margin: 0,
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
+    color: detailCandy.textSoft,
     lineHeight: 1.6,
   },
   moreSection: {
@@ -857,20 +874,20 @@ const styles: Record<string, React.CSSProperties> = {
   moreSectionTitle: {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: detailCandy.text,
   },
   moreLinkBtn: {
     border: 'none',
     background: 'transparent',
     padding: 0,
-    color: colors.bead.cyan,
+    color: detailCandy.accent,
     cursor: 'pointer',
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
   },
   moreLoading: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.muted,
+    color: detailCandy.textMuted,
   },
   moreGrid: {
     display: 'grid',
@@ -878,8 +895,8 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '10px',
   },
   moreCard: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
+    border: `1px solid ${detailCandy.border}`,
+    background: detailCandy.panel,
     borderRadius: radius.card,
     overflow: 'hidden',
     padding: 0,
@@ -889,7 +906,7 @@ const styles: Record<string, React.CSSProperties> = {
   moreThumbWrap: {
     width: '100%',
     aspectRatio: '1',
-    background: colors.bg.elevated,
+    background: detailCandy.panelTint,
   },
   moreThumb: {
     width: '100%',
@@ -911,7 +928,7 @@ const styles: Record<string, React.CSSProperties> = {
   moreCardTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
+    color: detailCandy.text,
     marginBottom: '4px',
     display: '-webkit-box',
     WebkitLineClamp: 2,
@@ -921,7 +938,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   moreCardMeta: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: detailCandy.textMuted,
   },
 
   // 互动数据
@@ -932,9 +949,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '0',
     padding: '16px',
     margin: '0 16px',
-    background: colors.bg.card,
+    background: detailCandy.panel,
     borderRadius: radius.lg,
-    border: `1px solid ${colors.border.soft}`,
+    border: `1px solid ${detailCandy.border}`,
   },
   statItem: {
     flex: 1,
@@ -947,17 +964,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: detailCandy.text,
   },
   statLabel: {
     fontSize: '11px',
-    color: colors.text.muted,
+    color: detailCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
   },
   statDivider: {
     width: '1px',
     height: '32px',
-    background: colors.border.soft,
+    background: detailCandy.border,
   },
 
   // 搴曢儴鎸夐挳
@@ -968,7 +985,7 @@ const styles: Record<string, React.CSSProperties> = {
     right: 0,
     padding: '12px 16px',
     paddingBottom: 'calc(env(safe-area-inset-bottom, 8px) + 12px)',
-    background: colors.bg.glass,
+    background: 'rgba(255,255,255,0.78)',
     backdropFilter: 'blur(20px)',
     borderTop: `1px solid ${colors.border.soft}`,
     zIndex: 10,
@@ -983,7 +1000,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     gap: '2px',
     padding: '10px 16px',
-    border: `1px solid ${colors.border.soft}`,
+    border: `1px solid ${detailCandy.border}`,
     borderRadius: radius.lg,
     cursor: 'pointer',
     transition: animation.transition.fast,
@@ -1002,9 +1019,9 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     gap: '2px',
     padding: '10px 8px',
-    border: `1px solid ${colors.border.soft}`,
+    border: `1px solid ${detailCandy.border}`,
     borderRadius: radius.lg,
-    background: colors.bg.card,
+    background: detailCandy.panel,
     cursor: 'pointer',
     flexShrink: 0,
   },
@@ -1012,7 +1029,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11px',
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
+    color: detailCandy.textSoft,
   },
   ctaBtn: {
     flex: 1,
@@ -1021,11 +1038,11 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     gap: '8px',
     padding: '14px',
-    background: `linear-gradient(135deg, ${colors.bead.cyan}, ${colors.bead.blue})`,
+    background: 'linear-gradient(135deg, #78d8ff 0%, #7d9bff 55%, #ff93bf 100%)',
     border: 'none',
     borderRadius: radius.lg,
     cursor: 'pointer',
-    boxShadow: `0 4px 16px ${colors.bead.cyan}40`,
+    boxShadow: '0 14px 30px rgba(120, 216, 255, 0.28)',
   },
   ctaIcon: {
     fontSize: '18px',

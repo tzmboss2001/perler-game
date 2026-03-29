@@ -1000,7 +1000,7 @@ func (s *CommunityService) ensurePostBeadHex(post *entity.CommunityPost) bool {
 		return false
 	}
 
-	projectData := map[string]interface{}(project.BeadData)
+	projectData := expandProjectBeadData(project.BeadData)
 	updated := false
 	for _, item := range rawBeads {
 		bead, ok := item.(map[string]interface{})

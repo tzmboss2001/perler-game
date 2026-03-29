@@ -27,6 +27,7 @@ interface EditorState {
   beadData: BeadPixelData | null;
   initializeBeadData: (data: BeadPixelData) => void;
   setBeadData: (data: BeadPixelData) => void;
+  applyBeadDataChange: (data: BeadPixelData) => void;
 
   // 历史记录（用于撤销/重做）
   history: HistoryBead[][];
@@ -74,6 +75,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setBeadData: (data) => {
     set({
       beadData: data,
+    });
+  },
+  applyBeadDataChange: (data) => {
+    const { history, historyIndex, maxHistory } = get();
+    const currentState = cloneHistoryBeads(data.beads);
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(currentState);
+
+    if (newHistory.length > maxHistory) {
+      newHistory.shift();
+    }
+
+    set({
+      beadData: data,
+      history: newHistory,
+      historyIndex: newHistory.length - 1,
     });
   },
 

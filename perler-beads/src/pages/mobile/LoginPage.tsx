@@ -15,13 +15,21 @@ const LoginPage: React.FC = () => {
   const [localError, setLocalError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const from = (location.state as { from?: string } | null)?.from || '/mobile/profile';
+  const loginState = (location.state as { from?: string; resumeStartMaking?: boolean } | null) || null;
+  const from = loginState?.from || '/mobile/profile';
+
+  const navigateAfterLogin = React.useCallback(() => {
+    navigate(from, {
+      replace: true,
+      state: loginState?.resumeStartMaking ? { resumeStartMaking: true } : undefined,
+    });
+  }, [from, loginState?.resumeStartMaking, navigate]);
 
   useEffect(() => {
     if (isLoggedIn) {
-      navigate(from, { replace: true });
+      navigateAfterLogin();
     }
-  }, [isLoggedIn, navigate, from]);
+  }, [isLoggedIn, navigateAfterLogin]);
 
   useEffect(() => {
     return () => clearError();
@@ -57,11 +65,11 @@ const LoginPage: React.FC = () => {
 
     if (result.isNewUser) {
       setSuccessMessage('欢迎加入，账号已自动创建');
-      setTimeout(() => navigate(from, { replace: true }), 1000);
+      setTimeout(() => navigateAfterLogin(), 1000);
       return;
     }
 
-    navigate(from, { replace: true });
+    navigateAfterLogin();
   };
 
   const displayError = localError || error;

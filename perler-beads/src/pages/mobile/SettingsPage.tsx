@@ -212,10 +212,21 @@ const SettingsPage: React.FC = () => {
   );
 };
 
+const settingsCandy = {
+  pageBg: 'linear-gradient(180deg, #fffaf3 0%, #fdf4ff 48%, #f3fbff 100%)',
+  panel: 'rgba(255,255,255,0.9)',
+  panelSoft: 'rgba(255,255,255,0.78)',
+  border: 'rgba(126, 103, 173, 0.16)',
+  text: '#4f4668',
+  textSoft: '#726787',
+  textMuted: '#978da8',
+  shadow: '0 18px 42px rgba(137, 112, 167, 0.12)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    background: colors.bg.primary,
+    background: settingsCandy.pageBg,
     paddingBottom: 80,
   },
   header: {
@@ -223,8 +234,9 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '16px',
-    background: colors.bg.secondary,
-    borderBottom: `1px solid ${colors.border.soft}`,
+    background: 'rgba(255,255,255,0.78)',
+    borderBottom: `1px solid ${settingsCandy.border}`,
+    boxShadow: '0 10px 28px rgba(137, 112, 167, 0.08)',
     position: 'fixed',
     top: 0,
     left: 0,
@@ -241,7 +253,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
+    color: settingsCandy.text,
   },
   placeholder: {
     width: 40,
@@ -251,7 +263,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sectionTitle: {
     margin: '0 0 10px',
-    color: colors.text.primary,
+    color: settingsCandy.text,
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
   },
@@ -265,32 +277,32 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
+    border: `1px solid ${settingsCandy.border}`,
+    background: settingsCandy.panel,
     borderRadius: radius.card,
     padding: '12px',
     cursor: 'pointer',
     textAlign: 'left',
-    boxShadow: shadows.sm,
+    boxShadow: settingsCandy.shadow,
   },
   linkLabel: {
     flex: 1,
-    color: colors.text.primary,
+    color: settingsCandy.text,
     fontSize: typography.fontSize.sm,
   },
   linkArrow: {
-    color: colors.text.muted,
+    color: settingsCandy.textMuted,
   },
   card: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
+    border: `1px solid ${settingsCandy.border}`,
+    background: settingsCandy.panel,
     borderRadius: radius.card,
     padding: 12,
-    boxShadow: shadows.sm,
+    boxShadow: settingsCandy.shadow,
   },
   cardMain: {
     display: 'flex',
@@ -305,26 +317,26 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
   },
   cardTitle: {
-    color: colors.text.primary,
+    color: settingsCandy.text,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
   },
   cardDesc: {
-    color: colors.text.muted,
+    color: settingsCandy.textMuted,
     fontSize: typography.fontSize.xs,
     lineHeight: 1.5,
   },
   actionBtn: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.tertiary,
-    color: colors.text.secondary,
+    border: `1px solid ${settingsCandy.border}`,
+    background: settingsCandy.panelSoft,
+    color: settingsCandy.textSoft,
     borderRadius: radius.button,
     padding: '6px 10px',
     cursor: 'pointer',
   },
   dangerBtn: {
     border: `1px solid ${colors.bead.red}66`,
-    background: `${colors.bead.red}1f`,
+    background: 'rgba(255, 126, 149, 0.12)',
     color: colors.bead.red,
     borderRadius: radius.button,
     padding: '6px 10px',
@@ -335,21 +347,21 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
   },
   accountCard: {
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
+    border: `1px solid ${settingsCandy.border}`,
+    background: settingsCandy.panel,
     borderRadius: radius.card,
     padding: 12,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    boxShadow: shadows.sm,
+    boxShadow: settingsCandy.shadow,
   },
   accountLabel: {
-    color: colors.text.muted,
+    color: settingsCandy.textMuted,
     fontSize: typography.fontSize.xs,
   },
   accountValue: {
-    color: colors.text.primary,
+    color: settingsCandy.text,
     fontSize: typography.fontSize.sm,
     maxWidth: '65%',
     textAlign: 'right',
@@ -361,7 +373,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   versionText: {
     margin: 0,
-    color: colors.text.muted,
+    color: settingsCandy.textMuted,
     fontSize: typography.fontSize.xs,
   },
 };

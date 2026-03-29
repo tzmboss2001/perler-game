@@ -634,13 +634,29 @@ const HomePage: React.FC = () => {
   );
 };
 
+const homeCandy = {
+  bg: '#fffaf4',
+  bgSoft: '#fff4ea',
+  panel: 'rgba(255, 255, 255, 0.9)',
+  panelStrong: '#ffffff',
+  border: 'rgba(255, 187, 167, 0.34)',
+  borderStrong: 'rgba(95, 200, 255, 0.38)',
+  text: '#4b3f5f',
+  textSoft: '#7f7293',
+  textMuted: '#a093af',
+  cyan: '#4faee1',
+  purple: '#8f72ff',
+  shadow: '0 16px 38px rgba(255, 190, 154, 0.16)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100%',
     background: `
-      radial-gradient(circle at 15% -10%, rgba(65, 202, 255, 0.22), transparent 45%),
-      radial-gradient(circle at 110% 15%, rgba(255, 179, 71, 0.2), transparent 38%),
-      ${colors.bg.primary}
+      radial-gradient(circle at 14% -10%, rgba(95, 200, 255, 0.22), transparent 42%),
+      radial-gradient(circle at 106% 12%, rgba(255, 196, 143, 0.28), transparent 34%),
+      radial-gradient(circle at 52% 108%, rgba(126, 214, 165, 0.2), transparent 38%),
+      linear-gradient(180deg, ${homeCandy.bg} 0%, ${homeCandy.bgSoft} 100%)
     `,
     paddingBottom: '80px',
     width: '100%',
@@ -689,12 +705,12 @@ const styles: Record<string, React.CSSProperties> = {
   betaBadge: {
     fontSize: '9px',
     letterSpacing: '0.08em',
-    color: colors.bead.cyan,
-    border: `1px solid ${colors.bead.cyan}80`,
+    color: homeCandy.cyan,
+    border: `1px solid ${homeCandy.borderStrong}`,
     borderRadius: radius.full,
     padding: '2px 8px',
     fontFamily: typography.fontFamilyAlt,
-    background: `${colors.bead.cyan}14`,
+    background: 'rgba(95, 200, 255, 0.14)',
   },
 
   logo: {
@@ -712,7 +728,7 @@ const styles: Record<string, React.CSSProperties> = {
   subtitle: {
     fontSize: '10px',
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: homeCandy.textMuted,
     margin: 0,
     display: 'flex',
     alignItems: 'center',
@@ -726,12 +742,13 @@ const styles: Record<string, React.CSSProperties> = {
 
   metaPill: {
     fontSize: '11px',
-    color: colors.text.secondary,
-    border: `1px solid ${colors.border.soft}`,
+    color: homeCandy.textSoft,
+    border: `1px solid ${homeCandy.border}`,
     borderRadius: radius.full,
     padding: '3px 10px',
-    background: 'rgba(255,255,255,0.02)',
+    background: 'rgba(255,255,255,0.78)',
     fontFamily: typography.fontFamilyAlt,
+    boxShadow: '0 6px 18px rgba(255, 196, 143, 0.08)',
   },
 
   content: {
@@ -758,7 +775,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
-    background: colors.gradients.primary,
+    background: 'linear-gradient(135deg, #5fc8ff 0%, #ff97bd 100%)',
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
     backgroundClip: 'text',
@@ -780,11 +797,11 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     gap: '6px',
     padding: '10px 8px',
-    background: `linear-gradient(135deg, ${colors.bead.cyan} 0%, ${colors.pixel.blue} 100%)`,
+    background: 'linear-gradient(135deg, #84ddff 0%, #92b1ff 100%)',
     border: 'none',
     borderRadius: radius.button,
     cursor: 'pointer',
-    boxShadow: `0 8px 18px ${colors.bead.cyan}26`,
+    boxShadow: homeCandy.shadow,
     minWidth: 0,
     boxSizing: 'border-box',
   },
@@ -795,11 +812,11 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     gap: '6px',
     padding: '10px 8px',
-    background: `linear-gradient(180deg, ${colors.bg.card} 0%, rgba(255,255,255,0.02) 100%)`,
-    border: `1px solid ${colors.bead.pink}40`,
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(255,244,234,0.96) 100%)',
+    border: '1px solid rgba(255, 151, 189, 0.34)',
     borderRadius: radius.button,
     cursor: 'pointer',
-    boxShadow: '0 6px 14px rgba(0,0,0,0.12)',
+    boxShadow: homeCandy.shadow,
     minWidth: 0,
     boxSizing: 'border-box',
   },
@@ -810,11 +827,11 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     gap: '6px',
     padding: '10px 8px',
-    background: `linear-gradient(180deg, ${colors.bg.card} 0%, rgba(255,255,255,0.02) 100%)`,
-    border: `1px solid ${colors.bead.purple}40`,
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,244,255,0.96) 100%)',
+    border: '1px solid rgba(179, 136, 255, 0.34)',
     borderRadius: radius.button,
     cursor: 'pointer',
-    boxShadow: '0 6px 14px rgba(0,0,0,0.12)',
+    boxShadow: homeCandy.shadow,
     minWidth: 0,
     boxSizing: 'border-box',
   },
@@ -825,11 +842,11 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     gap: '6px',
     padding: '10px 8px',
-    background: `linear-gradient(180deg, ${colors.bg.card} 0%, rgba(255,255,255,0.02) 100%)`,
-    border: `1px solid ${colors.bead.orange}40`,
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(255,248,239,0.96) 100%)',
+    border: '1px solid rgba(255, 179, 71, 0.34)',
     borderRadius: radius.button,
     cursor: 'pointer',
-    boxShadow: '0 6px 14px rgba(0,0,0,0.12)',
+    boxShadow: homeCandy.shadow,
     minWidth: 0,
     boxSizing: 'border-box',
   },
@@ -849,7 +866,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: homeCandy.text,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -862,9 +879,9 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     padding: '10px 10px 12px',
     borderRadius: radius.lg,
-    border: `1px solid ${colors.border.soft}`,
-    background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
-    boxShadow: '0 10px 24px rgba(0,0,0,0.14)',
+    border: `1px solid ${homeCandy.border}`,
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,246,237,0.94) 100%)',
+    boxShadow: homeCandy.shadow,
   },
 
   directoryTabs: {
@@ -875,11 +892,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   directoryTab: {
-    border: `1px solid ${colors.border.soft}`,
+    border: `1px solid ${homeCandy.border}`,
     borderRadius: radius.button,
     padding: '7px 10px',
-    background: colors.bg.card,
-    color: colors.text.secondary,
+    background: 'rgba(255,255,255,0.8)',
+    color: homeCandy.textSoft,
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
@@ -888,10 +905,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   directoryTabActive: {
-    border: `1px solid ${colors.bead.cyan}`,
-    color: colors.bead.cyan,
-    background: `${colors.bead.cyan}1c`,
-    boxShadow: `0 6px 16px ${colors.bead.cyan}22`,
+    border: `1px solid ${homeCandy.borderStrong}`,
+    color: homeCandy.cyan,
+    background: 'rgba(95, 200, 255, 0.14)',
+    boxShadow: '0 8px 18px rgba(95, 200, 255, 0.16)',
   },
 
   tagBar: {
@@ -914,8 +931,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '5px 14px',
     borderRadius: radius.full,
     border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    color: colors.text.secondary,
+    background: 'rgba(255,255,255,0.8)',
+    color: homeCandy.textSoft,
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamilyAlt,
@@ -925,9 +942,9 @@ const styles: Record<string, React.CSSProperties> = {
   } as React.CSSProperties,
 
   tagButtonActive: {
-    background: `${colors.bead.cyan}20`,
-    border: `1px solid ${colors.bead.cyan}`,
-    color: colors.bead.cyan,
+    background: 'rgba(95, 200, 255, 0.14)',
+    border: `1px solid ${homeCandy.borderStrong}`,
+    color: homeCandy.cyan,
     fontWeight: typography.fontWeight.bold,
   },
 
@@ -938,8 +955,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 10px',
     marginBottom: '10px',
     borderRadius: radius.lg,
-    border: `1px solid ${colors.border.soft}`,
-    background: `${colors.bg.card}e6`,
+    border: `1px solid ${homeCandy.border}`,
+    background: 'rgba(255,255,255,0.84)',
   },
   searchInput: {
     flex: 1,
@@ -947,7 +964,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'transparent',
     border: 'none',
     outline: 'none',
-    color: colors.text.primary,
+    color: homeCandy.text,
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
   },
@@ -964,7 +981,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   sortStatsText: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.muted,
+    color: homeCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
     flexShrink: 0,
   },
@@ -978,9 +995,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   viewAllBtn: {
-    border: `1px solid ${colors.bead.purple}70`,
-    color: colors.bead.purple,
-    background: `${colors.bead.purple}1a`,
+    border: '1px solid rgba(179, 136, 255, 0.42)',
+    color: homeCandy.purple,
+    background: 'rgba(179, 136, 255, 0.12)',
     borderRadius: radius.full,
     padding: '4px 10px',
     fontSize: typography.fontSize.xs,
@@ -996,7 +1013,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: radius.sm,
     border: 'none',
     background: 'transparent',
-    color: colors.text.muted,
+    color: homeCandy.textMuted,
     fontSize: '11px',
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamilyAlt,
@@ -1005,8 +1022,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   sortButtonActive: {
-    background: `${colors.bead.purple}20`,
-    color: colors.bead.purple,
+    background: 'rgba(179, 136, 255, 0.14)',
+    color: homeCandy.purple,
     fontWeight: typography.fontWeight.bold,
   },
 
@@ -1026,7 +1043,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   postCard: {
-    background: colors.bg.card,
+    background: 'rgba(255,255,255,0.8)',
     borderRadius: radius.lg,
     border: `1px solid ${colors.border.soft}`,
     overflow: 'hidden',
@@ -1041,7 +1058,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
     width: '100%',
     aspectRatio: '1',
-    background: colors.bg.elevated,
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(248,244,255,0.98))',
     overflow: 'hidden',
   },
 
@@ -1057,7 +1074,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: `linear-gradient(135deg, ${colors.bg.card}, ${colors.bg.elevated})`,
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(247,241,255,0.98))',
   },
 
   postDiffBadge: {
@@ -1080,7 +1097,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: homeCandy.text,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -1092,7 +1109,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '4px',
     fontSize: '11px',
-    color: colors.text.muted,
+    color: homeCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
     marginBottom: '6px',
   },
@@ -1108,13 +1125,13 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '3px',
     fontSize: '11px',
-    color: colors.text.muted,
+    color: homeCandy.textMuted,
   },
   postAuthorBtn: {
     border: 'none',
     background: 'transparent',
     padding: 0,
-    color: colors.bead.cyan,
+    color: homeCandy.cyan,
     fontSize: '11px',
     fontFamily: typography.fontFamilyAlt,
     cursor: 'pointer',
@@ -1123,7 +1140,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     background: 'transparent',
     padding: 0,
-    color: colors.bead.cyan,
+    color: homeCandy.cyan,
     fontSize: '11px',
     fontFamily: typography.fontFamilyAlt,
     cursor: 'pointer',
@@ -1131,7 +1148,7 @@ const styles: Record<string, React.CSSProperties> = {
   postTime: {
     marginLeft: 'auto',
     fontSize: '10px',
-    color: colors.text.muted,
+    color: homeCandy.textMuted,
     fontFamily: typography.fontFamilyAlt,
     whiteSpace: 'nowrap',
   },
@@ -1155,8 +1172,8 @@ const styles: Record<string, React.CSSProperties> = {
   communitySpinner: {
     width: '18px',
     height: '18px',
-    border: `2px solid ${colors.border.soft}`,
-    borderTopColor: colors.bead.cyan,
+    border: `2px solid ${homeCandy.border}`,
+    borderTopColor: homeCandy.cyan,
     borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',
   },

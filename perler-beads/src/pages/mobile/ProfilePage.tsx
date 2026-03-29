@@ -1117,11 +1117,25 @@ const ProfilePage: React.FC = () => {
   );
 };
 
+const profileCandy = {
+  bg: '#fffaf4',
+  bgSoft: '#fff1e7',
+  panel: '#ffffff',
+  panelSoft: 'rgba(255,255,255,0.9)',
+  border: 'rgba(255, 187, 167, 0.34)',
+  text: '#4b3f5f',
+  textSoft: '#7f7293',
+  textMuted: '#a093af',
+  cyan: '#4faee1',
+  purple: '#8f72ff',
+  shadow: '0 16px 38px rgba(255, 190, 154, 0.16)',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     padding: '20px 16px',
     minHeight: '100%',
-    background: colors.bg.primary,
+    background: `linear-gradient(180deg, ${profileCandy.bg} 0%, ${profileCandy.bgSoft} 100%)`,
   },
 
   header: {
@@ -1155,17 +1169,17 @@ const styles: Record<string, React.CSSProperties> = {
     width: '10px',
     height: '10px',
     borderRadius: radius.full,
-    boxShadow: shadows.sm,
+    boxShadow: profileCandy.shadow,
   },
 
   userCard: {
     display: 'flex',
     alignItems: 'center',
     padding: '16px',
-    background: colors.bg.card,
+    background: profileCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.bead.cyan}30`,
-    boxShadow: `${shadows.sm}, 0 4px 20px ${colors.bead.cyan}10`,
+    border: `1px solid ${profileCandy.border}`,
+    boxShadow: profileCandy.shadow,
     marginBottom: '24px',
   },
 
@@ -1215,14 +1229,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: profileCandy.text,
     marginBottom: '4px',
   },
 
   userDesc: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
     display: 'flex',
     alignItems: 'center',
     gap: '4px',
@@ -1236,7 +1250,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '4px',
     padding: '8px 12px',
-    background: `linear-gradient(145deg, ${colors.bead.cyan}, ${colors.pixel.blue})`,
+    background: 'linear-gradient(145deg, #87dfff, #7ea3ff)',
     border: 'none',
     borderRadius: radius.bead,
     color: '#ffffff',
@@ -1244,7 +1258,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
     cursor: 'pointer',
-    boxShadow: `0 2px 8px ${colors.bead.cyan}40`,
+    boxShadow: '0 10px 24px rgba(95, 200, 255, 0.2)',
     transition: animation.transition.fast,
     flexShrink: 0,
   },
@@ -1254,10 +1268,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '4px',
     padding: '8px 12px',
-    background: colors.bg.tertiary,
-    border: `1px solid ${colors.border.soft}`,
+    background: 'rgba(255,255,255,0.9)',
+    border: `1px solid ${profileCandy.border}`,
     borderRadius: radius.bead,
-    color: colors.text.secondary,
+    color: profileCandy.textSoft,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamilyAlt,
@@ -1277,7 +1291,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
     fontFamily: typography.fontFamilyAlt,
-    background: colors.gradients.primary,
+    background: 'linear-gradient(135deg, #5fc8ff 0%, #ff97bd 100%)',
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
     backgroundClip: 'text',
@@ -1292,7 +1306,7 @@ const styles: Record<string, React.CSSProperties> = {
   projectCount: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
     WebkitTextFillColor: colors.text.muted,
     marginLeft: '4px',
   },
@@ -1303,11 +1317,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '32px 20px',
-    background: colors.bg.card,
+    background: profileCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    boxShadow: shadows.sm,
-    color: colors.text.muted,
+    border: `1px solid ${profileCandy.border}`,
+    boxShadow: profileCandy.shadow,
+    color: profileCandy.textMuted,
     gap: '12px',
   },
 
@@ -1317,10 +1331,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '32px 20px',
-    background: colors.bg.card,
+    background: profileCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    boxShadow: shadows.sm,
+    border: `1px solid ${profileCandy.border}`,
+    boxShadow: profileCandy.shadow,
   },
 
   emptyGrid: {
@@ -1333,7 +1347,7 @@ const styles: Record<string, React.CSSProperties> = {
   emptyCell: {
     width: '20px',
     height: '20px',
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.9)',
     borderRadius: radius.full,
     opacity: 0.5,
   },
@@ -1342,14 +1356,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
+    color: profileCandy.textSoft,
     marginBottom: '4px',
   },
 
   emptyHint: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
   },
 
   // 方案列表样式
@@ -1363,10 +1377,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     padding: '12px',
-    background: colors.bg.card,
+    background: profileCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    boxShadow: shadows.sm,
+    border: `1px solid ${profileCandy.border}`,
+    boxShadow: profileCandy.shadow,
     cursor: 'pointer',
     transition: animation.transition.fast,
   },
@@ -1378,7 +1392,7 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     marginRight: '12px',
     flexShrink: 0,
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.9)',
   },
 
   thumbnail: {
@@ -1395,7 +1409,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     fontSize: '24px',
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
   },
 
   projectInfo: {
@@ -1409,7 +1423,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: profileCandy.text,
     marginBottom: '4px',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -1426,7 +1440,7 @@ const styles: Record<string, React.CSSProperties> = {
   projectSize: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
   },
 
   projectProgress: {
@@ -1439,7 +1453,7 @@ const styles: Record<string, React.CSSProperties> = {
   projectDate: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
   },
 
   projectActions: {
@@ -1459,10 +1473,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '10px',
     padding: '12px',
-    background: colors.bg.card,
+    background: profileCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    boxShadow: shadows.sm,
+    border: `1px solid ${profileCandy.border}`,
+    boxShadow: profileCandy.shadow,
     cursor: 'pointer',
   },
 
@@ -1475,7 +1489,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: profileCandy.text,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -1498,7 +1512,7 @@ const styles: Record<string, React.CSSProperties> = {
   publishDate: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
   },
 
   publishReason: {
@@ -1543,9 +1557,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '10px',
     padding: '10px',
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    background: colors.bg.card,
-    boxShadow: shadows.sm,
+    border: `1px solid ${profileCandy.border}`,
+    background: profileCandy.panel,
+    boxShadow: profileCandy.shadow,
   },
 
   albumThumbWrap: {
@@ -1554,7 +1568,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: radius.bead,
     overflow: 'hidden',
     flexShrink: 0,
-    background: colors.bg.tertiary,
+    background: 'rgba(255,255,255,0.9)',
   },
 
   albumThumb: {
@@ -1571,7 +1585,7 @@ const styles: Record<string, React.CSSProperties> = {
   albumDesc: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
@@ -1613,8 +1627,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: colors.bg.tertiary,
-    border: `1px solid ${colors.border.soft}`,
+    background: 'rgba(255,255,255,0.9)',
+    border: `1px solid ${profileCandy.border}`,
     borderRadius: radius.bead,
     color: colors.bead.red,
     cursor: 'pointer',
@@ -1622,10 +1636,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   menu: {
-    background: colors.bg.card,
+    background: profileCandy.panel,
     borderRadius: radius.card,
-    border: `1px solid ${colors.border.soft}`,
-    boxShadow: shadows.sm,
+    border: `1px solid ${profileCandy.border}`,
+    boxShadow: profileCandy.shadow,
     overflow: 'hidden',
     marginBottom: '24px',
   },
@@ -1654,11 +1668,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.primary,
+    color: profileCandy.text,
   },
 
   menuArrow: {
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
     fontSize: '14px',
   },
 
@@ -1679,14 +1693,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.secondary,
+    color: profileCandy.textSoft,
     margin: '0 0 4px',
   },
 
   versionSub: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamilyAlt,
-    color: colors.text.muted,
+    color: profileCandy.textMuted,
     margin: 0,
     display: 'flex',
     alignItems: 'center',

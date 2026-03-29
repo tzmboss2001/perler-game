@@ -1,48 +1,47 @@
-import React from 'react';
+﻿import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { House, Plus, User } from '@phosphor-icons/react';
-import { colors, shadows, animation, radius, typography } from '../styles/designSystem';
+import { animation, radius, typography } from '../styles/designSystem';
 
-// 路径到导航项的映射
 const pathToNav: Record<string, string> = {
   '/mobile/home': '/mobile/home',
   '/mobile/create': '/mobile/create',
-  '/mobile/editor': '/mobile/create',       // 编辑器属于"创作"
-  '/mobile/making': '/mobile/create',       // 制作模式属于"创作"
+  '/mobile/editor': '/mobile/create',
+  '/mobile/making': '/mobile/create',
   '/mobile/profile': '/mobile/profile',
-  '/mobile/settings': '/mobile/profile',     // 设置属于"我的"
-  '/mobile/help': '/mobile/profile',         // 帮助属于"我的"
-  '/mobile/about': '/mobile/profile',        // 关于属于"我的"
-  '/mobile/login': '/mobile/profile',        // 登录属于"我的"
-  '/mobile/feedback': '/mobile/profile',     // 反馈属于"我的"
+  '/mobile/settings': '/mobile/profile',
+  '/mobile/help': '/mobile/profile',
+  '/mobile/about': '/mobile/profile',
+  '/mobile/login': '/mobile/profile',
+  '/mobile/feedback': '/mobile/profile',
 };
 
-// Navigation items configuration
 const navItems = [
-  { path: '/mobile/home', label: '首页', icon: House, color: colors.bead.cyan, isCenter: false },
-  { path: '/mobile/create', label: '创作', icon: Plus, color: colors.bead.green, isCenter: true },
-  { path: '/mobile/profile', label: '我的', icon: User, color: colors.bead.purple, isCenter: false },
+  { path: '/mobile/home', label: '首页', icon: House, color: '#78d8ff', isCenter: false },
+  { path: '/mobile/create', label: '创作', icon: Plus, color: '#7ed6a5', isCenter: true },
+  { path: '/mobile/profile', label: '我的', icon: User, color: '#b18cff', isCenter: false },
 ];
 
 interface BottomNavProps {
-  transparent?: boolean; // 是否透明背景（用于覆盖在内容上）
+  transparent?: boolean;
 }
+
+const candyNav = {
+  panel: 'rgba(255,255,255,0.86)',
+  panelTransparent: 'rgba(255,255,255,0.76)',
+  border: 'rgba(126, 103, 173, 0.16)',
+  textMuted: '#8f84a2',
+  shadow: '0 -10px 30px rgba(137, 112, 167, 0.14)',
+};
 
 const BottomNav: React.FC<BottomNavProps> = ({ transparent = false }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // 判断当前路径属于哪个导航项
   const getActiveNav = () => {
-    // 精确匹配
-    if (pathToNav[location.pathname]) {
-      return pathToNav[location.pathname];
-    }
-    // 前缀匹配
+    if (pathToNav[location.pathname]) return pathToNav[location.pathname];
     for (const [path, nav] of Object.entries(pathToNav)) {
-      if (location.pathname.startsWith(path)) {
-        return nav;
-      }
+      if (location.pathname.startsWith(path)) return nav;
     }
     return '/mobile/home';
   };
@@ -50,68 +49,48 @@ const BottomNav: React.FC<BottomNavProps> = ({ transparent = false }) => {
   const activeNav = getActiveNav();
 
   return (
-    <nav style={{
-      ...styles.nav,
-      ...(transparent ? styles.navTransparent : {}),
-    }}>
+    <nav style={{ ...styles.nav, ...(transparent ? styles.navTransparent : {}) }}>
       <div style={styles.navInner}>
         {navItems.map((item) => {
           const isActive = activeNav === item.path;
           const IconComponent = item.icon;
 
-          // 中间的"创作"按钮特殊样式
           if (item.isCenter) {
             return (
-              <button
-                key={item.path}
-                style={styles.centerBtn}
-                onClick={() => navigate(item.path)}
-              >
+              <button key={item.path} style={styles.centerBtn} onClick={() => navigate(item.path)}>
                 <div
                   style={{
                     ...styles.centerBtnInner,
-                    background: `linear-gradient(145deg, ${item.color}, ${item.color}dd)`,
+                    background: `linear-gradient(145deg, ${item.color} 0%, #85b7ff 58%, #ff9fc7 100%)`,
                     boxShadow: isActive
-                      ? `0 4px 20px ${item.color}60, 0 0 0 3px ${item.color}30`
-                      : `0 4px 16px ${item.color}40`,
+                      ? '0 14px 28px rgba(133, 183, 255, 0.28), 0 0 0 4px rgba(255,255,255,0.82)'
+                      : '0 10px 22px rgba(133, 183, 255, 0.22)',
                     transform: isActive ? 'scale(1.05)' : 'scale(1)',
                   }}
                 >
-                  <IconComponent
-                    size={26}
-                    weight="bold"
-                    style={{ color: '#ffffff' }}
-                  />
+                  <IconComponent size={26} weight="bold" style={{ color: '#ffffff' }} />
                 </div>
               </button>
             );
           }
 
-          // 普通导航按钮
           return (
-            <button
-              key={item.path}
-              style={styles.navItem}
-              onClick={() => navigate(item.path)}
-            >
+            <button key={item.path} style={styles.navItem} onClick={() => navigate(item.path)}>
               <IconComponent
                 size={24}
                 weight={isActive ? 'fill' : 'regular'}
-                style={{ color: isActive ? item.color : colors.text.muted }}
+                style={{ color: isActive ? item.color : candyNav.textMuted }}
               />
               <span
                 style={{
                   ...styles.navLabel,
-                  color: isActive ? item.color : colors.text.muted,
+                  color: isActive ? item.color : candyNav.textMuted,
                   fontWeight: isActive ? typography.fontWeight.semibold : typography.fontWeight.medium,
                 }}
               >
                 {item.label}
               </span>
-              {/* 激活指示点 */}
-              {isActive && (
-                <div style={{ ...styles.activeIndicator, background: item.color }} />
-              )}
+              {isActive && <div style={{ ...styles.activeIndicator, background: item.color }} />}
             </button>
           );
         })}
@@ -126,30 +105,28 @@ const styles: Record<string, React.CSSProperties> = {
     bottom: 0,
     left: 0,
     right: 0,
-    background: colors.bg.glass,
+    background: candyNav.panel,
     backdropFilter: 'blur(20px)',
     WebkitBackdropFilter: 'blur(20px)',
-    borderTop: `1px solid ${colors.border.soft}`,
+    borderTop: `1px solid ${candyNav.border}`,
+    boxShadow: candyNav.shadow,
     paddingTop: '6px',
     paddingBottom: 'calc(env(safe-area-inset-bottom, 4px) + 4px)',
     paddingLeft: '12px',
     paddingRight: '12px',
     zIndex: 1000,
   },
-
   navTransparent: {
-    background: 'rgba(5, 8, 22, 0.85)',
+    background: candyNav.panelTransparent,
   },
-
   navInner: {
     display: 'flex',
     justifyContent: 'space-around',
-    alignItems: 'center', // 改为居中对齐
+    alignItems: 'center',
     maxWidth: '320px',
     margin: '0 auto',
     height: '48px',
   },
-
   navItem: {
     display: 'flex',
     flexDirection: 'column',
@@ -165,13 +142,12 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
     minWidth: '64px',
   },
-
   navLabel: {
     fontSize: '10px',
     fontFamily: typography.fontFamilyAlt,
+    letterSpacing: '0.02em',
     transition: animation.transition.fast,
   },
-
   activeIndicator: {
     position: 'absolute',
     bottom: '0px',
@@ -179,7 +155,6 @@ const styles: Record<string, React.CSSProperties> = {
     height: '4px',
     borderRadius: '50%',
   },
-
   centerBtn: {
     display: 'flex',
     alignItems: 'center',
@@ -190,11 +165,10 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'transparent',
     position: 'relative',
   },
-
   centerBtnInner: {
     width: '48px',
     height: '48px',
-    borderRadius: '14px',
+    borderRadius: '16px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

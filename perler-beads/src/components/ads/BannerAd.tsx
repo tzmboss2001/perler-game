@@ -22,6 +22,7 @@ const BannerAd: React.FC<BannerAdProps> = ({ placement }) => {
   const mode = monetizationConfig.adMode;
   const slot = placementSlot[placement];
   const clientId = monetizationConfig.adsense.clientId;
+  const showDevPlaceholder = import.meta.env.DEV && mode === 'off';
 
   useEffect(() => {
     adService.trackAdImpression(placement);
@@ -49,6 +50,16 @@ const BannerAd: React.FC<BannerAdProps> = ({ placement }) => {
       // Ignore ad render failure to avoid blocking page flow.
     }
   }, [mode, clientId, slot, placement]);
+
+  if (showDevPlaceholder) {
+    return (
+      <div style={styles.placeholder}>
+        <span style={styles.placeholderBadge}>广告位</span>
+        <span style={styles.placeholderText}>{placementLabel[placement]}</span>
+        <span style={styles.placeholderSubText}>当前为开发环境占位，抖音端将替换成真实广告</span>
+      </div>
+    );
+  }
 
   if (mode === 'off') return null;
 
@@ -110,6 +121,40 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 8,
     marginBottom: 8,
     minHeight: 56,
+  },
+  placeholder: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '12px 14px',
+    borderRadius: 16,
+    border: '1px solid rgba(255, 184, 135, 0.45)',
+    background:
+      'linear-gradient(135deg, rgba(255,250,244,0.96), rgba(255,239,226,0.94))',
+    boxShadow: '0 12px 26px rgba(255, 188, 154, 0.14)',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  placeholderBadge: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#c56a2d',
+    border: '1px solid rgba(234, 153, 85, 0.45)',
+    background: 'rgba(255,255,255,0.74)',
+    borderRadius: 999,
+    padding: '2px 8px',
+    lineHeight: 1.2,
+    whiteSpace: 'nowrap',
+  },
+  placeholderText: {
+    fontSize: 13,
+    color: '#57476b',
+    fontWeight: 700,
+  },
+  placeholderSubText: {
+    fontSize: 12,
+    color: '#8b7b9d',
+    marginLeft: 'auto',
   },
   mock: {
     display: 'flex',

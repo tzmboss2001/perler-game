@@ -1,18 +1,15 @@
-/**
- * 坐标提示框组件
- * 点击格子时显示坐标，自动淡出
- */
-import React, { useEffect, useState } from 'react';
-import { colors, radius, typography, shadows } from '../styles/designSystem';
+﻿import React, { useEffect, useState } from 'react';
+import { radius, typography, shadows } from '../styles/designSystem';
 
 interface CoordinateTooltipProps {
   visible: boolean;
   row: number;
   col: number;
-  // 格子在屏幕上的位置
+  boardNumber?: number;
+  localRow?: number;
+  localCol?: number;
   cellScreenX: number;
   cellScreenY: number;
-  // 容器尺寸
   containerWidth: number;
   containerHeight: number;
   onHide: () => void;
@@ -22,6 +19,9 @@ const CoordinateTooltip: React.FC<CoordinateTooltipProps> = ({
   visible,
   row,
   col,
+  boardNumber,
+  localRow,
+  localCol,
   cellScreenX,
   cellScreenY,
   containerWidth,
@@ -36,12 +36,10 @@ const CoordinateTooltip: React.FC<CoordinateTooltipProps> = ({
       setIsVisible(true);
       setOpacity(1);
 
-      // 1.5秒后开始淡出
       const fadeTimer = setTimeout(() => {
         setOpacity(0);
       }, 1500);
 
-      // 淡出动画完成后隐藏
       const hideTimer = setTimeout(() => {
         setIsVisible(false);
         onHide();
@@ -51,33 +49,28 @@ const CoordinateTooltip: React.FC<CoordinateTooltipProps> = ({
         clearTimeout(fadeTimer);
         clearTimeout(hideTimer);
       };
-    } else {
-      setIsVisible(false);
     }
-  }, [visible, row, col, onHide]);
+
+    setIsVisible(false);
+  }, [visible, row, col, boardNumber, localRow, localCol, onHide]);
 
   if (!isVisible) return null;
 
-  // 计算提示框位置
-  // 优先左上方，避免遮挡右侧和下侧
-  const tooltipWidth = 80;
-  const tooltipHeight = 36;
+  const tooltipWidth = boardNumber ? 132 : 80;
+  const tooltipHeight = boardNumber ? 54 : 36;
   const offset = 8;
 
   let left = cellScreenX - tooltipWidth - offset;
   let top = cellScreenY - tooltipHeight - offset;
 
-  // 如果左侧空间不够，放右边
   if (left < 10) {
-    left = cellScreenX + offset + 30; // 30 是格子大概宽度
+    left = cellScreenX + offset + 30;
   }
 
-  // 如果上侧空间不够，放下边
   if (top < 10) {
     top = cellScreenY + offset + 30;
   }
 
-  // 确保不超出容器
   left = Math.max(10, Math.min(left, containerWidth - tooltipWidth - 10));
   top = Math.max(10, Math.min(top, containerHeight - tooltipHeight - 10));
 
@@ -90,7 +83,14 @@ const CoordinateTooltip: React.FC<CoordinateTooltipProps> = ({
         opacity,
       }}
     >
-      ({row}, {col})
+      {boardNumber && localRow && localCol ? (
+        <>
+          <div style={styles.tooltipTitle}>板{boardNumber}</div>
+          <div style={styles.tooltipMeta}>列{localCol} · 行{localRow}</div>
+        </>
+      ) : (
+        <div>({row}, {col})</div>
+      )}
     </div>
   );
 };
@@ -110,6 +110,17 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: 'none',
     transition: 'opacity 0.3s ease',
     boxShadow: shadows.md,
+  },
+  tooltipTitle: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.bold,
+    lineHeight: 1.1,
+  },
+  tooltipMeta: {
+    marginTop: 4,
+    fontSize: typography.fontSize.sm,
+    opacity: 0.92,
+    lineHeight: 1.1,
   },
 };
 
