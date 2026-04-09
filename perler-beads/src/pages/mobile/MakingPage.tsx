@@ -347,6 +347,7 @@ const MakingPage: React.FC = () => {
   const [activeBoardNumber, setActiveBoardNumber] = useState(1);
   const [boardStatusMap, setBoardStatusMap] = useState<BoardStatusMap>({});
   const [singleBoardOverviewCollapsed, setSingleBoardOverviewCollapsed] = useState(false);
+  const [singleBoardMobileMiniMapExpanded, setSingleBoardMobileMiniMapExpanded] = useState(false);
   const [autoAdvanceOnBoardDone, setAutoAdvanceOnBoardDone] = useState(true);
   const [singleBoardHydrated, setSingleBoardHydrated] = useState(false);
   const [shareFeedback, setShareFeedback] = useState<null | "preparing" | "shared" | "copied" | "unsupported">(null);
@@ -2491,6 +2492,13 @@ const MakingPage: React.FC = () => {
 
   const isNarrowToolbar = viewportWidth <= 420;
   const isCompactToolbar = viewportWidth <= 360;
+  const isSingleBoardMobile = viewMode === "singleBoard" && viewportWidth <= 640;
+  useEffect(() => {
+    if (!isSingleBoardMobile || totalBoardCount <= 1 || singleBoardAllDone) {
+      setSingleBoardMobileMiniMapExpanded(false);
+    }
+  }, [isSingleBoardMobile, totalBoardCount, singleBoardAllDone]);
+
   const floatingControlsStyle: React.CSSProperties = {
     ...styles.floatingControls,
     flexWrap: isNarrowToolbar ? "wrap" : "nowrap",
@@ -2502,8 +2510,13 @@ const MakingPage: React.FC = () => {
     width: isNarrowToolbar ? "100%" : undefined,
     flexBasis: isNarrowToolbar ? "100%" : undefined,
     order: isNarrowToolbar ? 1 : 0,
-    padding: isCompactToolbar ? "6px 8px" : styles.zoomControls.padding,
-    gap: isCompactToolbar ? "4px" : "6px",
+    padding:
+      isSingleBoardMobile && !singleBoardAllDone
+        ? "4px 6px"
+        : isCompactToolbar
+          ? "6px 8px"
+          : styles.zoomControls.padding,
+    gap: isSingleBoardMobile && !singleBoardAllDone ? "3px" : isCompactToolbar ? "4px" : "6px",
   };
   const zoomRangeStyle: React.CSSProperties = {
     ...styles.zoomRange,
@@ -2537,8 +2550,8 @@ const MakingPage: React.FC = () => {
     ...styles.modeSwitchBar,
     ...(viewMode === "singleBoard"
       ? {
-        gap: "6px",
-        padding: "6px 8px 0",
+        gap: isSingleBoardMobile ? "4px" : "6px",
+        padding: isSingleBoardMobile ? "4px 6px 0" : "6px 8px 0",
       }
       : {}),
   };
@@ -2546,16 +2559,17 @@ const MakingPage: React.FC = () => {
     ...styles.modeSwitchBtn,
     ...(viewMode === "singleBoard"
       ? {
-        height: "30px",
-        fontSize: "12px",
+        height: isSingleBoardMobile ? "28px" : "30px",
+        fontSize: isSingleBoardMobile ? "11px" : "12px",
       }
       : {}),
     ...(active ? styles.modeSwitchBtnActive : {}),
   });
   const singleBoardChromeOffset = viewMode === "singleBoard" ? 46 : 50;
   const shouldShowStatusHint =
-    viewMode !== "singleBoard" ||
-    (!singleBoardAllDone && (selection.type !== null || showSettings));
+    !isSingleBoardMobile &&
+    (viewMode !== "singleBoard" ||
+      (!singleBoardAllDone && (selection.type !== null || showSettings)));
   const statusHintStyle: React.CSSProperties = {
     ...styles.statusHint,
     top: isNarrowToolbar ? `${singleBoardChromeOffset + 38}px` : `${singleBoardChromeOffset}px`,
@@ -2573,7 +2587,12 @@ const MakingPage: React.FC = () => {
   };
   const canvasContainerStyle: React.CSSProperties = {
     ...styles.canvasContainer,
-    minHeight: viewMode === "singleBoard" ? "clamp(420px, 68vh, 760px)" : undefined,
+    minHeight:
+      viewMode === "singleBoard"
+        ? isSingleBoardMobile && !singleBoardAllDone
+          ? "clamp(500px, 76vh, 920px)"
+          : "clamp(420px, 68vh, 760px)"
+        : undefined,
   };
   const canvasStageStyle: React.CSSProperties = {
     ...styles.canvasStage,
@@ -2685,7 +2704,7 @@ const MakingPage: React.FC = () => {
                   </button>
                 </div>
               </div>
-            ) : resumeBoardNumber && (
+            ) : resumeBoardNumber && !isSingleBoardMobile && (
               <div style={styles.singleBoardResumeEntry}>
                 <div style={styles.singleBoardResumeEntryMeta}>
                   <span style={styles.singleBoardResumeEntryTitle}>继续上次制作</span>
@@ -2703,204 +2722,342 @@ const MakingPage: React.FC = () => {
             )}
             {!singleBoardAllDone && (
               <>
-                <div style={styles.singleBoardCompactHeader}>
-                  <div style={styles.singleBoardCompactMeta}>
-                    <span style={styles.singleBoardSummaryTitle}>单板</span>
-                    <span style={styles.singleBoardSummaryText}>
-                      {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
-                      {singleBoardProgress.totalCount > 0 ? ` · ${singleBoardProgress.percent}%` : ""}
-                      {` · 剩余${singleBoardProgress.remainingCount}块`}
-                    </span>
-                    {nextPendingBoardNumber && (
-                      <span style={styles.singleBoardSummaryHint}>
-                        下一块：板{nextPendingBoardNumber}
-                      </span>
-                    )}
-                    <span
-                      style={{
-                        ...styles.singleBoardStatePill,
-                        ...(activeBoardDone
-                          ? styles.singleBoardStatePillDone
-                          : styles.singleBoardStatePillTodo),
-                      }}
-                    >
-                      {activeBoardDone ? `板${activeBoardNumber} 已完成` : `板${activeBoardNumber} 进行中`}
-                    </span>
-                  </div>
-                  <button
-                    style={styles.singleBoardCollapseBtn}
-                    onClick={() => setSingleBoardOverviewCollapsed((prev) => !prev)}
-                  >
-                    {singleBoardOverviewCollapsed ? "展开总览" : "收起总览"}
-                  </button>
-                </div>
-                {!singleBoardOverviewCollapsed && (
-                  <div style={styles.singleBoardProgressTrack}>
-                    <div
-                      style={{
-                        ...styles.singleBoardProgressFill,
-                        width: `${singleBoardProgress.percent}%`,
-                      }}
-                    />
-                  </div>
-                )}
-              <div style={styles.singleBoardQuickRow}>
-                <div style={styles.singleBoardQuickControls}>
-                  <button
-                    style={{
-                      ...styles.singleBoardQuickToggle,
-                      ...(autoAdvanceOnBoardDone ? styles.singleBoardQuickToggleActive : {}),
-                    }}
-                    onClick={() => setAutoAdvanceOnBoardDone((prev) => !prev)}
-                  >
-                    {autoAdvanceOnBoardDone ? "自动切下一板" : "完成后停留当前板"}
-                  </button>
-                </div>
-                {pendingBoardNumbers.length > 0 && !singleBoardOverviewCollapsed && (
-                  <div style={styles.singleBoardPendingRow}>
-                    <span style={styles.singleBoardPendingLabel}>未完成：</span>
-                    {pendingBoardNumbers.slice(0, 3).map((boardNumber) => (
+                {isSingleBoardMobile ? (
+                  <>
+                    <div style={styles.singleBoardMobileSummaryRow}>
+                      <div style={styles.singleBoardMobileSummaryMain}>
+                        <span style={styles.singleBoardMobileSummaryText}>
+                          进度 {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
+                        </span>
+                        <span style={styles.singleBoardMobileSummaryText}>
+                          剩余 {singleBoardProgress.remainingCount} 块
+                        </span>
+                        {resumeBoardNumber && resumeBoardNumber !== activeBoardNumber && (
+                          <button
+                            style={styles.singleBoardResumeBtn}
+                            onClick={() => activateBoard(resumeBoardNumber, true)}
+                          >
+                            继续未完成
+                          </button>
+                        )}
+                      </div>
                       <button
-                        key={`pending-${boardNumber}`}
-                        style={styles.singleBoardPendingChip}
-                        onClick={() => activateBoard(boardNumber, true)}
-                      >
-                        板{boardNumber}
-                      </button>
-                    ))}
-                    {pendingBoardNumbers.length > 3 && (
-                      <span style={styles.singleBoardPendingMore}>
-                        +{pendingBoardNumbers.length - 3}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-              {!singleBoardOverviewCollapsed && (
-                <div style={styles.singleBoardHeroRow}>
-                  <div style={styles.singleBoardSummaryCard}>
-                    <div style={styles.singleBoardSummary}>
-                      <span style={styles.singleBoardSummaryTitle}>当前板工作流</span>
-                      <span style={styles.singleBoardSummaryText}>
-                        板{activeBoardNumber} / 共 {singleBoardProgress.totalCount} 块
-                      </span>
-                    </div>
-                    <div style={styles.singleBoardActionRow}>
-                      <button
-                        style={styles.singleBoardMinorBtn}
-                        onClick={handleToggleBoardDone}
-                        disabled={!activeBoardRect}
-                      >
-                        {activeBoardRect && boardStatusMap[activeBoardRect.boardNumber]
-                          ? "取消完成"
-                          : "标记本板完成"}
-                      </button>
-                      <button
-                        style={styles.singleBoardMinorBtn}
-                        onClick={locateCurrentBoard}
-                        disabled={!activeBoardRect}
-                      >
-                        找到当前板
-                      </button>
-                    </div>
-                  </div>
-                  <div style={styles.singleBoardMiniMapCard}>
-                    <div style={styles.singleBoardMiniMapFrame}>
-                      <div
                         style={{
-                          ...styles.singleBoardMiniMapCanvas,
-                          aspectRatio: beadData ? `${beadData.width} / ${beadData.height}` : "1 / 1",
+                          ...styles.singleBoardQuickToggle,
+                          ...styles.singleBoardMobileQuickToggle,
+                          ...(autoAdvanceOnBoardDone ? styles.singleBoardQuickToggleActive : {}),
                         }}
+                        onClick={() => setAutoAdvanceOnBoardDone((prev) => !prev)}
                       >
+                        {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
+                      </button>
+                    </div>
+                    {(totalBoardCount > 1 || activeBoardRect) && (
+                      <div style={styles.singleBoardMobileNavRow}>
+                        {totalBoardCount > 1 && (
+                          <button
+                            style={styles.singleBoardMobileNavBtn}
+                            onClick={() => jumpToBoard(-1)}
+                            disabled={activeBoardNumber <= 1}
+                            aria-label="上一块板"
+                          >
+                            ‹
+                          </button>
+                        )}
+                        {totalBoardCount > 1 && (
+                          <button
+                            style={{
+                              ...styles.singleBoardMobileNavBtn,
+                              width: "auto",
+                              minWidth: "52px",
+                              padding: "0 10px",
+                              fontSize: "10px",
+                            }}
+                            onClick={() =>
+                              setSingleBoardMobileMiniMapExpanded((prev) => !prev)
+                            }
+                            title={singleBoardMobileMiniMapExpanded ? "收起总览" : "展开总览"}
+                          >
+                            {singleBoardMobileMiniMapExpanded ? "收起" : "总览"}
+                          </button>
+                        )}
+                        {totalBoardCount > 1 ? (
+                          <button
+                            style={styles.singleBoardMobileNavBtn}
+                            onClick={() => jumpToBoard(1)}
+                            disabled={activeBoardNumber >= totalBoardCount}
+                            aria-label="下一块板"
+                          >
+                            ›
+                          </button>
+                        ) : (
+                          <button
+                            style={{ ...styles.singleBoardMobileNavBtn, width: "auto", minWidth: "56px", padding: "0 10px" }}
+                            onClick={locateCurrentBoard}
+                            disabled={!activeBoardRect}
+                          >
+                            定位
+                          </button>
+                        )}
+                        <button
+                          style={styles.singleBoardMobilePrimaryBtn}
+                          onClick={() => {
+                            if (activeBoardDone && nextPendingBoardNumber) {
+                              activateBoard(nextPendingBoardNumber, true);
+                              return;
+                            }
+                            handleToggleBoardDone();
+                          }}
+                          disabled={!activeBoardRect}
+                        >
+                          {activeBoardDone && nextPendingBoardNumber ? "下一块" : "完成"}
+                        </button>
+                      </div>
+                    )}
+                    {totalBoardCount > 1 && singleBoardMobileMiniMapExpanded && (
+                      <div style={styles.singleBoardMobileMiniMapPanel}>
+                        <button
+                          style={styles.singleBoardMobileMiniMapPanelInner}
+                          onClick={locateCurrentBoard}
+                          title="定位当前板"
+                        >
+                          <div
+                            style={{
+                              ...styles.singleBoardMiniMapCanvas,
+                              ...styles.singleBoardMobileMiniMapPanelCanvas,
+                              aspectRatio: beadData ? `${beadData.width} / ${beadData.height}` : "1 / 1",
+                            }}
+                          >
+                            {boardRects.map((board) => {
+                              const isActive = board.boardNumber === activeBoardNumber;
+                              const isDone = Boolean(boardStatusMap[board.boardNumber]);
+                              const left = `${(board.startX / beadData!.width) * 100}%`;
+                              const top = `${(board.startY / beadData!.height) * 100}%`;
+                              const width = `${((board.endX - board.startX) / beadData!.width) * 100}%`;
+                              const height = `${((board.endY - board.startY) / beadData!.height) * 100}%`;
+                              return (
+                                <span
+                                  key={`mobile-mini-${board.boardNumber}`}
+                                  style={{
+                                    ...styles.singleBoardMiniMapCell,
+                                    ...styles.singleBoardMobileMiniMapCell,
+                                    ...(isDone ? styles.singleBoardMiniMapCellDone : {}),
+                                    ...(isActive ? styles.singleBoardMiniMapCellActive : {}),
+                                    left,
+                                    top,
+                                    width,
+                                    height,
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div style={styles.singleBoardCompactHeader}>
+                      <div style={styles.singleBoardCompactMeta}>
+                        <span style={styles.singleBoardSummaryTitle}>单板</span>
+                        <span style={styles.singleBoardSummaryText}>
+                          {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
+                          {singleBoardProgress.totalCount > 0 ? ` · ${singleBoardProgress.percent}%` : ""}
+                          {` · 剩余${singleBoardProgress.remainingCount}块`}
+                        </span>
+                        {nextPendingBoardNumber && (
+                          <span style={styles.singleBoardSummaryHint}>
+                            下一块：板{nextPendingBoardNumber}
+                          </span>
+                        )}
+                        <span
+                          style={{
+                            ...styles.singleBoardStatePill,
+                            ...(activeBoardDone
+                              ? styles.singleBoardStatePillDone
+                              : styles.singleBoardStatePillTodo),
+                          }}
+                        >
+                          {activeBoardDone ? `板${activeBoardNumber} 已完成` : `板${activeBoardNumber} 进行中`}
+                        </span>
+                      </div>
+                      <button
+                        style={styles.singleBoardCollapseBtn}
+                        onClick={() => setSingleBoardOverviewCollapsed((prev) => !prev)}
+                      >
+                        {singleBoardOverviewCollapsed ? "展开总览" : "收起总览"}
+                      </button>
+                    </div>
+                    {!singleBoardOverviewCollapsed && (
+                      <div style={styles.singleBoardProgressTrack}>
+                        <div
+                          style={{
+                            ...styles.singleBoardProgressFill,
+                            width: `${singleBoardProgress.percent}%`,
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div style={styles.singleBoardQuickRow}>
+                      <div style={styles.singleBoardQuickControls}>
+                        <button
+                          style={{
+                            ...styles.singleBoardQuickToggle,
+                            ...(autoAdvanceOnBoardDone ? styles.singleBoardQuickToggleActive : {}),
+                          }}
+                          onClick={() => setAutoAdvanceOnBoardDone((prev) => !prev)}
+                        >
+                          {autoAdvanceOnBoardDone ? "自动切下一板" : "完成后停留当前板"}
+                        </button>
+                      </div>
+                      {pendingBoardNumbers.length > 0 && !singleBoardOverviewCollapsed && (
+                        <div style={styles.singleBoardPendingRow}>
+                          <span style={styles.singleBoardPendingLabel}>未完成：</span>
+                          {pendingBoardNumbers.slice(0, 3).map((boardNumber) => (
+                            <button
+                              key={`pending-${boardNumber}`}
+                              style={styles.singleBoardPendingChip}
+                              onClick={() => activateBoard(boardNumber, true)}
+                            >
+                              ?{boardNumber}
+                            </button>
+                          ))}
+                          {pendingBoardNumbers.length > 3 && (
+                            <span style={styles.singleBoardPendingMore}>
+                              +{pendingBoardNumbers.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {!singleBoardOverviewCollapsed && (
+                      <div style={styles.singleBoardHeroRow}>
+                        <div style={styles.singleBoardSummaryCard}>
+                          <div style={styles.singleBoardSummary}>
+                            <span style={styles.singleBoardSummaryTitle}>当前板工作流</span>
+                            <span style={styles.singleBoardSummaryText}>
+                              板{activeBoardNumber} / 共 {singleBoardProgress.totalCount} 块
+                            </span>
+                          </div>
+                          <div style={styles.singleBoardActionRow}>
+                            <button
+                              style={styles.singleBoardMinorBtn}
+                              onClick={handleToggleBoardDone}
+                              disabled={!activeBoardRect}
+                            >
+                              {activeBoardRect && boardStatusMap[activeBoardRect.boardNumber]
+                                ? "取消完成"
+                                : "标记本板完成"}
+                            </button>
+                            <button
+                              style={styles.singleBoardMinorBtn}
+                              onClick={locateCurrentBoard}
+                              disabled={!activeBoardRect}
+                            >
+                              找到当前板
+                            </button>
+                          </div>
+                        </div>
+                        <div style={styles.singleBoardMiniMapCard}>
+                          <div style={styles.singleBoardMiniMapFrame}>
+                            <div
+                              style={{
+                                ...styles.singleBoardMiniMapCanvas,
+                                aspectRatio: beadData ? `${beadData.width} / ${beadData.height}` : "1 / 1",
+                              }}
+                            >
+                              {boardRects.map((board) => {
+                                const isActive = board.boardNumber === activeBoardNumber;
+                                const isDone = Boolean(boardStatusMap[board.boardNumber]);
+                                const left = `${(board.startX / beadData!.width) * 100}%`;
+                                const top = `${(board.startY / beadData!.height) * 100}%`;
+                                const width = `${((board.endX - board.startX) / beadData!.width) * 100}%`;
+                                const height = `${((board.endY - board.startY) / beadData!.height) * 100}%`;
+                                return (
+                                  <button
+                                    key={`mini-${board.boardNumber}`}
+                                    style={{
+                                      ...styles.singleBoardMiniMapCell,
+                                      ...(isDone ? styles.singleBoardMiniMapCellDone : {}),
+                                      ...(isActive ? styles.singleBoardMiniMapCellActive : {}),
+                                      left,
+                                      top,
+                                      width,
+                                      height,
+                                    }}
+                                    onClick={() => activateBoard(board.boardNumber, true)}
+                                    title={`板${board.boardNumber}`}
+                                  >
+                                    {isActive ? `板${board.boardNumber}` : ""}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <div style={styles.singleBoardMiniMapHint}>整图定位</div>
+                        </div>
+                      </div>
+                    )}
+                    {singleBoardOverviewCollapsed ? (
+                      <div style={styles.singleBoardCompactNav}>
+                        <button
+                          style={styles.singleBoardCompactNavBtn}
+                          onClick={() => jumpToBoard(-1)}
+                          disabled={activeBoardNumber <= 1}
+                        >
+                          上一块板
+                        </button>
+                        <div style={styles.singleBoardCompactNavChips}>
+                          {compactBoardNav.map((boardNumber) => {
+                            const isActive = boardNumber === activeBoardNumber;
+                            const isDone = Boolean(boardStatusMap[boardNumber]);
+                            return (
+                              <button
+                                key={`compact-board-${boardNumber}`}
+                                style={{
+                                  ...styles.singleBoardChip,
+                                  ...(isActive ? styles.singleBoardChipActive : {}),
+                                  ...(isDone ? styles.singleBoardChipDone : {}),
+                                }}
+                                onClick={() => activateBoard(boardNumber, true)}
+                              >
+                                板{boardNumber}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          style={styles.singleBoardCompactNavBtn}
+                          onClick={() => jumpToBoard(1)}
+                          disabled={activeBoardNumber >= totalBoardCount}
+                        >
+                          下一块板
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={styles.singleBoardGrid}>
                         {boardRects.map((board) => {
                           const isActive = board.boardNumber === activeBoardNumber;
                           const isDone = Boolean(boardStatusMap[board.boardNumber]);
-                          const left = `${(board.startX / beadData!.width) * 100}%`;
-                          const top = `${(board.startY / beadData!.height) * 100}%`;
-                          const width = `${((board.endX - board.startX) / beadData!.width) * 100}%`;
-                          const height = `${((board.endY - board.startY) / beadData!.height) * 100}%`;
                           return (
                             <button
-                              key={`mini-${board.boardNumber}`}
+                              key={board.boardNumber}
                               style={{
-                                ...styles.singleBoardMiniMapCell,
-                                ...(isDone ? styles.singleBoardMiniMapCellDone : {}),
-                                ...(isActive ? styles.singleBoardMiniMapCellActive : {}),
-                                left,
-                                top,
-                                width,
-                                height,
+                                ...styles.singleBoardChip,
+                                ...(isActive ? styles.singleBoardChipActive : {}),
+                                ...(isDone ? styles.singleBoardChipDone : {}),
                               }}
                               onClick={() => activateBoard(board.boardNumber, true)}
-                              title={`板${board.boardNumber}`}
                             >
-                              {isActive ? `板${board.boardNumber}` : ""}
+                              板{board.boardNumber}
                             </button>
                           );
                         })}
                       </div>
-                    </div>
-                    <div style={styles.singleBoardMiniMapHint}>整图定位</div>
-                  </div>
-                </div>
-              )}
-              {singleBoardOverviewCollapsed ? (
-                <div style={styles.singleBoardCompactNav}>
-                  <button
-                    style={styles.singleBoardCompactNavBtn}
-                    onClick={() => jumpToBoard(-1)}
-                    disabled={activeBoardNumber <= 1}
-                  >
-                    上一块板
-                  </button>
-                  <div style={styles.singleBoardCompactNavChips}>
-                    {compactBoardNav.map((boardNumber) => {
-                      const isActive = boardNumber === activeBoardNumber;
-                      const isDone = Boolean(boardStatusMap[boardNumber]);
-                      return (
-                        <button
-                          key={`compact-board-${boardNumber}`}
-                          style={{
-                            ...styles.singleBoardChip,
-                            ...(isActive ? styles.singleBoardChipActive : {}),
-                            ...(isDone ? styles.singleBoardChipDone : {}),
-                          }}
-                          onClick={() => activateBoard(boardNumber, true)}
-                        >
-                          板{boardNumber}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button
-                    style={styles.singleBoardCompactNavBtn}
-                    onClick={() => jumpToBoard(1)}
-                    disabled={activeBoardNumber >= totalBoardCount}
-                  >
-                    下一块板
-                  </button>
-                </div>
-              ) : (
-                <div style={styles.singleBoardGrid}>
-                  {boardRects.map((board) => {
-                    const isActive = board.boardNumber === activeBoardNumber;
-                    const isDone = Boolean(boardStatusMap[board.boardNumber]);
-                    return (
-                      <button
-                        key={board.boardNumber}
-                        style={{
-                          ...styles.singleBoardChip,
-                          ...(isActive ? styles.singleBoardChipActive : {}),
-                          ...(isDone ? styles.singleBoardChipDone : {}),
-                        }}
-                        onClick={() => activateBoard(board.boardNumber, true)}
-                      >
-                        板{board.boardNumber}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                    )}
+                  </>
+                )}
               </>
             )}
           </div>
@@ -3009,15 +3166,23 @@ const MakingPage: React.FC = () => {
                     singleBoardAllDone
                       ? "收尾并导出图纸"
                       : activeBoardDone && nextPendingBoardNumber
-                        ? `继续板${nextPendingBoardNumber}`
-                        : `完成板${activeBoardNumber}`
+                        ? isSingleBoardMobile
+                          ? "继续下一块"
+                          : `继续板${nextPendingBoardNumber}`
+                        : isSingleBoardMobile
+                          ? "完成当前板"
+                          : `完成板${activeBoardNumber}`
                   }
                 >
                   {singleBoardAllDone
                     ? "收尾"
                     : activeBoardDone && nextPendingBoardNumber
-                      ? `继续板${nextPendingBoardNumber}`
-                      : `完成板${activeBoardNumber}`}
+                      ? isSingleBoardMobile
+                        ? "下一块"
+                        : `继续板${nextPendingBoardNumber}`
+                      : isSingleBoardMobile
+                        ? "完成"
+                        : `完成板${activeBoardNumber}`}
                 </button>
               )}
               {!(viewMode === "singleBoard" && singleBoardAllDone) && (
@@ -3276,14 +3441,24 @@ const MakingPage: React.FC = () => {
                   ...styles.assistDock,
                   ...(viewMode === "singleBoard"
                     ? {
-                      padding: "6px 8px",
-                      gap: "8px",
-                      borderRadius: "10px",
+                      padding: isSingleBoardMobile ? "4px 6px" : "6px 8px",
+                      gap: isSingleBoardMobile ? "6px" : "8px",
+                      borderRadius: isSingleBoardMobile ? "8px" : "10px",
+                      alignItems: isSingleBoardMobile ? "stretch" : "center",
                     }
                     : {}),
                 }}
               >
-                <div style={styles.assistMeta}>
+                <div
+                  style={{
+                    ...styles.assistMeta,
+                    ...(isSingleBoardMobile && viewMode === "singleBoard"
+                      ? {
+                        gap: "4px",
+                      }
+                      : {}),
+                  }}
+                >
                   {viewMode === "singleBoard" && singleBoardAllDone ? (
                     <>
                       <span style={{ ...styles.assistBoardBadge, ...styles.singleBoardFinishBadge }}>
@@ -3293,30 +3468,50 @@ const MakingPage: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <span style={styles.assistBoardBadge}>{selectedCoordinateSummary.boardLabel}</span>
-                      <span style={styles.assistCoordText}>
+                      {!isSingleBoardMobile && (
+                        <span style={styles.assistBoardBadge}>{selectedCoordinateSummary.boardLabel}</span>
+                      )}
+                      <span
+                        style={{
+                          ...styles.assistCoordText,
+                          ...(isSingleBoardMobile && viewMode === "singleBoard"
+                            ? { fontSize: "12px" }
+                            : {}),
+                        }}
+                      >
                         列{selectedCoordinateSummary.localCol} 行{selectedCoordinateSummary.localRow}
                       </span>
                     </>
                   )}
                   {viewMode === "singleBoard" ? (
                     <>
-                      <span style={styles.singleBoardTaskPill}>
-                        {singleBoardAllDone
-                          ? "全部完成"
-                          : activeBoardDone
-                            ? `板${activeBoardNumber}已完成`
-                            : `板${activeBoardNumber}任务`}
-                      </span>
-                      <span style={styles.assistCoordMuted}>
-                        {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
-                      </span>
-                      {!singleBoardAllDone && (
+                      {!isSingleBoardMobile && (
+                        <span style={styles.singleBoardTaskPill}>
+                          {singleBoardAllDone
+                            ? "全部完成"
+                            : activeBoardDone
+                              ? `板${activeBoardNumber}已完成`
+                              : `板${activeBoardNumber}任务`}
+                        </span>
+                      )}
+                      {!isSingleBoardMobile && (
+                        <span
+                          style={{
+                            ...styles.assistCoordMuted,
+                            ...(isSingleBoardMobile && viewMode === "singleBoard"
+                              ? { fontSize: "11px" }
+                              : {}),
+                          }}
+                        >
+                          {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
+                        </span>
+                      )}
+                      {!singleBoardAllDone && !isSingleBoardMobile && (
                         <span style={styles.assistCoordMuted}>
                           剩余 {singleBoardProgress.remainingCount}
                         </span>
                       )}
-                      {nextPendingBoardNumber && activeBoardDone && (
+                      {nextPendingBoardNumber && activeBoardDone && !isSingleBoardMobile && (
                         <span style={styles.assistCoordMuted}>
                           下一块 板{nextPendingBoardNumber}
                         </span>
@@ -3348,10 +3543,10 @@ const MakingPage: React.FC = () => {
                     {singleBoardAllDone
                       ? "导出图纸"
                       : activeBoardDone && nextPendingBoardNumber
-                      ? `继续板${nextPendingBoardNumber}`
+                      ? "下一块"
                       : activeBoardRect && boardStatusMap[activeBoardRect.boardNumber]
                         ? "取消完成"
-                        : `完成板${activeBoardNumber}`}
+                        : "完成"}
                   </button>
                 )}
                 <button
@@ -3361,31 +3556,37 @@ const MakingPage: React.FC = () => {
                       handleBackToEditor();
                       return;
                     }
+                    if (isSingleBoardMobile && viewMode === "singleBoard") {
+                      locateCurrentBoard();
+                      return;
+                    }
                     jumpToBoard(-1);
                   }}
                   disabled={
                     viewMode === "singleBoard"
-                      ? (singleBoardAllDone ? false : activeBoardNumber <= 1)
+                      ? (singleBoardAllDone ? false : isSingleBoardMobile ? !activeBoardRect : activeBoardNumber <= 1)
                       : (!currentBoardRect || currentBoardRect.boardNumber <= 1)
                   }
                 >
                   {viewMode === "singleBoard"
-                    ? (singleBoardAllDone ? "回到编辑" : "上一板")
+                    ? (singleBoardAllDone ? "回到编辑" : isSingleBoardMobile ? "定位" : "上一板")
                     : "上一块"}
                 </button>
-                <button
-                  style={viewMode === "singleBoard" ? styles.singleBoardAssistMinorBtn : styles.assistLocateBtn}
-                  onClick={() => {
-                    if (viewMode === "singleBoard" && singleBoardAllDone) {
-                      handleShareFinishedWork();
-                      return;
-                    }
-                    locateCurrentBoard();
-                  }}
-                  disabled={viewMode === "singleBoard" ? (singleBoardAllDone ? false : !activeBoardRect) : !currentBoardRect}
-                >
-                  {viewMode === "singleBoard" && singleBoardAllDone ? "分享作品" : "定位当前板"}
-                </button>
+                {!isSingleBoardMobile && (
+                  <button
+                    style={viewMode === "singleBoard" ? styles.singleBoardAssistMinorBtn : styles.assistLocateBtn}
+                    onClick={() => {
+                      if (viewMode === "singleBoard" && singleBoardAllDone) {
+                        handleShareFinishedWork();
+                        return;
+                      }
+                      locateCurrentBoard();
+                    }}
+                    disabled={viewMode === "singleBoard" ? (singleBoardAllDone ? false : !activeBoardRect) : !currentBoardRect}
+                  >
+                    {viewMode === "singleBoard" && singleBoardAllDone ? "分享作品" : "定位当前板"}
+                  </button>
+                )}
                 {viewMode === "singleBoard" && singleBoardAllDone && (
                   <button
                     style={styles.singleBoardAssistMinorBtn}
@@ -3399,7 +3600,7 @@ const MakingPage: React.FC = () => {
                         : "库存不足"}
                   </button>
                 )}
-                {!(viewMode === "singleBoard" && singleBoardAllDone) && (
+                {!isSingleBoardMobile && !(viewMode === "singleBoard" && singleBoardAllDone) && (
                   <button
                     style={viewMode === "singleBoard" ? styles.singleBoardAssistMinorBtn : styles.assistLocateBtn}
                     onClick={() => {
@@ -3424,7 +3625,7 @@ const MakingPage: React.FC = () => {
                 )}
               </div>
             )}
-            {!(viewMode === "singleBoard" && singleBoardAllDone) && (
+            {!(viewMode === "singleBoard" && (singleBoardAllDone || isSingleBoardMobile)) && (
               <span style={styles.bottomHintSmall}>再次点击可取消选中</span>
             )}
             {/* 选中颜色时显示替换按钮 */}
@@ -3821,6 +4022,133 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "10px",
     color: makingCandy.textSoft,
     fontWeight: 700,
+  },
+
+  singleBoardMobileSummaryRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "4px",
+    padding: "0",
+  },
+
+  singleBoardMobileSummaryMain: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    flexWrap: "wrap" as const,
+    minWidth: 0,
+  },
+
+  singleBoardMobileSummaryTitle: {
+    fontSize: "11px",
+    fontWeight: 800,
+    color: makingCandy.text,
+  },
+
+  singleBoardMobileSummaryText: {
+    fontSize: "9px",
+    color: makingCandy.textSoft,
+    fontWeight: 800,
+  },
+
+  singleBoardMobileQuickToggle: {
+    height: "20px",
+    padding: "0 7px",
+    fontSize: "9px",
+    flexShrink: 0,
+  },
+
+  singleBoardMobileNavRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    minWidth: 0,
+  },
+
+  singleBoardMobileMiniMapPanel: {
+    display: "flex",
+    justifyContent: "center",
+    paddingTop: "4px",
+  },
+
+  singleBoardMobileMiniMapPanelInner: {
+    width: "min(44vw, 132px)",
+    padding: "6px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "12px",
+    border: `1px solid ${makingCandy.border}`,
+    background: "linear-gradient(145deg, rgba(255,255,255,0.98), rgba(245,251,255,0.95))",
+    boxShadow: makingCandy.shadowSoft,
+    cursor: "pointer",
+  },
+
+  singleBoardMobileNavBtn: {
+    width: "26px",
+    height: "26px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.94)",
+    color: makingCandy.text,
+    fontSize: "16px",
+    fontWeight: 800,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  singleBoardMobileMiniMapCard: {
+    flex: 1,
+    minWidth: 0,
+    height: "30px",
+    padding: "3px 5px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "10px",
+    border: `1px solid ${makingCandy.border}`,
+    background: "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(245,251,255,0.94))",
+    boxShadow: makingCandy.shadowSoft,
+    cursor: "pointer",
+  },
+
+  singleBoardMobileMiniMapCanvas: {
+    maxHeight: "100%",
+    width: "100%",
+    height: "100%",
+  },
+
+  singleBoardMobileMiniMapPanelCanvas: {
+    width: "100%",
+    height: "auto",
+    minHeight: "84px",
+    maxHeight: "140px",
+  },
+
+  singleBoardMobileMiniMapCell: {
+    fontSize: 0,
+    lineHeight: 0,
+  },
+
+  singleBoardMobilePrimaryBtn: {
+    minWidth: "48px",
+    height: "26px",
+    padding: "0 8px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.borderStrong}`,
+    background: "linear-gradient(145deg, rgba(125,211,252,0.26), rgba(244,114,182,0.22))",
+    color: makingCandy.text,
+    fontSize: "10px",
+    fontWeight: 800,
+    cursor: "pointer",
+    flexShrink: 0,
   },
 
   singleBoardHeroRow: {
