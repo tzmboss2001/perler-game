@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { X, CircleNotch } from '@phosphor-icons/react';
 import { colors, spacing, radius, typography, shadows, animation, mixins } from '../styles/designSystem';
 
@@ -23,7 +23,7 @@ const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
 
   useEffect(() => {
     if (visible) {
-      // 打开弹窗时生成默认名称
+      // 打开弹窗时生成默认方案名
       const now = new Date();
       const defaultProjectName = `拼豆方案_${now.getMonth() + 1}${now.getDate()}_${now.getHours()}${now.getMinutes()}`;
       setName(defaultName || defaultProjectName);
@@ -93,9 +93,8 @@ const SaveProjectModal: React.FC<SaveProjectModalProps> = ({
           <button
             style={styles.cancelButton}
             onClick={onCancel}
-            disabled={loading}
           >
-            取消
+            {loading ? '取消保存' : '取消'}
           </button>
           <button
             style={{
@@ -218,3 +217,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default SaveProjectModal;
+

@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { User, Gear, Info, Question, Heart, Trash, Play, Spinner, SignOut, SignIn, Palette, ShareNetwork, ShieldCheck } from '@phosphor-icons/react';
+import { User, Gear, Info, Question, Heart, Trash, Play, Spinner, SignOut, SignIn, Palette, ShareNetwork, ShieldCheck, Archive, ShoppingCart } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, pixelIcons } from '../../styles/designSystem';
 import { projectApi, ProjectInfo } from '../../services/api/projectApi';
@@ -7,7 +7,11 @@ import { BeadColor } from '../../data/beadColors';
 import { useUserStore } from '../../store/userStore';
 import Modal, { useModal } from '../../components/Modal';
 import MyColorsModal from '../../components/MyColorsModal';
+import BeadInventoryModal from '../../components/BeadInventoryModal';
+import ProjectInventoryCheckModal from '../../components/ProjectInventoryCheckModal';
 import { myColorsService } from '../../services/myColorsService';
+import { beadInventoryService, BeadInventorySummary } from '../../services/beadInventoryService';
+import { countBeadUsage, BeadUsageSummary } from '../../services/beadUsageService';
 import { localStorageService, LocalProject } from '../../services/localStorageService';
 import PublishModal from '../../components/PublishModal';
 import { communityApi, CommunityPostListItem, CreatePostData } from '../../services/api/communityApi';
@@ -200,6 +204,18 @@ const ProfilePage: React.FC = () => {
 
   // 我的色板弹窗
   const [showMyColorsModal, setShowMyColorsModal] = useState(false);
+  const [showBeadInventoryModal, setShowBeadInventoryModal] = useState(false);
+  const [inventorySummary, setInventorySummary] = useState<BeadInventorySummary>({
+    managedColorCount: 0,
+    stockedColorCount: 0,
+    lowStockCount: 0,
+    outOfStockCount: 0,
+    totalBeadCount: 0,
+  });
+  const [showInventoryCheckModal, setShowInventoryCheckModal] = useState(false);
+  const [inventoryCheckLoading, setInventoryCheckLoading] = useState(false);
+  const [inventoryCheckProjectName, setInventoryCheckProjectName] = useState('');
+  const [inventoryCheckUsageSummary, setInventoryCheckUsageSummary] = useState<BeadUsageSummary | null>(null);
 
   // 发布到社区相关状态
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -364,6 +380,59 @@ const ProfilePage: React.FC = () => {
     });
   };
 
+  const refreshInventorySummary = useCallback(() => {
+    const selectedIds = myColorsService.getSelectedIds();
+    setInventorySummary(beadInventoryService.getSummary(selectedIds));
+  }, []);
+
+  const openInventoryCheck = (projectName: string, beadData: BeadPixelData) => {
+    setInventoryCheckProjectName(projectName);
+    setInventoryCheckUsageSummary(countBeadUsage(beadData));
+    setShowInventoryCheckModal(true);
+  };
+
+  const handleCheckLocalInventory = (project: LocalProject, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const beadData: BeadPixelData = {
+      width: project.beadData.width,
+      height: project.beadData.height,
+      beads: project.beadData.beads as (BeadColor | null)[],
+    };
+    openInventoryCheck(project.name, beadData);
+  };
+
+  const handleCheckInventory = async (project: ProjectInfo, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      setInventoryCheckLoading(true);
+      const response = await projectApi.getById(project.id);
+      if (response.code === 0 && response.data) {
+        const detail = response.data;
+        const beadData: BeadPixelData = {
+          width: detail.bead_data.width,
+          height: detail.bead_data.height,
+          beads: detail.bead_data.beads as (BeadColor | null)[],
+        };
+        openInventoryCheck(project.name, beadData);
+      } else {
+        showConfirm('读取方案颜色统计失败，请稍后再试。', {
+          title: '库存检查失败',
+          type: 'warning',
+          confirmText: '知道了',
+        });
+      }
+    } catch (error) {
+      console.error('[ProfilePage] check inventory failed:', error);
+      showConfirm('读取方案颜色统计失败，请稍后再试。', {
+        title: '库存检查失败',
+        type: 'warning',
+        confirmText: '知道了',
+      });
+    } finally {
+      setInventoryCheckLoading(false);
+    }
+  };
+
   // 分享到社区（本地方案）
   const handleShareLocal = (project: LocalProject, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -474,6 +543,7 @@ const ProfilePage: React.FC = () => {
   };
 
   const menuItems = [
+    { icon: Archive, label: '管理我的豆仓', color: colors.bead.yellow, action: () => setShowBeadInventoryModal(true) },
     { icon: Palette, label: '管理我的色板', color: colors.bead.orange, action: () => setShowMyColorsModal(true) },
     { icon: Gear, label: '设置', color: colors.bead.cyan, path: '/mobile/settings' },
     { icon: Question, label: '帮助', color: colors.bead.green, path: '/mobile/help' },
@@ -639,6 +709,10 @@ const ProfilePage: React.FC = () => {
     loadFinishedWorks();
   }, [loadFinishedWorks]);
 
+  useEffect(() => {
+    refreshInventorySummary();
+  }, [refreshInventorySummary]);
+
   return (
     <div style={styles.container}>
       {/* 头部 */}
@@ -721,6 +795,53 @@ const ProfilePage: React.FC = () => {
       {/* 我的方案区 */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>
+          <span style={styles.sectionIcon}>{pixelIcons.star}</span>
+          我的豆仓
+        </h2>
+        <div style={styles.inventoryCard}>
+          <div style={styles.inventoryHeader}>
+            <div>
+              <div style={styles.inventoryTitle}>库存概览</div>
+              <div style={styles.inventorySubtitle}>
+                基于“我的色板”维护数量，后续可联动作品用量与补仓提醒
+              </div>
+            </div>
+            <button style={styles.inventoryPrimaryBtn} onClick={() => setShowBeadInventoryModal(true)}>
+              管理豆仓
+            </button>
+          </div>
+          <div style={styles.inventorySummaryGrid}>
+            <div style={styles.inventorySummaryItem}>
+              <span style={styles.inventorySummaryLabel}>已入仓颜色</span>
+              <span style={styles.inventorySummaryValue}>{inventorySummary.managedColorCount}</span>
+            </div>
+            <div style={styles.inventorySummaryItem}>
+              <span style={styles.inventorySummaryLabel}>总库存</span>
+              <span style={styles.inventorySummaryValue}>{inventorySummary.totalBeadCount.toLocaleString()}</span>
+            </div>
+            <div style={styles.inventorySummaryItem}>
+              <span style={styles.inventorySummaryLabel}>低库存</span>
+              <span style={styles.inventorySummaryValue}>{inventorySummary.lowStockCount}</span>
+            </div>
+            <div style={styles.inventorySummaryItem}>
+              <span style={styles.inventorySummaryLabel}>缺货颜色</span>
+              <span style={styles.inventorySummaryValue}>{inventorySummary.outOfStockCount}</span>
+            </div>
+          </div>
+          <div style={styles.inventoryActions}>
+            <button style={styles.inventoryGhostBtn} onClick={() => setShowMyColorsModal(true)}>
+              管理我的色板
+            </button>
+            <span style={styles.inventoryHint}>
+              已入仓颜色来自“我的色板”，数量由本地豆仓记录管理。
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 我的方案区 */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>
           <span style={styles.sectionIcon}>{pixelIcons.diamond}</span>
           我的方案
           <span style={styles.projectCount}>
@@ -772,11 +893,20 @@ const ProfilePage: React.FC = () => {
                       {new Date(project.updatedAt).toLocaleDateString('zh-CN')}
                     </span>
                   </div>
-                  <div style={projectActionsStyle}>
-                    {isLoggedIn && (
-                      <button
-                        style={styles.shareBtn}
-                        onClick={(e) => handleShareLocal(project, e)}
+                    <div style={projectActionsStyle}>
+                      {isLoggedIn && (
+                        <button
+                          style={styles.inventoryCheckBtn}
+                          onClick={(e) => handleCheckLocalInventory(project, e)}
+                          title="库存检查"
+                        >
+                          <ShoppingCart size={14} weight="fill" />
+                        </button>
+                      )}
+                      {isLoggedIn && (
+                        <button
+                          style={styles.shareBtn}
+                          onClick={(e) => handleShareLocal(project, e)}
                         title="分享到社区"
                       >
                         <ShareNetwork size={14} weight="fill" />
@@ -862,6 +992,18 @@ const ProfilePage: React.FC = () => {
                     {/* 操作按钮 */}
                     <div style={projectActionsStyle}>
                       <button
+                        style={styles.inventoryCheckBtn}
+                        onClick={(e) => handleCheckInventory(project, e)}
+                        title="库存检查"
+                        disabled={inventoryCheckLoading}
+                      >
+                        {inventoryCheckLoading ? (
+                          <Spinner size={14} />
+                        ) : (
+                          <ShoppingCart size={14} weight="fill" />
+                        )}
+                      </button>
+                      <button
                         style={styles.shareBtn}
                         onClick={(e) => handleShare(project, e)}
                         title="分享到社区"
@@ -929,6 +1071,13 @@ const ProfilePage: React.FC = () => {
                         </span>
                       </div>
                       <div style={projectActionsStyle}>
+                        <button
+                          style={styles.inventoryCheckBtn}
+                          onClick={(e) => handleCheckLocalInventory(project, e)}
+                          title="库存检查"
+                        >
+                          <ShoppingCart size={14} weight="fill" />
+                        </button>
                         <button
                           style={styles.shareBtn}
                           onClick={(e) => handleShareLocal(project, e)}
@@ -1101,6 +1250,22 @@ const ProfilePage: React.FC = () => {
       <MyColorsModal
         visible={showMyColorsModal}
         onClose={() => setShowMyColorsModal(false)}
+        onSave={() => refreshInventorySummary()}
+      />
+
+      <BeadInventoryModal
+        visible={showBeadInventoryModal}
+        onClose={() => setShowBeadInventoryModal(false)}
+        onSaved={refreshInventorySummary}
+        onManageColors={() => setShowMyColorsModal(true)}
+      />
+
+      <ProjectInventoryCheckModal
+        visible={showInventoryCheckModal}
+        projectName={inventoryCheckProjectName}
+        usageSummary={inventoryCheckUsageSummary}
+        onClose={() => setShowInventoryCheckModal(false)}
+        onAppliedConsumption={refreshInventorySummary}
       />
 
       {/* 发布到社区弹窗 */}
@@ -1282,6 +1447,110 @@ const styles: Record<string, React.CSSProperties> = {
 
   section: {
     marginBottom: '24px',
+  },
+
+  inventoryCard: {
+    background: profileCandy.panel,
+    borderRadius: radius.card,
+    border: `1px solid ${profileCandy.border}`,
+    boxShadow: profileCandy.shadow,
+    padding: '16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+  },
+
+  inventoryHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '12px',
+    flexWrap: 'wrap',
+  },
+
+  inventoryTitle: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.bold,
+    color: profileCandy.text,
+    fontFamily: typography.fontFamilyAlt,
+  },
+
+  inventorySubtitle: {
+    marginTop: '4px',
+    fontSize: typography.fontSize.sm,
+    lineHeight: 1.6,
+    color: profileCandy.textMuted,
+    fontFamily: typography.fontFamilyAlt,
+  },
+
+  inventoryPrimaryBtn: {
+    padding: '10px 14px',
+    borderRadius: radius.bead,
+    border: 'none',
+    background: 'linear-gradient(145deg, #ffd571, #ff9d6c)',
+    color: '#fff',
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+    boxShadow: '0 10px 22px rgba(255, 173, 108, 0.24)',
+    flexShrink: 0,
+  },
+
+  inventorySummaryGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '10px',
+  },
+
+  inventorySummaryItem: {
+    padding: '12px 14px',
+    borderRadius: radius.card,
+    background: 'rgba(255,255,255,0.88)',
+    border: `1px solid ${profileCandy.border}`,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+
+  inventorySummaryLabel: {
+    fontSize: typography.fontSize.xs,
+    color: profileCandy.textMuted,
+    fontFamily: typography.fontFamilyAlt,
+  },
+
+  inventorySummaryValue: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+    color: profileCandy.text,
+    fontFamily: typography.fontFamilyAlt,
+  },
+
+  inventoryActions: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    flexWrap: 'wrap',
+  },
+
+  inventoryGhostBtn: {
+    padding: '9px 12px',
+    borderRadius: radius.bead,
+    border: `1px solid ${profileCandy.border}`,
+    background: 'rgba(255,255,255,0.9)',
+    color: profileCandy.textSoft,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
+    cursor: 'pointer',
+  },
+
+  inventoryHint: {
+    fontSize: typography.fontSize.xs,
+    lineHeight: 1.6,
+    color: profileCandy.textMuted,
+    fontFamily: typography.fontFamilyAlt,
   },
 
   sectionTitle: {
@@ -1618,6 +1887,21 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#ffffff',
     cursor: 'pointer',
     boxShadow: `0 2px 8px ${colors.bead.purple}40`,
+    transition: animation.transition.fast,
+  },
+
+  inventoryCheckBtn: {
+    width: '32px',
+    height: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: `linear-gradient(145deg, ${colors.bead.yellow}, ${colors.bead.orange}cc)`,
+    border: 'none',
+    borderRadius: radius.bead,
+    color: '#ffffff',
+    cursor: 'pointer',
+    boxShadow: `0 2px 8px ${colors.bead.orange}40`,
     transition: animation.transition.fast,
   },
 

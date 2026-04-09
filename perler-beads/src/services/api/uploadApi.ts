@@ -44,9 +44,10 @@ export const uploadApi = {
    * @param folder 存储目录（可选，默认 images）
    * @returns 图片URL
    */
-  uploadImage: async (image: string, folder?: string): Promise<string> => {
+  uploadImage: async (image: string, folder?: string, signal?: AbortSignal): Promise<string> => {
     const response = await request<UploadImageResp>('/api/v1/upload/image', {
       method: 'POST',
+      signal,
       body: JSON.stringify({
         image,
         folder: folder || 'images',
@@ -65,9 +66,10 @@ export const uploadApi = {
    * @param images 图片列表 [{image: base64, folder: string}]
    * @returns 图片URL列表
    */
-  uploadMultiple: async (images: { image: string; folder?: string }[]): Promise<string[]> => {
+  uploadMultiple: async (images: { image: string; folder?: string }[], signal?: AbortSignal): Promise<string[]> => {
     const response = await request<UploadMultipleResp>('/api/v1/upload/multiple', {
       method: 'POST',
+      signal,
       body: JSON.stringify({
         images: images.map(img => ({
           image: img.image,

@@ -3,6 +3,7 @@
  */
 
 import { getToken } from './authApi';
+import { allBeadColors, BeadColor } from '../../data/beadColors';
 
 // 设备ID存储键
 const DEVICE_ID_KEY = 'perler_beads_device_id';
@@ -22,6 +23,15 @@ interface ApiResponse<T> {
   code: number;
   msg: string;
   data: T;
+}
+
+const compactProjectBeadDataEncoding = 'bead-id-grid-v1';
+
+interface CompactProjectBeadData {
+  encoding: typeof compactProjectBeadDataEncoding;
+  width: number;
+  height: number;
+  beads: Array<string | null>;
 }
 
 // 分页结果
@@ -115,6 +125,8 @@ export interface ProjectDetail extends ProjectInfo {
   };
 }
 
+const beadColorById = new Map<string, BeadColor>(allBeadColors.map((color) => [color.id, color]));
+
 // 通用请求函数（带超时处理，支持外部取消信号）
 async function request<T>(url: string, options: RequestInit = {}, timeout = 120000): Promise<ApiResponse<T>> {
   const deviceId = getDeviceId();
@@ -180,17 +192,69 @@ async function request<T>(url: string, options: RequestInit = {}, timeout = 1200
   }
 }
 
+function compactBeadDataForCloudSave(beadData: CreateProjectReq['bead_data']): CompactProjectBeadData {
+  return {
+    encoding: compactProjectBeadDataEncoding,
+    width: beadData.width,
+    height: beadData.height,
+    beads: beadData.beads.map((bead) => bead?.id ?? null),
+  };
+}
+
+function expandProjectBeadData(
+  beadData: ProjectDetail['bead_data'] | CompactProjectBeadData
+): ProjectDetail['bead_data'] {
+  if ((beadData as CompactProjectBeadData).encoding !== compactProjectBeadDataEncoding) {
+    return beadData as ProjectDetail['bead_data'];
+  }
+
+  const compact = beadData as CompactProjectBeadData;
+  return {
+    width: compact.width,
+    height: compact.height,
+    beads: compact.beads.map((id) => {
+      if (!id) {
+        return null as unknown as ProjectDetail['bead_data']['beads'][number];
+      }
+
+      const matched = beadColorById.get(id);
+      if (!matched) {
+        return {
+          id,
+          name: id,
+          nameCN: id,
+          rgb: [0, 0, 0] as [number, number, number],
+          hex: '#000000',
+          brand: 'artkal',
+        };
+      }
+
+      return {
+        id: matched.id,
+        name: matched.name,
+        nameCN: matched.nameCN,
+        rgb: matched.rgb,
+        hex: matched.hex,
+        brand: matched.brand,
+      };
+    }),
+  };
+}
+
 // 项目 API
 export const projectApi = {
   /**
    * 创建方案
    */
-  create: async (data: CreateProjectReq): Promise<ApiResponse<{ id: number }>> => {
+  create: async (data: CreateProjectReq, signal?: AbortSignal): Promise<ApiResponse<{ id: number }>> => {
     const deviceId = getDeviceId();
+    const compactBeadData = compactBeadDataForCloudSave(data.bead_data);
     return request('/api/v1/project/create', {
       method: 'POST',
+      signal,
       body: JSON.stringify({
         ...data,
+        bead_data: compactBeadData,
         device_id: deviceId,
       }),
     });
@@ -212,7 +276,13 @@ export const projectApi = {
    * 获取方案详情
    */
   getById: async (id: number): Promise<ApiResponse<ProjectDetail>> => {
-    return request(`/api/v1/project/${id}`, { method: 'GET' });
+    const response = await request<ProjectDetail>(`/api/v1/project/${id}`, { method: 'GET' });
+    if (response?.data?.bead_data) {
+      response.data.bead_data = expandProjectBeadData(
+        response.data.bead_data as ProjectDetail['bead_data'] | CompactProjectBeadData
+      );
+    }
+    return response;
   },
 
   /**

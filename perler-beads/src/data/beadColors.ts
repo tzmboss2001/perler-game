@@ -742,7 +742,7 @@ export const colorCountOptions: ColorCountOption[] = [
   { count: 96, label: '96色', description: '细腻表现', detailDesc: '风景、插画', icon: '🌈', },
   { count: 150, label: '150色', description: '精细还原', detailDesc: '人物、照片', icon: '✨', recommended: true },
   { count: 200, label: '200色', description: '色彩丰富', detailDesc: '高精度还原', icon: '💎', },
-  { count: 291, label: '全部', description: '291色全开', detailDesc: '极致还原', icon: '🏆', },
+  { count: 291, label: '全部', description: '当前系统全部颜色', detailDesc: '', icon: '🏆', },
 ];
 
 export const defaultColorCount = 150;

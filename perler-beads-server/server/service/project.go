@@ -21,19 +21,33 @@ var ProjectServiceApp = new(ProjectService)
 
 const compressedProjectBeadDataEncoding = "gzip-base64-json"
 
+func normalizeProjectBeadData(raw map[string]interface{}) entity.JSON {
+    if len(raw) == 0 {
+        return nil
+    }
+
+    encoding, _ := raw["encoding"].(string)
+    payload, _ := raw["payload"].(string)
+    if encoding == compressedProjectBeadDataEncoding && payload != "" {
+        return entity.JSON(raw)
+    }
+
+    return compressProjectBeadData(raw)
+}
+
 // Create 创建方案
 func (s *ProjectService) Create(req *request.CreateProjectReq, userID uint) (uint, error) {
-    project := entity.Project{
-        UserID:        userID,
-        DeviceID:      req.DeviceID,
-        Name:          req.Name,
-        ThumbnailURL:  req.ThumbnailURL,
-        OriginalImage: req.OriginalImage,
-        BeadData:      compressProjectBeadData(req.BeadData),
-        Settings:      entity.JSON(req.Settings),
-        Progress:      nil,
-        Status:        0,
-    }
+	project := entity.Project{
+		UserID:        userID,
+		DeviceID:      req.DeviceID,
+		Name:          req.Name,
+		ThumbnailURL:  req.ThumbnailURL,
+		OriginalImage: req.OriginalImage,
+		BeadData:      normalizeProjectBeadData(req.BeadData),
+		Settings:      entity.JSON(req.Settings),
+		Progress:      nil,
+		Status:        0,
+	}
 
     if err := global.GVA_DB.Create(&project).Error; err != nil {
         if isBadConnectionError(err) {
@@ -153,9 +167,9 @@ func (s *ProjectService) Update(id uint, req *request.UpdateProjectReq, userID u
     if req.Name != "" {
         updates["name"] = req.Name
     }
-    if req.BeadData != nil {
-        updates["bead_data"] = compressProjectBeadData(req.BeadData)
-    }
+	if req.BeadData != nil {
+		updates["bead_data"] = normalizeProjectBeadData(req.BeadData)
+	}
     if req.Settings != nil {
         updates["settings"] = entity.JSON(req.Settings)
     }

@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import posixpath
+import stat
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+import paramiko
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Deploy frontend dist via SSH (paramiko).")
+    parser.add_argument("--host", required=True)
+    parser.add_argument("--user", required=True)
+    parser.add_argument("--password", required=True)
+    parser.add_argument("--local-dist", required=True)
+    parser.add_argument("--remote-root", default="/www/wwwroot/perler-beads")
+    parser.add_argument("--domain", default="app-pd.shop888.vip")
+    parser.add_argument("--api-upstream", default="http://127.0.0.1:8012")
+    return parser.parse_args()
+
+
+def sftp_mkdir_p(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
+    parts = remote_dir.strip("/").split("/")
+    curr = "/"
+    for p in parts:
+        curr = posixpath.join(curr, p)
+        try:
+            sftp.stat(curr)
+        except IOError:
+            sftp.mkdir(curr)
+
+
+def sftp_put_dir(sftp: paramiko.SFTPClient, local_dir: Path, remote_dir: str) -> None:
+    sftp_mkdir_p(sftp, remote_dir)
+    for root, dirs, files in os.walk(local_dir):
+        rel = os.path.relpath(root, local_dir.as_posix())
+        remote_curr = remote_dir if rel == "." else posixpath.join(remote_dir, rel.replace("\\", "/"))
+        sftp_mkdir_p(sftp, remote_curr)
+        for d in dirs:
+            sftp_mkdir_p(sftp, posixpath.join(remote_curr, d))
+        for f in files:
+            local_file = os.path.join(root, f)
+            remote_file = posixpath.join(remote_curr, f)
+            sftp.put(local_file, remote_file)
+
+
+def exec_cmd(ssh: paramiko.SSHClient, command: str) -> tuple[int, str, str]:
+    stdin, stdout, stderr = ssh.exec_command(command)
+    out = stdout.read().decode("utf-8", "ignore")
+    err = stderr.read().decode("utf-8", "ignore")
+    code = stdout.channel.recv_exit_status()
+    return code, out, err
+
+
+def main() -> int:
+    args = parse_args()
+    local_dist = Path(args.local_dist).resolve()
+    if not local_dist.exists():
+        print(f"[ERR] local dist not found: {local_dist}")
+        return 1
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(hostname=args.host, username=args.user, password=args.password, timeout=15)
+    sftp = ssh.open_sftp()
+
+    ts = int(time.time())
+    remote_tmp = f"/home/{args.user}/deploy_dist_{ts}"
+    print(f"[INFO] upload to temp: {remote_tmp}")
+    sftp_put_dir(sftp, local_dist, remote_tmp)
+
+    nginx_conf = f"""
+server {{
+    listen 80;
+    server_name {args.domain};
+    root {args.remote_root};
+    index index.html;
+
+    location / {{
+        try_files $uri $uri/ /index.html;
+    }}
+
+    location /assets {{
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }}
+
+    location /api {{
+        proxy_pass {args.api_upstream};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }}
+
+    location /thumbnails {{
+        proxy_pass {args.api_upstream};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }}
+
+    location /finished-works {{
+        proxy_pass {args.api_upstream};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }}
+}}
+""".strip()
+    with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", suffix=".conf") as f:
+        f.write(nginx_conf + "\n")
+        local_conf_tmp = f.name
+
+    remote_conf_tmp = f"/home/{args.user}/app-pd.shop888.vip.conf"
+    sftp.put(local_conf_tmp, remote_conf_tmp)
+    os.unlink(local_conf_tmp)
+
+    deploy_cmd = f"""
+set -e
+sudo mkdir -p {args.remote_root}
+if [ -d {args.remote_root} ]; then
+  sudo cp -a {args.remote_root} {args.remote_root}_backup_{ts} || true
+fi
+sudo rsync -a --delete {remote_tmp}/ {args.remote_root}/
+sudo mv {remote_conf_tmp} /www/server/panel/vhost/nginx/app-pd.shop888.vip.conf
+sudo nginx -t
+sudo nginx -s reload
+rm -rf {remote_tmp}
+""".strip()
+    code, out, err = exec_cmd(ssh, deploy_cmd)
+    print(out)
+    if err.strip():
+        print(err)
+    if code != 0:
+        print(f"[ERR] deploy failed with code {code}")
+        return code
+
+    check_cmd = f"curl -I -sS http://127.0.0.1 -H 'Host: {args.domain}' | head -n 5"
+    code, out, err = exec_cmd(ssh, check_cmd)
+    print("[INFO] nginx host check:")
+    print(out)
+    if err.strip():
+        print(err)
+
+    sftp.close()
+    ssh.close()
+    print("[OK] deploy completed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

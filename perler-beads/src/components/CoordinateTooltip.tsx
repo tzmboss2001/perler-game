@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React from 'react';
 import { radius, typography, shadows } from '../styles/designSystem';
 
 interface CoordinateTooltipProps {
@@ -12,7 +12,6 @@ interface CoordinateTooltipProps {
   cellScreenY: number;
   containerWidth: number;
   containerHeight: number;
-  onHide: () => void;
 }
 
 const CoordinateTooltip: React.FC<CoordinateTooltipProps> = ({
@@ -26,35 +25,8 @@ const CoordinateTooltip: React.FC<CoordinateTooltipProps> = ({
   cellScreenY,
   containerWidth,
   containerHeight,
-  onHide,
 }) => {
-  const [opacity, setOpacity] = useState(1);
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    if (visible) {
-      setIsVisible(true);
-      setOpacity(1);
-
-      const fadeTimer = setTimeout(() => {
-        setOpacity(0);
-      }, 1500);
-
-      const hideTimer = setTimeout(() => {
-        setIsVisible(false);
-        onHide();
-      }, 1800);
-
-      return () => {
-        clearTimeout(fadeTimer);
-        clearTimeout(hideTimer);
-      };
-    }
-
-    setIsVisible(false);
-  }, [visible, row, col, boardNumber, localRow, localCol, onHide]);
-
-  if (!isVisible) return null;
+  if (!visible) return null;
 
   const tooltipWidth = boardNumber ? 132 : 80;
   const tooltipHeight = boardNumber ? 54 : 36;
@@ -80,13 +52,12 @@ const CoordinateTooltip: React.FC<CoordinateTooltipProps> = ({
         ...styles.tooltip,
         left,
         top,
-        opacity,
       }}
     >
       {boardNumber && localRow && localCol ? (
         <>
           <div style={styles.tooltipTitle}>板{boardNumber}</div>
-          <div style={styles.tooltipMeta}>列{localCol} · 行{localRow}</div>
+          <div style={styles.tooltipMeta}>列{localCol} 行{localRow}</div>
         </>
       ) : (
         <div>({row}, {col})</div>
@@ -108,7 +79,6 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap',
     zIndex: 100,
     pointerEvents: 'none',
-    transition: 'opacity 0.3s ease',
     boxShadow: shadows.md,
   },
   tooltipTitle: {
@@ -125,3 +95,4 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default CoordinateTooltip;
+

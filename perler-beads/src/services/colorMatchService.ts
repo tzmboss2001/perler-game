@@ -1,6 +1,6 @@
-/**
- * 颜色匹配服务
- * 将像素颜色匹配到最接近的珠子颜色
+﻿/**
+ * 棰滆壊鍖归厤鏈嶅姟
+ * 灏嗗儚绱犻鑹插尮閰嶅埌鏈€鎺ヨ繎鐨勭彔瀛愰鑹?
  */
 
 import {
@@ -9,12 +9,13 @@ import {
   colorDistance,
   allBeadColors,
 } from '../data/beadColors';
+import { getPhysicalBoardDrawSize, getPhysicalBoardGuideOffsets } from './boardService';
 import { PixelData } from './pixelizeService';
 
 export interface BeadPixelData {
   width: number;
   height: number;
-  beads: (BeadColor | null)[];  // 每个像素对应的珠子颜色，null 表示透明（无珠子）
+  beads: (BeadColor | null)[];  // 姣忎釜鍍忕礌瀵瑰簲鐨勭彔瀛愰鑹诧紝null 琛ㄧず閫忔槑锛堟棤鐝犲瓙锛?
 }
 
 export interface BeadStatistics {
@@ -23,19 +24,32 @@ export interface BeadStatistics {
   percentage: number;
 }
 
+interface ExportCoordinateOptions {
+  showCoords?: boolean;
+  boardSize?: number;
+  pixelRatio?: number;
+}
+
+interface ExportCoordGutters {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
 export interface ColorMatchOptions {
-  brand?: 'perler' | 'hama' | 'artkal';  // 可选，向后兼容
-  colorCount?: number;                    // 新增：颜色数量（使用统一色库）
-  excludeColors?: string[];               // 要排除的颜色ID
-  maxColors?: number;                     // 最大颜色数量（合并相似颜色）
-  saturationBoost?: number;               // 饱和度增强 0-100，默认 0
-  useLabSpace?: boolean;                  // 使用 Lab 色彩空间匹配，默认 true
-  vibrancyPreference?: number;            // 鲜艳度偏好 0-100，默认 30
-  transparentThreshold?: number;          // 透明度阈值 0-255，低于此值视为透明，默认 128
+  brand?: 'perler' | 'hama' | 'artkal';  // 鍙€夛紝鍚戝悗鍏煎
+  colorCount?: number;                    // 鏂板锛氶鑹叉暟閲忥紙浣跨敤缁熶竴鑹插簱锛?
+  excludeColors?: string[];               // 瑕佹帓闄ょ殑棰滆壊ID
+  maxColors?: number;                     // 鏈€澶ч鑹叉暟閲忥紙鍚堝苟鐩镐技棰滆壊锛?
+  saturationBoost?: number;               // 楗卞拰搴﹀寮?0-100锛岄粯璁?0
+  useLabSpace?: boolean;                  // 浣跨敤 Lab 鑹插僵绌洪棿鍖归厤锛岄粯璁?true
+  vibrancyPreference?: number;            // 椴滆壋搴﹀亸濂?0-100锛岄粯璁?30
+  transparentThreshold?: number;          // 閫忔槑搴﹂槇鍊?0-255锛屼綆浜庢鍊艰涓洪€忔槑锛岄粯璁?128
 }
 
 /**
- * 将像素数据匹配到珠子颜色
+ * 灏嗗儚绱犳暟鎹尮閰嶅埌鐝犲瓙棰滆壊
  */
 export const matchPixelsToBead = (
   pixelData: PixelData,
@@ -48,33 +62,33 @@ export const matchPixelsToBead = (
     saturationBoost = 0,
     useLabSpace = true,
     vibrancyPreference = 30,
-    transparentThreshold = 128,  // 默认阈值：alpha < 128 视为透明
+    transparentThreshold = 128,  // 榛樿闃堝€硷細alpha < 128 瑙嗕负閫忔槑
   } = options;
 
-  // 获取可用颜色：如果指定了 colorCount，使用统一色库；否则使用品牌色库
+  // 鑾峰彇鍙敤棰滆壊锛氬鏋滄寚瀹氫簡 colorCount锛屼娇鐢ㄧ粺涓€鑹插簱锛涘惁鍒欎娇鐢ㄥ搧鐗岃壊搴?
   let availableColors = colorCount
     ? allBeadColors
     : getColorsByBrand(brand || 'artkal');
 
-  // 排除指定颜色
+  // 鎺掗櫎鎸囧畾棰滆壊
   if (excludeColors.length > 0) {
     availableColors = availableColors.filter(c => !excludeColors.includes(c.id));
   }
 
-  // 匹配每个像素
+  // 鍖归厤姣忎釜鍍忕礌
   const beads: (BeadColor | null)[] = pixelData.pixels.map((rgb, index) => {
-    // 检查是否为透明像素
+    // 妫€鏌ユ槸鍚︿负閫忔槑鍍忕礌
     if (pixelData.alphas && pixelData.alphas[index] < transparentThreshold) {
-      return null;  // 透明像素不放珠子
+      return null;  // 閫忔槑鍍忕礌涓嶆斁鐝犲瓙
     }
 
-    // 应用饱和度增强
+    // 搴旂敤楗卞拰搴﹀寮?
     let processedRgb = rgb;
     if (saturationBoost > 0) {
       processedRgb = boostVividness(rgb, saturationBoost / 100);
     }
 
-    // 根据设置选择匹配算法
+    // 鏍规嵁璁剧疆閫夋嫨鍖归厤绠楁硶
     if (useLabSpace) {
       return findClosestBeadColorLabWithVibrancy(processedRgb, availableColors, vibrancyPreference / 100);
     } else {
@@ -88,7 +102,7 @@ export const matchPixelsToBead = (
     beads,
   };
 
-  // 如果需要限制颜色数量（colorCount 或 maxColors），进行颜色合并
+  // 濡傛灉闇€瑕侀檺鍒堕鑹叉暟閲忥紙colorCount 鎴?maxColors锛夛紝杩涜棰滆壊鍚堝苟
   const targetColorCount = colorCount || options.maxColors;
   if (targetColorCount && targetColorCount > 0) {
     result = reduceColors(result, targetColorCount, availableColors);
@@ -98,7 +112,7 @@ export const matchPixelsToBead = (
 };
 
 /**
- * 找到最接近的珠子颜色（使用欧氏距离）
+ * 鎵惧埌鏈€鎺ヨ繎鐨勭彔瀛愰鑹诧紙浣跨敤娆ф皬璺濈锛?
  */
 export const findClosestBeadColor = (
   rgb: [number, number, number],
@@ -118,13 +132,13 @@ export const findClosestBeadColor = (
   return closest;
 };
 
-// 颜色匹配缓存：避免重复计算相同颜色
+// 棰滆壊鍖归厤缂撳瓨锛氶伩鍏嶉噸澶嶈绠楃浉鍚岄鑹?
 const colorMatchCache = new Map<string, BeadColor>();
-// 珠子颜色的 Lab 值缓存
+// 鐝犲瓙棰滆壊鐨?Lab 鍊肩紦瀛?
 const beadLabCache = new Map<string, [number, number, number]>();
 
 /**
- * 获取珠子颜色的 Lab 值（带缓存）
+ * 鑾峰彇鐝犲瓙棰滆壊鐨?Lab 鍊硷紙甯︾紦瀛橈級
  */
 const getBeadLab = (color: BeadColor): [number, number, number] => {
   let lab = beadLabCache.get(color.id);
@@ -136,21 +150,21 @@ const getBeadLab = (color: BeadColor): [number, number, number] => {
 };
 
 /**
- * 清除颜色匹配缓存（在参数变化时调用）
+ * 娓呴櫎棰滆壊鍖归厤缂撳瓨锛堝湪鍙傛暟鍙樺寲鏃惰皟鐢級
  */
 export const clearColorMatchCache = () => {
   colorMatchCache.clear();
 };
 
 /**
- * 使用 Lab 色彩空间找到最接近的颜色（更符合人眼感知）
- * 优化：使用缓存避免重复计算
+ * 浣跨敤 Lab 鑹插僵绌洪棿鎵惧埌鏈€鎺ヨ繎鐨勯鑹诧紙鏇寸鍚堜汉鐪兼劅鐭ワ級
+ * 浼樺寲锛氫娇鐢ㄧ紦瀛橀伩鍏嶉噸澶嶈绠?
  */
 export const findClosestBeadColorLab = (
   rgb: [number, number, number],
   colors: BeadColor[]
 ): BeadColor => {
-  // 生成缓存 key
+  // 鐢熸垚缂撳瓨 key
   const cacheKey = `${rgb[0]},${rgb[1]},${rgb[2]},${colors.length}`;
   const cached = colorMatchCache.get(cacheKey);
   if (cached) return cached;
@@ -160,7 +174,7 @@ export const findClosestBeadColorLab = (
   let minDistance = Infinity;
 
   for (const color of colors) {
-    const colorLab = getBeadLab(color); // 使用缓存的 Lab 值
+    const colorLab = getBeadLab(color); // 浣跨敤缂撳瓨鐨?Lab 鍊?
     const distance = labDistance(targetLab, colorLab);
     if (distance < minDistance) {
       minDistance = distance;
@@ -168,7 +182,7 @@ export const findClosestBeadColorLab = (
     }
   }
 
-  // 缓存结果（限制缓存大小）
+  // 缂撳瓨缁撴灉锛堥檺鍒剁紦瀛樺ぇ灏忥級
   if (colorMatchCache.size < 10000) {
     colorMatchCache.set(cacheKey, closest);
   }
@@ -177,7 +191,7 @@ export const findClosestBeadColorLab = (
 };
 
 /**
- * RGB 转 Lab 色彩空间
+ * RGB 杞?Lab 鑹插僵绌洪棿
  */
 const rgbToLab = (rgb: [number, number, number]): [number, number, number] => {
   // RGB to XYZ
@@ -203,7 +217,7 @@ const rgbToLab = (rgb: [number, number, number]): [number, number, number] => {
 };
 
 /**
- * Lab 色彩空间的距离（Delta E）
+ * Lab 鑹插僵绌洪棿鐨勮窛绂伙紙Delta E锛?
  */
 const labDistance = (
   lab1: [number, number, number],
@@ -217,7 +231,7 @@ const labDistance = (
 };
 
 /**
- * RGB 转 HSL
+ * RGB 杞?HSL
  */
 const rgbToHsl = (rgb: [number, number, number]): [number, number, number] => {
   const [r, g, b] = rgb.map(v => v / 255);
@@ -249,7 +263,7 @@ const rgbToHsl = (rgb: [number, number, number]): [number, number, number] => {
 };
 
 /**
- * HSL 转 RGB
+ * HSL 杞?RGB
  */
 const hslToRgb = (hsl: [number, number, number]): [number, number, number] => {
   const [h, s, l] = hsl;
@@ -279,7 +293,7 @@ const hslToRgb = (hsl: [number, number, number]): [number, number, number] => {
 };
 
 /**
- * 计算颜色的饱和度（0-1）
+ * 璁＄畻棰滆壊鐨勯ケ鍜屽害锛?-1锛?
  */
 const getColorSaturation = (rgb: [number, number, number]): number => {
   const [, s] = rgbToHsl(rgb);
@@ -287,16 +301,16 @@ const getColorSaturation = (rgb: [number, number, number]): number => {
 };
 
 /**
- * 饱和度增强
- * @param rgb 原始 RGB 值
- * @param boost 增强比例（0-1）
+ * 楗卞拰搴﹀寮?
+ * @param rgb 鍘熷 RGB 鍊?
+ * @param boost 澧炲己姣斾緥锛?-1锛?
  */
 const boostSaturation = (
   rgb: [number, number, number],
   boost: number
 ): [number, number, number] => {
   const [h, s, l] = rgbToHsl(rgb);
-  // 增强饱和度，但不超过 1
+  // 澧炲己楗卞拰搴︼紝浣嗕笉瓒呰繃 1
   const newS = Math.min(1, s + (1 - s) * boost);
   return hslToRgb([h, newS, l]);
 };
@@ -313,18 +327,18 @@ const boostVividness = (
 };
 
 /**
- * 使用 Lab 色彩空间找到最接近的颜色，并考虑饱和度匹配
- * @param rgb 目标 RGB 值
- * @param colors 可用颜色列表
- * @param vibrancyWeight 鲜艳度权重（0-1），0 表示纯粹按距离匹配，正值偏好鲜艳，负值偏好柔和
+ * 浣跨敤 Lab 鑹插僵绌洪棿鎵惧埌鏈€鎺ヨ繎鐨勯鑹诧紝骞惰€冭檻楗卞拰搴﹀尮閰?
+ * @param rgb 鐩爣 RGB 鍊?
+ * @param colors 鍙敤棰滆壊鍒楄〃
+ * @param vibrancyWeight 椴滆壋搴︽潈閲嶏紙0-1锛夛紝0 琛ㄧず绾补鎸夎窛绂诲尮閰嶏紝姝ｅ€煎亸濂介矞鑹筹紝璐熷€煎亸濂芥煍鍜?
  */
-// 带鲜艳度的颜色匹配缓存
+// 甯﹂矞鑹冲害鐨勯鑹插尮閰嶇紦瀛?
 const vibrancyMatchCache = new Map<string, BeadColor>();
-// 珠子颜色饱和度缓存
+// 鐝犲瓙棰滆壊楗卞拰搴︾紦瀛?
 const beadSaturationCache = new Map<string, number>();
 
 /**
- * 获取珠子颜色的饱和度（带缓存）
+ * 鑾峰彇鐝犲瓙棰滆壊鐨勯ケ鍜屽害锛堝甫缂撳瓨锛?
  */
 const getBeadSaturation = (color: BeadColor): number => {
   let sat = beadSaturationCache.get(color.id);
@@ -336,23 +350,23 @@ const getBeadSaturation = (color: BeadColor): number => {
 };
 
 /**
- * 判断颜色是否为暖色调
- * 暖色：红、橙、黄、棕、米色等
- * 冷色：蓝、绿、紫、青等
+ * 鍒ゆ柇棰滆壊鏄惁涓烘殩鑹茶皟
+ * 鏆栬壊锛氱孩銆佹銆侀粍銆佹銆佺背鑹茬瓑
+ * 鍐疯壊锛氳摑銆佺豢銆佺传銆侀潚绛?
  */
 const isWarmColor = (rgb: [number, number, number]): boolean => {
   const [r, g, b] = rgb;
-  // 暖色判断：红色分量 > 蓝色分量，或者黄色区域（红+绿 > 蓝*2）
+  // 鏆栬壊鍒ゆ柇锛氱孩鑹插垎閲?> 钃濊壊鍒嗛噺锛屾垨鑰呴粍鑹插尯鍩燂紙绾?缁?> 钃?2锛?
   return r > b || (r + g > b * 2);
 };
 
 /**
- * 获取颜色的色温值（正值=暖，负值=冷）
+ * 鑾峰彇棰滆壊鐨勮壊娓╁€硷紙姝ｅ€?鏆栵紝璐熷€?鍐凤級
  */
 const getColorWarmth = (rgb: [number, number, number]): number => {
   const [r, g, b] = rgb;
-  // 计算色温：(红-蓝) + (绿-蓝)*0.5
-  // 正值表示暖色，负值表示冷色
+  // 璁＄畻鑹叉俯锛?绾?钃? + (缁?钃?*0.5
+  // 姝ｅ€艰〃绀烘殩鑹诧紝璐熷€艰〃绀哄喎鑹?
   return (r - b) / 255 + (g - b) / 510;
 };
 
@@ -361,7 +375,7 @@ export const findClosestBeadColorLabWithVibrancy = (
   colors: BeadColor[],
   vibrancyWeight: number = 0
 ): BeadColor => {
-  // 生成缓存 key（包含鲜艳度权重）- v3: 增加高亮度颜色的亮度优先
+  // 鐢熸垚缂撳瓨 key锛堝寘鍚矞鑹冲害鏉冮噸锛? v3: 澧炲姞楂樹寒搴﹂鑹茬殑浜害浼樺厛
   const cacheKey = `v3:${rgb[0]},${rgb[1]},${rgb[2]},${colors.length},${vibrancyWeight.toFixed(2)}`;
   const cached = vibrancyMatchCache.get(cacheKey);
   if (cached) return cached;
@@ -369,58 +383,58 @@ export const findClosestBeadColorLabWithVibrancy = (
   const targetLab = rgbToLab(rgb);
   const targetSaturation = getColorSaturation(rgb);
   const targetWarmth = getColorWarmth(rgb);
-  const targetLightness = targetLab[0]; // Lab 的 L 分量表示亮度 (0-100)
+  const targetLightness = targetLab[0]; // Lab 鐨?L 鍒嗛噺琛ㄧず浜害 (0-100)
 
   let closest = colors[0];
   let minScore = Infinity;
 
   for (const color of colors) {
-    const colorLab = getBeadLab(color); // 使用缓存的 Lab 值
+    const colorLab = getBeadLab(color); // 浣跨敤缂撳瓨鐨?Lab 鍊?
     const distance = labDistance(targetLab, colorLab);
 
-    // 使用缓存的饱和度值
+    // 浣跨敤缂撳瓨鐨勯ケ鍜屽害鍊?
     const colorSaturation = getBeadSaturation(color);
 
-    // 饱和度差异惩罚：饱和度差异越大，惩罚越大
-    // 这样低饱和度颜色会优先匹配低饱和度珠子
+    // 楗卞拰搴﹀樊寮傛儵缃氾細楗卞拰搴﹀樊寮傝秺澶э紝鎯╃綒瓒婂ぇ
+    // 杩欐牱浣庨ケ鍜屽害棰滆壊浼氫紭鍏堝尮閰嶄綆楗卞拰搴︾彔瀛?
     const saturationDiff = Math.abs(targetSaturation - colorSaturation);
-    const saturationPenalty = saturationDiff * 40; // 饱和度差异权重
+    const saturationPenalty = saturationDiff * 40; // 楗卞拰搴﹀樊寮傛潈閲?
 
-    // 亮度差异惩罚：对高亮度颜色，亮度匹配更重要
+    // 浜害宸紓鎯╃綒锛氬楂樹寒搴﹂鑹诧紝浜害鍖归厤鏇撮噸瑕?
     const colorLightness = colorLab[0];
     const lightnessDiff = Math.abs(targetLightness - colorLightness);
     let lightnessPenalty = 0;
     if (targetLightness > 80) {
-      // 高亮度颜色（如白皙肤色）：亮度匹配非常重要
+      // 楂樹寒搴﹂鑹诧紙濡傜櫧鐨欒偆鑹诧級锛氫寒搴﹀尮閰嶉潪甯搁噸瑕?
       lightnessPenalty = lightnessDiff * 2;
     } else if (targetLightness > 60) {
-      // 中高亮度：亮度匹配较重要
+      // 涓珮浜害锛氫寒搴﹀尮閰嶈緝閲嶈
       lightnessPenalty = lightnessDiff * 1;
     }
 
-    // 色温匹配惩罚：暖色匹配到冷色会有额外惩罚
+    // 鑹叉俯鍖归厤鎯╃綒锛氭殩鑹插尮閰嶅埌鍐疯壊浼氭湁棰濆鎯╃綒
     const colorWarmth = getColorWarmth(color.rgb);
     const warmthDiff = targetWarmth - colorWarmth;
-    // 如果源色是暖色但匹配到了冷色，给予惩罚
-    // warmthDiff > 0 表示源色比目标色更暖
+    // 濡傛灉婧愯壊鏄殩鑹蹭絾鍖归厤鍒颁簡鍐疯壊锛岀粰浜堟儵缃?
+    // warmthDiff > 0 琛ㄧず婧愯壊姣旂洰鏍囪壊鏇存殩
     let warmthPenalty = 0;
-    // 对高亮度颜色，减少色温惩罚（亮度更重要）
+    // 瀵归珮浜害棰滆壊锛屽噺灏戣壊娓╂儵缃氾紙浜害鏇撮噸瑕侊級
     const warmthWeight = targetLightness > 80 ? 0.3 : (targetLightness > 60 ? 0.6 : 1.0);
     if (targetWarmth > 0.05 && colorWarmth < -0.05) {
-      // 暖色匹配到冷色：强惩罚
+      // 鏆栬壊鍖归厤鍒板喎鑹诧細寮烘儵缃?
       warmthPenalty = Math.abs(warmthDiff) * 60 * warmthWeight;
     } else if (targetWarmth < -0.05 && colorWarmth > 0.05) {
-      // 冷色匹配到暖色：轻微惩罚
+      // 鍐疯壊鍖归厤鍒版殩鑹诧細杞诲井鎯╃綒
       warmthPenalty = Math.abs(warmthDiff) * 30 * warmthWeight;
     }
 
-    // 鲜艳度偏好（可选）
+    // 椴滆壋搴﹀亸濂斤紙鍙€夛級
     let vibrancyBonus = 0;
     if (vibrancyWeight > 0 && targetSaturation > 0.2) {
-      // 正值：偏好鲜艳颜色
+      // 姝ｅ€硷細鍋忓ソ椴滆壋棰滆壊
       vibrancyBonus = -colorSaturation * vibrancyWeight * 50;
     } else if (vibrancyWeight < 0 && targetSaturation < 0.3) {
-      // 负值：偏好柔和颜色（低饱和度颜色匹配时更偏向灰色）
+      // 璐熷€硷細鍋忓ソ鏌斿拰棰滆壊锛堜綆楗卞拰搴﹂鑹插尮閰嶆椂鏇村亸鍚戠伆鑹诧級
       vibrancyBonus = colorSaturation * Math.abs(vibrancyWeight) * 50;
     }
 
@@ -432,7 +446,7 @@ export const findClosestBeadColorLabWithVibrancy = (
     }
   }
 
-  // 缓存结果（限制缓存大小）
+  // 缂撳瓨缁撴灉锛堥檺鍒剁紦瀛樺ぇ灏忥級
   if (vibrancyMatchCache.size < 10000) {
     vibrancyMatchCache.set(cacheKey, closest);
   }
@@ -441,14 +455,14 @@ export const findClosestBeadColorLabWithVibrancy = (
 };
 
 /**
- * 统计珠子使用数量（跳过透明/null 珠子）
+ * 缁熻鐝犲瓙浣跨敤鏁伴噺锛堣烦杩囬€忔槑/null 鐝犲瓙锛?
  */
 export const calculateBeadStatistics = (beadData: BeadPixelData): BeadStatistics[] => {
   const colorCounts = new Map<string, { color: BeadColor; count: number }>();
-  let validBeadCount = 0;  // 非透明珠子总数
+  let validBeadCount = 0;  // 闈為€忔槑鐝犲瓙鎬绘暟
 
   for (const bead of beadData.beads) {
-    if (bead === null) continue;  // 跳过透明珠子
+    if (bead === null) continue;  // 璺宠繃閫忔槑鐝犲瓙
     validBeadCount++;
 
     const existing = colorCounts.get(bead.id);
@@ -471,27 +485,27 @@ export const calculateBeadStatistics = (beadData: BeadPixelData): BeadStatistics
 };
 
 /**
- * 智能合并结果
+ * 鏅鸿兘鍚堝苟缁撴灉
  */
 export interface SmartMergeResult {
-  /** 合并后的 beadData */
+  /** 鍚堝苟鍚庣殑 beadData */
   mergedData: BeadPixelData;
-  /** 合并报告：被合并的颜色 -> 合并目标 */
+  /** 鍚堝苟鎶ュ憡锛氳鍚堝苟鐨勯鑹?-> 鍚堝苟鐩爣 */
   mergeReport: Array<{
     fromColor: BeadColor;
     toColor: BeadColor;
     count: number;
   }>;
-  /** 合并前颜色数 */
+  /** 鍚堝苟鍓嶉鑹叉暟 */
   beforeCount: number;
-  /** 合并后颜色数 */
+  /** 鍚堝苟鍚庨鑹叉暟 */
   afterCount: number;
 }
 
 /**
- * 智能合并颜色 - 将使用量低于阈值的颜色合并到最相近的颜色
- * @param beadData 珠子数据
- * @param threshold 阈值（使用数量 <= threshold 的颜色将被合并）
+ * 鏅鸿兘鍚堝苟棰滆壊 - 灏嗕娇鐢ㄩ噺浣庝簬闃堝€肩殑棰滆壊鍚堝苟鍒版渶鐩歌繎鐨勯鑹?
+ * @param beadData 鐝犲瓙鏁版嵁
+ * @param threshold 闃堝€硷紙浣跨敤鏁伴噺 <= threshold 鐨勯鑹插皢琚悎骞讹級
  */
 export const smartMergeColors = (
   beadData: BeadPixelData,
@@ -500,7 +514,7 @@ export const smartMergeColors = (
   const stats = calculateBeadStatistics(beadData);
   const beforeCount = stats.length;
 
-  // 分为保留颜色和待合并颜色
+  // 鍒嗕负淇濈暀棰滆壊鍜屽緟鍚堝苟棰滆壊
   const keepColors: BeadColor[] = [];
   const mergeColors: { color: BeadColor; count: number }[] = [];
 
@@ -521,7 +535,7 @@ export const smartMergeColors = (
     };
   }
 
-  // 每个待合并颜色找最近的保留颜色
+  // 姣忎釜寰呭悎骞堕鑹叉壘鏈€杩戠殑淇濈暀棰滆壊
   const mergeReport: SmartMergeResult['mergeReport'] = [];
   const colorMapping = new Map<string, BeadColor>();
 
@@ -531,7 +545,7 @@ export const smartMergeColors = (
     mergeReport.push({ fromColor, toColor, count });
   }
 
-  // 应用合并
+  // 搴旂敤鍚堝苟
   const newBeads = beadData.beads.map(bead => {
     if (bead === null) return null;
     return colorMapping.get(bead.id) || bead;
@@ -549,34 +563,34 @@ export const smartMergeColors = (
 };
 
 /**
- * 减少颜色数量（合并相似颜色）
+ * 鍑忓皯棰滆壊鏁伴噺锛堝悎骞剁浉浼奸鑹诧級
  */
 export const reduceColors = (
   beadData: BeadPixelData,
   maxColors: number,
   availableColors: BeadColor[]
 ): BeadPixelData => {
-  // 统计当前使用的颜色
+  // 缁熻褰撳墠浣跨敤鐨勯鑹?
   const stats = calculateBeadStatistics(beadData);
 
   if (stats.length <= maxColors) {
     return beadData;
   }
 
-  // 保留使用最多的颜色
+  // 淇濈暀浣跨敤鏈€澶氱殑棰滆壊
   const keepColors = stats.slice(0, maxColors).map(s => s.color);
   const removeColors = stats.slice(maxColors).map(s => s.color);
 
-  // 将被移除的颜色映射到最接近的保留颜色
+  // 灏嗚绉婚櫎鐨勯鑹叉槧灏勫埌鏈€鎺ヨ繎鐨勪繚鐣欓鑹?
   const colorMapping = new Map<string, BeadColor>();
   for (const removeColor of removeColors) {
     const closest = findClosestBeadColor(removeColor.rgb, keepColors);
     colorMapping.set(removeColor.id, closest);
   }
 
-  // 应用颜色映射（保留透明珠子）
+  // 搴旂敤棰滆壊鏄犲皠锛堜繚鐣欓€忔槑鐝犲瓙锛?
   const newBeads = beadData.beads.map(bead => {
-    if (bead === null) return null;  // 保持透明
+    if (bead === null) return null;  // 淇濇寔閫忔槑
     const mapped = colorMapping.get(bead.id);
     return mapped || bead;
   });
@@ -588,7 +602,7 @@ export const reduceColors = (
 };
 
 /**
- * 替换指定颜色
+ * 鏇挎崲鎸囧畾棰滆壊
  */
 export const replaceColor = (
   beadData: BeadPixelData,
@@ -606,7 +620,7 @@ export const replaceColor = (
 };
 
 /**
- * 排除指定颜色（将其替换为最接近的其他颜色）
+ * 鎺掗櫎鎸囧畾棰滆壊锛堝皢鍏舵浛鎹负鏈€鎺ヨ繎鐨勫叾浠栭鑹诧級
  */
 export const excludeColor = (
   beadData: BeadPixelData,
@@ -626,8 +640,8 @@ export const excludeColor = (
 };
 
 /**
- * 找下一个相近颜色（排除当前色和已尝试过的颜色）
- * 用于颜色替换功能
+ * 鎵句笅涓€涓浉杩戦鑹诧紙鎺掗櫎褰撳墠鑹插拰宸插皾璇曡繃鐨勯鑹诧級
+ * 鐢ㄤ簬棰滆壊鏇挎崲鍔熻兘
  */
 export const findNextSimilarColor = (
   currentColorId: string,
@@ -636,7 +650,7 @@ export const findNextSimilarColor = (
   const current = allBeadColors.find(c => c.id === currentColorId);
   if (!current) return null;
 
-  // 排除当前颜色和已尝试过的颜色
+  // 鎺掗櫎褰撳墠棰滆壊鍜屽凡灏濊瘯杩囩殑棰滆壊
   const available = allBeadColors.filter(
     c => c.id !== currentColorId && !excludeIds.includes(c.id)
   );
@@ -647,7 +661,7 @@ export const findNextSimilarColor = (
 };
 
 /**
- * 获取某个位置的珠子颜色
+ * 鑾峰彇鏌愪釜浣嶇疆鐨勭彔瀛愰鑹?
  */
 export const getBeadAt = (
   beadData: BeadPixelData,
@@ -665,7 +679,7 @@ export const getBeadAt = (
 };
 
 /**
- * 设置某个位置的珠子颜色
+ * 璁剧疆鏌愪釜浣嶇疆鐨勭彔瀛愰鑹?
  */
 export const setBeadAt = (
   beadData: BeadPixelData,
@@ -684,13 +698,13 @@ export const setBeadAt = (
 };
 
 /**
- * 将珠子数据渲染到 Canvas
- * @param beadData 珠子数据
- * @param canvas Canvas元素
- * @param cellSize 单元格大小
- * @param showGrid 是否显示基础网格线
- * @param showColorCode 是否显示颜色代码
- * @param showMajorGrid 是否显示大网格线（5×5中等线 + 10×10粗线）
+ * 灏嗙彔瀛愭暟鎹覆鏌撳埌 Canvas
+ * @param beadData 鐝犲瓙鏁版嵁
+ * @param canvas Canvas鍏冪礌
+ * @param cellSize 鍗曞厓鏍煎ぇ灏?
+ * @param showGrid 鏄惁鏄剧ず鍩虹缃戞牸绾?
+ * @param showColorCode 鏄惁鏄剧ず棰滆壊浠ｇ爜
+ * @param showMajorGrid 鏄惁鏄剧ず澶х綉鏍肩嚎锛?脳5涓瓑绾?+ 10脳10绮楃嚎锛?
  */
 export const renderBeadsToCanvas = (
   beadData: BeadPixelData,
@@ -698,30 +712,45 @@ export const renderBeadsToCanvas = (
   cellSize: number = 20,
   showGrid: boolean = true,
   showColorCode: boolean = false,
-  showMajorGrid: boolean = false
+  showMajorGrid: boolean = false,
+  exportOptions: ExportCoordinateOptions = {}
 ): void => {
   const { width, height, beads } = beadData;
-  const canvasWidth = width * cellSize;
-  const canvasHeight = height * cellSize;
+  const showCoords = exportOptions.showCoords ?? false;
+  const boardSize = exportOptions.boardSize ?? getExportPhysicalBoardSize(width, height);
+  const pixelRatio = Math.max(1, exportOptions.pixelRatio ?? 1);
+  const coordFontSize = Math.max(9, Math.round(cellSize * 0.35));
+  const coordGutters = getExportCoordGutters(cellSize, showCoords);
+  const patternOffsetX = coordGutters.left;
+  const patternOffsetY = coordGutters.top;
+  const patternWidth = width * cellSize;
+  const patternHeight = height * cellSize;
+  const canvasWidth = patternOffsetX + patternWidth + coordGutters.right;
+  const canvasHeight = patternOffsetY + patternHeight + coordGutters.bottom;
+  const physicalBoardSize = boardSize;
 
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
+  canvas.width = Math.max(1, Math.round(canvasWidth * pixelRatio));
+  canvas.height = Math.max(1, Math.round(canvasHeight * pixelRatio));
+  canvas.style.width = `${canvasWidth}px`;
+  canvas.style.height = `${canvasHeight}px`;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     throw new Error('Failed to get canvas context');
   }
+  ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-  // 绘制每个珠子
+  // 缁樺埗姣忎釜鐝犲瓙
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const index = y * width + x;
       const bead = beads[index];
 
-      const px = x * cellSize;
-      const py = y * cellSize;
+      const px = patternOffsetX + x * cellSize;
+      const py = patternOffsetY + y * cellSize;
 
-      // 透明珠子：绘制棋盘格背景表示无珠子
+      // 閫忔槑鐝犲瓙锛氱粯鍒舵鐩樻牸鑳屾櫙琛ㄧず鏃犵彔瀛?
       if (bead === null) {
         const checkSize = cellSize / 2;
         for (let cy = 0; cy < 2; cy++) {
@@ -730,149 +759,146 @@ export const renderBeadsToCanvas = (
             ctx.fillRect(px + cx * checkSize, py + cy * checkSize, checkSize, checkSize);
           }
         }
-        continue;  // 跳过后续珠子绘制
+        continue;  // 璺宠繃鍚庣画鐝犲瓙缁樺埗
       }
 
-      // 绘制色块（纯色方块，不再绘制圆形高光）
+      // 缁樺埗鑹插潡锛堢函鑹叉柟鍧楋紝涓嶅啀缁樺埗鍦嗗舰楂樺厜锛?
       ctx.fillStyle = bead.hex;
       ctx.fillRect(px, py, cellSize, cellSize);
 
     }
   }
 
-  // 显示颜色代码（横排计数方式）
+  // 鏄剧ず棰滆壊浠ｇ爜锛堟瘡涓牸瀛愰兘鏄剧ず鐪熷疄鑹插彿锛?
   if (showColorCode && cellSize >= 15) {
-    const fontSize = Math.max(10, Math.round(cellSize * 0.35));
-    ctx.font = `500 ${fontSize}px Arial`;
+    const fontSize = Math.max(11, Math.round(cellSize * 0.42));
+    ctx.font = `700 ${fontSize}px Consolas, "Courier New", monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.miterLimit = 2;
 
     for (let y = 0; y < height; y++) {
-      let currentColorId = '';  // 当前段的原始色号
-      let segmentCount = 0;     // 当前段计数
-
       for (let x = 0; x < width; x++) {
         const index = y * width + x;
         const bead = beads[index];
 
-        // 跳过透明珠子
         if (bead === null) {
-          currentColorId = '';  // 重置计数
-          segmentCount = 0;
           continue;
         }
 
-        const px = x * cellSize;
-        const py = y * cellSize;
+        const px = patternOffsetX + x * cellSize;
+        const py = patternOffsetY + y * cellSize;
 
-        // 计算背景亮度：默认深色字体，只有很暗的背景才用白色
-        const r = parseInt(bead.rgb.slice(1, 3), 16);
-        const g = parseInt(bead.rgb.slice(3, 5), 16);
-        const b = parseInt(bead.rgb.slice(5, 7), 16);
+        // 璁＄畻鑳屾櫙浜害锛氶粯璁ゆ繁鑹插瓧浣擄紝鍙湁寰堟殫鐨勮儗鏅墠鐢ㄧ櫧鑹?
+        const [r, g, b] = bead.rgb;
         const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        const isDark = luminance < 0.35; // 只有很暗的颜色才用白字
+        const isDark = luminance < 0.35; // 鍙湁寰堟殫鐨勯鑹叉墠鐢ㄧ櫧瀛?
         ctx.fillStyle = isDark ? '#ffffff' : '#1a1a1a';
         ctx.strokeStyle = isDark ? '#000000' : '#ffffff';
-        ctx.lineWidth = fontSize > 12 ? 1.5 : 0.8;
+        ctx.lineWidth = Math.max(1.2, Math.round(fontSize * 0.16));
 
-        // Perler 色号转换：80-19001 → P01, 80-15265 → P265
+        // Perler 鑹插彿杞崲锛?0-19001 鈫?P01, 80-15265 鈫?P265
         let displayColorId = bead.id;
         if (bead.id.startsWith('80-19') || bead.id.startsWith('80-15')) {
           const numPart = bead.id.slice(5);
           displayColorId = 'P' + parseInt(numPart, 10).toString();
         }
 
-        // 按横排计数显示：段首显示色号，后续显示序号
-        let displayText = '';
-        if (bead.id !== currentColorId || segmentCount >= 99) {
-          // 新颜色段开始 或 超过99个，显示色号
-          currentColorId = bead.id;
-          segmentCount = 1;
-          displayText = displayColorId;
-        } else {
-          // 同色续段，显示序号
-          segmentCount++;
-          displayText = segmentCount.toString();
-        }
+        const displayText = displayColorId;
 
-        // 添加文字描边以增强可读性
         ctx.strokeText(displayText, px + cellSize / 2, py + cellSize / 2);
         ctx.fillText(displayText, px + cellSize / 2, py + cellSize / 2);
       }
     }
   }
 
-  // 绘制网格线
+  // 缁樺埗缃戞牸绾?
   if (showGrid) {
-    // 基础细网格线（每1格）
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
     ctx.lineWidth = 1;
 
     for (let x = 0; x <= width; x++) {
       ctx.beginPath();
-      ctx.moveTo(x * cellSize, 0);
-      ctx.lineTo(x * cellSize, canvasHeight);
+      ctx.moveTo(patternOffsetX + x * cellSize, patternOffsetY);
+      ctx.lineTo(patternOffsetX + x * cellSize, patternOffsetY + patternHeight);
       ctx.stroke();
     }
 
     for (let y = 0; y <= height; y++) {
       ctx.beginPath();
-      ctx.moveTo(0, y * cellSize);
-      ctx.lineTo(canvasWidth, y * cellSize);
+      ctx.moveTo(patternOffsetX, patternOffsetY + y * cellSize);
+      ctx.lineTo(patternOffsetX + patternWidth, patternOffsetY + y * cellSize);
       ctx.stroke();
     }
 
-    // 大网格线（5×5中等线 + 10×10粗线）
     if (showMajorGrid) {
-      // 5×5 中等网格线（蓝色，较细）
-      ctx.strokeStyle = 'rgba(0, 100, 200, 0.5)';
-      ctx.lineWidth = Math.max(1, Math.round(cellSize / 10));
-
-      for (let x = 0; x <= width; x++) {
-        if (x % 5 === 0 && x % 10 !== 0) {
-          ctx.beginPath();
-          ctx.moveTo(x * cellSize, 0);
-          ctx.lineTo(x * cellSize, canvasHeight);
-          ctx.stroke();
-        }
-      }
-
-      for (let y = 0; y <= height; y++) {
-        if (y % 5 === 0 && y % 10 !== 0) {
-          ctx.beginPath();
-          ctx.moveTo(0, y * cellSize);
-          ctx.lineTo(canvasWidth, y * cellSize);
-          ctx.stroke();
-        }
-      }
-
-      // 10×10 粗网格线（黑色，最粗）
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
       ctx.lineWidth = Math.max(2, Math.round(cellSize / 6));
+      const guideOffsets = getPhysicalBoardGuideOffsets(physicalBoardSize);
+      const boardCols = Math.ceil(width / physicalBoardSize);
+      const boardRows = Math.ceil(height / physicalBoardSize);
 
-      for (let x = 0; x <= width; x++) {
-        if (x % 10 === 0) {
+      for (let boardCol = 0; boardCol < boardCols; boardCol++) {
+        const originX = boardCol * physicalBoardSize;
+        for (const offset of guideOffsets) {
+          const guideX = originX + offset;
+          if (guideX <= 0 || guideX >= width) continue;
           ctx.beginPath();
-          ctx.moveTo(x * cellSize, 0);
-          ctx.lineTo(x * cellSize, canvasHeight);
+          ctx.moveTo(patternOffsetX + guideX * cellSize, patternOffsetY);
+          ctx.lineTo(patternOffsetX + guideX * cellSize, patternOffsetY + patternHeight);
           ctx.stroke();
         }
       }
 
-      for (let y = 0; y <= height; y++) {
-        if (y % 10 === 0) {
+      for (let boardRow = 0; boardRow < boardRows; boardRow++) {
+        const originY = boardRow * physicalBoardSize;
+        for (const offset of guideOffsets) {
+          const guideY = originY + offset;
+          if (guideY <= 0 || guideY >= height) continue;
           ctx.beginPath();
-          ctx.moveTo(0, y * cellSize);
-          ctx.lineTo(canvasWidth, y * cellSize);
+          ctx.moveTo(patternOffsetX, patternOffsetY + guideY * cellSize);
+          ctx.lineTo(patternOffsetX + patternWidth, patternOffsetY + guideY * cellSize);
           ctx.stroke();
         }
+      }
+
+      for (let x = 0; x <= width; x += physicalBoardSize) {
+        ctx.beginPath();
+        ctx.moveTo(patternOffsetX + x * cellSize, patternOffsetY);
+        ctx.lineTo(patternOffsetX + x * cellSize, patternOffsetY + patternHeight);
+        ctx.stroke();
+      }
+
+      for (let y = 0; y <= height; y += physicalBoardSize) {
+        ctx.beginPath();
+        ctx.moveTo(patternOffsetX, patternOffsetY + y * cellSize);
+        ctx.lineTo(patternOffsetX + patternWidth, patternOffsetY + y * cellSize);
+        ctx.stroke();
       }
     }
+  }
+
+  if (showCoords) {
+    drawCoordsAroundPattern(
+      ctx,
+      patternOffsetX,
+      patternOffsetY,
+      patternWidth,
+      patternHeight,
+      width,
+      height,
+      cellSize,
+      physicalBoardSize,
+      coordFontSize,
+      coordGutters,
+    );
   }
 };
 
 /**
- * 获取对比色（用于文字显示）
+ * 鑾峰彇瀵规瘮鑹诧紙鐢ㄤ簬鏂囧瓧鏄剧ず锛?
  */
 const getContrastColor = (rgb: [number, number, number]): string => {
   const [r, g, b] = rgb;
@@ -880,14 +906,87 @@ const getContrastColor = (rgb: [number, number, number]): string => {
   return brightness > 128 ? '#000000' : '#ffffff';
 };
 
+const getExportPhysicalBoardSize = (width: number, height: number): number => {
+  return getPhysicalBoardDrawSize(width, height);
+};
+
+const getBoardLocalCoordLabel = (
+  globalIndex: number,
+  boardSize: number
+): string => {
+  return `${(globalIndex % boardSize) + 1}`;
+};
+
+const getExportCoordGutters = (cellSize: number, showCoords: boolean): ExportCoordGutters => {
+  if (!showCoords) {
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+
+  return {
+    top: Math.max(18, Math.round(cellSize * 1.1)),
+    right: Math.max(22, Math.round(cellSize * 1.6)),
+    bottom: Math.max(18, Math.round(cellSize * 1.1)),
+    left: Math.max(22, Math.round(cellSize * 1.6)),
+  };
+};
+
+const drawCoordsAroundPattern = (
+  ctx: CanvasRenderingContext2D,
+  patternOffsetX: number,
+  patternOffsetY: number,
+  patternWidth: number,
+  patternHeight: number,
+  width: number,
+  height: number,
+  cellSize: number,
+  boardSize: number,
+  coordFontSize: number,
+  gutters: ExportCoordGutters,
+  startX: number = 0,
+  startY: number = 0,
+) => {
+  ctx.fillStyle = '#666666';
+  ctx.font = `${coordFontSize}px Arial, sans-serif`;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  for (let x = 0; x < width; x += 5) {
+    const label = getBoardLocalCoordLabel(startX + x, boardSize);
+    const drawX = patternOffsetX + x * cellSize + cellSize / 2;
+    ctx.fillText(label, drawX, patternOffsetY - 4);
+  }
+
+  ctx.textBaseline = 'top';
+  for (let x = 0; x < width; x += 5) {
+    const label = getBoardLocalCoordLabel(startX + x, boardSize);
+    const drawX = patternOffsetX + x * cellSize + cellSize / 2;
+    ctx.fillText(label, drawX, patternOffsetY + patternHeight + 2);
+  }
+
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let y = 0; y < height; y += 5) {
+    const label = getBoardLocalCoordLabel(startY + y, boardSize);
+    const drawY = patternOffsetY + y * cellSize + cellSize / 2;
+    ctx.fillText(label, patternOffsetX - 4, drawY);
+  }
+
+  ctx.textAlign = 'left';
+  for (let y = 0; y < height; y += 5) {
+    const label = getBoardLocalCoordLabel(startY + y, boardSize);
+    const drawY = patternOffsetY + y * cellSize + cellSize / 2;
+    ctx.fillText(label, patternOffsetX + patternWidth + 4, drawY);
+  }
+};
+
 /**
- * 导出珠子图案为图片
- * @param beadData 珠子数据
- * @param cellSize 单元格大小
- * @param showGrid 是否显示基础网格线
- * @param showColorCode 是否显示颜色代码
- * @param format 导出格式
- * @param showMajorGrid 是否显示大网格线（5×5中等线 + 10×10粗线）
+ * 瀵煎嚭鐝犲瓙鍥炬涓哄浘鐗?
+ * @param beadData 鐝犲瓙鏁版嵁
+ * @param cellSize 鍗曞厓鏍煎ぇ灏?
+ * @param showGrid 鏄惁鏄剧ず鍩虹缃戞牸绾?
+ * @param showColorCode 鏄惁鏄剧ず棰滆壊浠ｇ爜
+ * @param format 瀵煎嚭鏍煎紡
+ * @param showMajorGrid 鏄惁鏄剧ず澶х綉鏍肩嚎锛?脳5涓瓑绾?+ 10脳10绮楃嚎锛?
  */
 export const exportBeadPattern = (
   beadData: BeadPixelData,
@@ -903,14 +1002,14 @@ export const exportBeadPattern = (
 };
 
 /**
- * 将珠子数据渲染到 Canvas（带珠子清单）
- * @param beadData 珠子数据
- * @param canvas Canvas元素
- * @param cellSize 单元格大小
- * @param showGrid 是否显示基础网格线
- * @param showColorCode 是否显示颜色代码
- * @param showMajorGrid 是否显示大网格线
- * @param showBeadList 是否显示珠子清单
+ * 灏嗙彔瀛愭暟鎹覆鏌撳埌 Canvas锛堝甫鐝犲瓙娓呭崟锛?
+ * @param beadData 鐝犲瓙鏁版嵁
+ * @param canvas Canvas鍏冪礌
+ * @param cellSize 鍗曞厓鏍煎ぇ灏?
+ * @param showGrid 鏄惁鏄剧ず鍩虹缃戞牸绾?
+ * @param showColorCode 鏄惁鏄剧ず棰滆壊浠ｇ爜
+ * @param showMajorGrid 鏄惁鏄剧ず澶х綉鏍肩嚎
+ * @param showBeadList 鏄惁鏄剧ず鐝犲瓙娓呭崟
  */
 export const renderBeadsToCanvasWithList = (
   beadData: BeadPixelData,
@@ -919,13 +1018,21 @@ export const renderBeadsToCanvasWithList = (
   showGrid: boolean = true,
   showColorCode: boolean = false,
   showMajorGrid: boolean = false,
-  showBeadList: boolean = true
+  showBeadList: boolean = true,
+  exportOptions: ExportCoordinateOptions = {}
 ): void => {
   const { width, height } = beadData;
+  const showCoords = exportOptions.showCoords ?? false;
+  const boardSize = exportOptions.boardSize ?? getExportPhysicalBoardSize(width, height);
+  const coordFontSize = Math.max(9, Math.round(cellSize * 0.35));
+  const coordGutters = getExportCoordGutters(cellSize, showCoords);
+  const patternOffsetX = coordGutters.left;
+  const patternOffsetY = coordGutters.top;
   const patternWidth = width * cellSize;
   const patternHeight = height * cellSize;
+  const physicalBoardSize = boardSize;
 
-  // 计算珠子清单需要的宽度
+  // 璁＄畻鐝犲瓙娓呭崟闇€瑕佺殑瀹藉害
   const stats = calculateBeadStatistics(beadData);
   const listPadding = Math.max(16, Math.round(cellSize * 0.8));
   const rowHeight = Math.max(24, Math.round(cellSize * 1.2));
@@ -933,17 +1040,17 @@ export const renderBeadsToCanvasWithList = (
   const titleFontSize = Math.max(16, Math.round(cellSize * 0.8));
   const textFontSize = Math.max(12, Math.round(cellSize * 0.6));
 
-  // 清单宽度：根据内容动态计算
+  // 娓呭崟瀹藉害锛氭牴鎹唴瀹瑰姩鎬佽绠?
   const listWidth = showBeadList ? Math.max(200, Math.round(cellSize * 10)) : 0;
 
-  // 计算清单需要的高度
-  const headerHeight = listPadding * 2 + titleFontSize + rowHeight * 3; // 标题 + 3行基本信息
+  // 璁＄畻娓呭崟闇€瑕佺殑楂樺害
+  const headerHeight = listPadding * 2 + titleFontSize + rowHeight * 3; // 鏍囬 + 3琛屽熀鏈俊鎭?
   const listContentHeight = stats.length * rowHeight + listPadding * 2;
   const totalListHeight = headerHeight + listContentHeight;
 
-  // Canvas 尺寸
-  const canvasWidth = patternWidth + listWidth;
-  const canvasHeight = Math.max(patternHeight, totalListHeight);
+  // Canvas 灏哄
+  const canvasWidth = patternOffsetX + patternWidth + coordGutters.right + listWidth;
+  const canvasHeight = Math.max(patternOffsetY + patternHeight + coordGutters.bottom, totalListHeight);
 
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
@@ -953,11 +1060,11 @@ export const renderBeadsToCanvasWithList = (
     throw new Error('Failed to get canvas context');
   }
 
-  // 填充背景色
+  // 濉厖鑳屾櫙鑹?
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // ========== 绘制图案部分 ==========
+  // ========== 缁樺埗鍥炬閮ㄥ垎 ==========
   const { beads } = beadData;
 
   for (let y = 0; y < height; y++) {
@@ -965,10 +1072,10 @@ export const renderBeadsToCanvasWithList = (
       const index = y * width + x;
       const bead = beads[index];
 
-      const px = x * cellSize;
-      const py = y * cellSize;
+      const px = patternOffsetX + x * cellSize;
+      const py = patternOffsetY + y * cellSize;
 
-      // 透明珠子：绘制棋盘格背景表示无珠子
+      // 閫忔槑鐝犲瓙锛氱粯鍒舵鐩樻牸鑳屾櫙琛ㄧず鏃犵彔瀛?
       if (bead === null) {
         const checkSize = cellSize / 2;
         for (let cy = 0; cy < 2; cy++) {
@@ -980,45 +1087,41 @@ export const renderBeadsToCanvasWithList = (
         continue;
       }
 
-      // 绘制色块
+      // 缁樺埗鑹插潡
       ctx.fillStyle = bead.hex;
       ctx.fillRect(px, py, cellSize, cellSize);
     }
   }
 
-  // 显示颜色代码
+  // 鏄剧ず棰滆壊浠ｇ爜
   if (showColorCode && cellSize >= 15) {
-    const fontSize = Math.max(10, Math.round(cellSize * 0.35));
-    ctx.font = `500 ${fontSize}px Arial`;
+    const fontSize = Math.max(11, Math.round(cellSize * 0.42));
+    ctx.font = `700 ${fontSize}px Consolas, "Courier New", monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.miterLimit = 2;
 
     for (let y = 0; y < height; y++) {
-      let currentColorId = '';
-      let segmentCount = 0;
-
       for (let x = 0; x < width; x++) {
         const index = y * width + x;
         const bead = beads[index];
 
         if (bead === null) {
-          currentColorId = '';
-          segmentCount = 0;
           continue;
         }
 
-        const px = x * cellSize;
-        const py = y * cellSize;
+        const px = patternOffsetX + x * cellSize;
+        const py = patternOffsetY + y * cellSize;
 
-        // 计算背景亮度：默认深色字体，只有很暗的背景才用白色
-        const r = parseInt(bead.rgb.slice(1, 3), 16);
-        const g = parseInt(bead.rgb.slice(3, 5), 16);
-        const b = parseInt(bead.rgb.slice(5, 7), 16);
+        // 璁＄畻鑳屾櫙浜害锛氶粯璁ゆ繁鑹插瓧浣擄紝鍙湁寰堟殫鐨勮儗鏅墠鐢ㄧ櫧鑹?
+        const [r, g, b] = bead.rgb;
         const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
         const isDark = luminance < 0.35;
         ctx.fillStyle = isDark ? '#ffffff' : '#1a1a1a';
         ctx.strokeStyle = isDark ? '#000000' : '#ffffff';
-        ctx.lineWidth = fontSize > 12 ? 1.5 : 0.8;
+        ctx.lineWidth = Math.max(1.2, Math.round(fontSize * 0.16));
 
         let displayColorId = bead.id;
         if (bead.id.startsWith('80-19') || bead.id.startsWith('80-15')) {
@@ -1026,15 +1129,7 @@ export const renderBeadsToCanvasWithList = (
           displayColorId = 'P' + parseInt(numPart, 10).toString();
         }
 
-        let displayText = '';
-        if (bead.id !== currentColorId || segmentCount >= 99) {
-          currentColorId = bead.id;
-          segmentCount = 1;
-          displayText = displayColorId;
-        } else {
-          segmentCount++;
-          displayText = segmentCount.toString();
-        }
+        const displayText = displayColorId;
 
         ctx.strokeText(displayText, px + cellSize / 2, py + cellSize / 2);
         ctx.fillText(displayText, px + cellSize / 2, py + cellSize / 2);
@@ -1042,80 +1137,94 @@ export const renderBeadsToCanvasWithList = (
     }
   }
 
-  // 绘制网格线
+  // 缁樺埗缃戞牸绾?
   if (showGrid) {
-    // 基础细网格线
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
     ctx.lineWidth = 1;
 
     for (let x = 0; x <= width; x++) {
       ctx.beginPath();
-      ctx.moveTo(x * cellSize, 0);
-      ctx.lineTo(x * cellSize, patternHeight);
+      ctx.moveTo(patternOffsetX + x * cellSize, patternOffsetY);
+      ctx.lineTo(patternOffsetX + x * cellSize, patternOffsetY + patternHeight);
       ctx.stroke();
     }
 
     for (let y = 0; y <= height; y++) {
       ctx.beginPath();
-      ctx.moveTo(0, y * cellSize);
-      ctx.lineTo(patternWidth, y * cellSize);
+      ctx.moveTo(patternOffsetX, patternOffsetY + y * cellSize);
+      ctx.lineTo(patternOffsetX + patternWidth, patternOffsetY + y * cellSize);
       ctx.stroke();
     }
 
-    // 大网格线
     if (showMajorGrid) {
-      // 5×5 中等网格线
-      ctx.strokeStyle = 'rgba(0, 100, 200, 0.5)';
-      ctx.lineWidth = Math.max(1, Math.round(cellSize / 10));
-
-      for (let x = 0; x <= width; x++) {
-        if (x % 5 === 0 && x % 10 !== 0) {
-          ctx.beginPath();
-          ctx.moveTo(x * cellSize, 0);
-          ctx.lineTo(x * cellSize, patternHeight);
-          ctx.stroke();
-        }
-      }
-
-      for (let y = 0; y <= height; y++) {
-        if (y % 5 === 0 && y % 10 !== 0) {
-          ctx.beginPath();
-          ctx.moveTo(0, y * cellSize);
-          ctx.lineTo(patternWidth, y * cellSize);
-          ctx.stroke();
-        }
-      }
-
-      // 10×10 粗网格线
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
       ctx.lineWidth = Math.max(2, Math.round(cellSize / 6));
+      const guideOffsets = getPhysicalBoardGuideOffsets(physicalBoardSize);
+      const boardCols = Math.ceil(width / physicalBoardSize);
+      const boardRows = Math.ceil(height / physicalBoardSize);
 
-      for (let x = 0; x <= width; x++) {
-        if (x % 10 === 0) {
+      for (let boardCol = 0; boardCol < boardCols; boardCol++) {
+        const originX = boardCol * physicalBoardSize;
+        for (const offset of guideOffsets) {
+          const guideX = originX + offset;
+          if (guideX <= 0 || guideX >= width) continue;
           ctx.beginPath();
-          ctx.moveTo(x * cellSize, 0);
-          ctx.lineTo(x * cellSize, patternHeight);
+          ctx.moveTo(patternOffsetX + guideX * cellSize, patternOffsetY);
+          ctx.lineTo(patternOffsetX + guideX * cellSize, patternOffsetY + patternHeight);
           ctx.stroke();
         }
       }
 
-      for (let y = 0; y <= height; y++) {
-        if (y % 10 === 0) {
+      for (let boardRow = 0; boardRow < boardRows; boardRow++) {
+        const originY = boardRow * physicalBoardSize;
+        for (const offset of guideOffsets) {
+          const guideY = originY + offset;
+          if (guideY <= 0 || guideY >= height) continue;
           ctx.beginPath();
-          ctx.moveTo(0, y * cellSize);
-          ctx.lineTo(patternWidth, y * cellSize);
+          ctx.moveTo(patternOffsetX, patternOffsetY + guideY * cellSize);
+          ctx.lineTo(patternOffsetX + patternWidth, patternOffsetY + guideY * cellSize);
           ctx.stroke();
         }
+      }
+
+      for (let x = 0; x <= width; x += physicalBoardSize) {
+        ctx.beginPath();
+        ctx.moveTo(patternOffsetX + x * cellSize, patternOffsetY);
+        ctx.lineTo(patternOffsetX + x * cellSize, patternOffsetY + patternHeight);
+        ctx.stroke();
+      }
+
+      for (let y = 0; y <= height; y += physicalBoardSize) {
+        ctx.beginPath();
+        ctx.moveTo(patternOffsetX, patternOffsetY + y * cellSize);
+        ctx.lineTo(patternOffsetX + patternWidth, patternOffsetY + y * cellSize);
+        ctx.stroke();
       }
     }
   }
 
-  // ========== 绘制珠子清单 ==========
+  if (showCoords) {
+    drawCoordsAroundPattern(
+      ctx,
+      patternOffsetX,
+      patternOffsetY,
+      patternWidth,
+      patternHeight,
+      width,
+      height,
+      cellSize,
+      physicalBoardSize,
+      coordFontSize,
+      coordGutters,
+    );
+  }
+
+  // ========== 缁樺埗鐝犲瓙娓呭崟 ==========
   if (showBeadList && listWidth > 0) {
-    const listX = patternWidth;
+    const listX = patternOffsetX + patternWidth + coordGutters.right;
     let currentY = listPadding;
 
-    // 绘制分隔线
+    // 缁樺埗鍒嗛殧绾?
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -1123,15 +1232,15 @@ export const renderBeadsToCanvasWithList = (
     ctx.lineTo(listX, canvasHeight);
     ctx.stroke();
 
-    // 标题
+    // 鏍囬
     ctx.fillStyle = '#333333';
     ctx.font = `bold ${titleFontSize}px Arial, sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText('珠子清单', listX + listPadding, currentY);
+    ctx.fillText('鐝犲瓙娓呭崟', listX + listPadding, currentY);
     currentY += titleFontSize + listPadding;
 
-    // 基本信息
+    // 鍩烘湰淇℃伅
     ctx.font = `${textFontSize}px Arial, sans-serif`;
     ctx.fillStyle = '#666666';
 
@@ -1146,7 +1255,7 @@ export const renderBeadsToCanvasWithList = (
     ctx.fillText(`颜色: ${stats.length} 种`, listX + listPadding, currentY);
     currentY += rowHeight * 1.2;
 
-    // 分隔线
+    // 鍒嗛殧绾?
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -1155,36 +1264,36 @@ export const renderBeadsToCanvasWithList = (
     ctx.stroke();
     currentY += listPadding;
 
-    // 颜色列表
+    // 棰滆壊鍒楄〃
     for (const stat of stats) {
-      // 检查是否超出画布高度
+      // 妫€鏌ユ槸鍚﹁秴鍑虹敾甯冮珮搴?
       if (currentY + rowHeight > canvasHeight - listPadding) {
         ctx.fillStyle = '#999999';
         ctx.font = `${textFontSize}px Arial, sans-serif`;
-        ctx.fillText('...更多颜色', listX + listPadding, currentY);
+        ctx.fillText('...鏇村棰滆壊', listX + listPadding, currentY);
         break;
       }
 
-      // 色块
+      // 鑹插潡
       ctx.fillStyle = stat.color.hex;
       ctx.fillRect(listX + listPadding, currentY, colorBlockSize, colorBlockSize);
 
-      // 色块边框
+      // 鑹插潡杈规
       ctx.strokeStyle = '#cccccc';
       ctx.lineWidth = 1;
       ctx.strokeRect(listX + listPadding, currentY, colorBlockSize, colorBlockSize);
 
-      // 颜色名称和数量
+      // 棰滆壊鍚嶇О鍜屾暟閲?
       ctx.fillStyle = '#333333';
       ctx.font = `${textFontSize}px Arial, sans-serif`;
       ctx.textBaseline = 'middle';
 
-      // 颜色名（中文名优先，超长则截断）
+      // 棰滆壊鍚嶏紙涓枃鍚嶄紭鍏堬紝瓒呴暱鍒欐埅鏂級
       const colorName = stat.color.nameCN || stat.color.name;
       const maxNameWidth = listWidth - listPadding * 2 - colorBlockSize - 60;
       let displayName = colorName;
 
-      // 测量并截断
+      // 娴嬮噺骞舵埅鏂?
       while (ctx.measureText(displayName).width > maxNameWidth && displayName.length > 1) {
         displayName = displayName.slice(0, -1);
       }
@@ -1198,7 +1307,7 @@ export const renderBeadsToCanvasWithList = (
         currentY + colorBlockSize / 2
       );
 
-      // 数量（右对齐）
+      // 鏁伴噺锛堝彸瀵归綈锛?
       ctx.textAlign = 'right';
       ctx.fillText(
         `${stat.count}`,
@@ -1213,32 +1322,32 @@ export const renderBeadsToCanvasWithList = (
 };
 
 /**
- * 生成珠子清单文本
+ * 鐢熸垚鐝犲瓙娓呭崟鏂囨湰
  */
 export const generateBeadList = (beadData: BeadPixelData): string => {
   const stats = calculateBeadStatistics(beadData);
   const totalBeads = beadData.beads.length;
 
-  let text = '=== 珠子清单 ===\n\n';
-  text += `图案尺寸: ${beadData.width} x ${beadData.height}\n`;
-  text += `珠子总数: ${totalBeads} 颗\n`;
-  text += `使用颜色: ${stats.length} 种\n\n`;
-  text += '--- 颜色明细 ---\n\n';
+  let text = '=== 鐝犲瓙娓呭崟 ===\n\n';
+  text += `鍥炬灏哄: ${beadData.width} x ${beadData.height}\n`;
+  text += `鐝犲瓙鎬绘暟: ${totalBeads} 棰梊n`;
+  text += `浣跨敤棰滆壊: ${stats.length} 绉峔n\n`;
+  text += '--- 棰滆壊鏄庣粏 ---\n\n';
 
   stats.forEach((stat, index) => {
-    text += `${index + 1}. ${stat.color.id} ${stat.color.nameCN}(${stat.color.name}): ${stat.count} 颗 (${stat.percentage.toFixed(1)}%)\n`;
+    text += `${index + 1}. ${stat.color.id} ${stat.color.nameCN}(${stat.color.name}): ${stat.count} 棰?(${stat.percentage.toFixed(1)}%)\n`;
   });
 
   return text;
 };
 
 /**
- * 按拼豆板分页渲染
- * @param beadData 完整图案数据
- * @param cellSize 每格像素大小
- * @param boardSize 拼豆板尺寸（如 29x29）
- * @param options 渲染选项
- * @returns 每页的 canvas 数组
+ * 鎸夋嫾璞嗘澘鍒嗛〉娓叉煋
+ * @param beadData 瀹屾暣鍥炬鏁版嵁
+ * @param cellSize 姣忔牸鍍忕礌澶у皬
+ * @param boardSize 鎷艰眴鏉垮昂瀵革紙濡?29x29锛?
+ * @param options 娓叉煋閫夐」
+ * @returns 姣忛〉鐨?canvas 鏁扮粍
  */
 export interface PaginatedPage {
   canvas: HTMLCanvasElement;
@@ -1260,17 +1369,21 @@ export const renderBeadsPaginated = (
     showGrid?: boolean;
     showCoords?: boolean;
     showMajorGrid?: boolean;
+    showColorCode?: boolean;
   } = {}
 ): PaginatedPage[] => {
   const { width, height } = beadData;
-  const { showGrid = true, showCoords = true, showMajorGrid = true } = options;
+  const { showGrid = true, showCoords = true, showMajorGrid = true, showColorCode = true } = options;
+  const physicalBoardSize = boardSize;
+  const coordFontSize = Math.max(9, Math.round(cellSize * 0.34));
+  const coordGutters = getExportCoordGutters(cellSize, showCoords);
 
   const cols = Math.ceil(width / boardSize);
   const rows = Math.ceil(height / boardSize);
   const totalPages = rows * cols;
   const pages: PaginatedPage[] = [];
 
-  const headerHeight = cellSize * 2; // 页码标注高度
+  const headerHeight = Math.max(44, Math.round(cellSize * 2.8));
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -1282,127 +1395,182 @@ export const renderBeadsPaginated = (
       const pageH = endY - startY;
 
       const canvas = document.createElement('canvas');
-      const canvasW = pageW * cellSize;
-      const canvasH = pageH * cellSize + headerHeight;
+      const patternWidth = pageW * cellSize;
+      const patternHeight = pageH * cellSize;
+      const patternOffsetX = coordGutters.left;
+      const patternOffsetY = headerHeight;
+      const canvasW = patternOffsetX + patternWidth + coordGutters.right;
+      const canvasH = patternOffsetY + patternHeight + coordGutters.bottom;
       canvas.width = canvasW;
       canvas.height = canvasH;
 
       const ctx = canvas.getContext('2d');
       if (!ctx) continue;
 
-      // 白色背景
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvasW, canvasH);
 
-      // 页码标注
       const pageNum = row * cols + col + 1;
-      ctx.fillStyle = '#333333';
-      ctx.font = `bold ${Math.max(14, cellSize * 0.6)}px Arial, sans-serif`;
-      ctx.textAlign = 'center';
+      ctx.fillStyle = '#f7f4ff';
+      ctx.fillRect(0, 0, canvasW, headerHeight);
+      ctx.strokeStyle = 'rgba(82, 58, 140, 0.14)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, headerHeight - 0.5);
+      ctx.lineTo(canvasW, headerHeight - 0.5);
+      ctx.stroke();
+
+      ctx.fillStyle = '#45306b';
+      ctx.font = `bold ${Math.max(14, cellSize * 0.62)}px Arial, sans-serif`;
+      ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(
-        `第 ${pageNum}/${totalPages} 页  行${row + 1} 列${col + 1}  [${startX + 1}-${endX}, ${startY + 1}-${endY}]`,
-        canvasW / 2,
-        headerHeight / 2
+        `打印版图纸 · 第 ${pageNum}/${totalPages} 页`,
+        12,
+        Math.round(headerHeight * 0.42)
       );
 
-      // 渲染珠子
-      const offsetY = headerHeight;
+      ctx.fillStyle = '#6f6290';
+      ctx.font = `${Math.max(10, cellSize * 0.34)}px Arial, sans-serif`;
+      ctx.fillText(
+        `板区 ${row + 1}-${col + 1} · 板规格 ${boardSize} · 列 ${getBoardLocalCoordLabel(startX, physicalBoardSize)}-${getBoardLocalCoordLabel(endX - 1, physicalBoardSize)} · 行 ${getBoardLocalCoordLabel(startY, physicalBoardSize)}-${getBoardLocalCoordLabel(endY - 1, physicalBoardSize)}`,
+        12,
+        Math.round(headerHeight * 0.76)
+      );
+
       for (let y = startY; y < endY; y++) {
         for (let x = startX; x < endX; x++) {
           const bead = beadData.beads[y * width + x];
-          const px = (x - startX) * cellSize;
-          const py = (y - startY) * cellSize + offsetY;
+          const px = patternOffsetX + (x - startX) * cellSize;
+          const py = patternOffsetY + (y - startY) * cellSize;
 
           if (bead) {
             ctx.fillStyle = bead.hex;
             ctx.fillRect(px, py, cellSize, cellSize);
           } else {
-            // 透明格子用浅灰棋盘格
             ctx.fillStyle = (x + y) % 2 === 0 ? '#f0f0f0' : '#e0e0e0';
             ctx.fillRect(px, py, cellSize, cellSize);
           }
         }
       }
 
-      // 网格线
+      if (showColorCode && cellSize >= 15) {
+        const fontSize = Math.max(11, Math.round(cellSize * 0.42));
+        ctx.font = `700 ${fontSize}px Consolas, "Courier New", monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.miterLimit = 2;
+
+        for (let y = startY; y < endY; y++) {
+          for (let x = startX; x < endX; x++) {
+            const bead = beadData.beads[y * width + x];
+            if (bead === null) {
+              continue;
+            }
+
+            const px = patternOffsetX + (x - startX) * cellSize;
+            const py = patternOffsetY + (y - startY) * cellSize;
+            const isDark = getContrastColor(bead.rgb) === '#ffffff';
+            ctx.fillStyle = isDark ? '#ffffff' : '#1a1a1a';
+            ctx.strokeStyle = isDark ? '#000000' : '#ffffff';
+            ctx.lineWidth = Math.max(1.2, Math.round(fontSize * 0.16));
+
+            let displayColorId = bead.id;
+            if (bead.id.startsWith('80-19') || bead.id.startsWith('80-15')) {
+              const numPart = bead.id.slice(5);
+              displayColorId = 'P' + parseInt(numPart, 10).toString();
+            }
+
+            const displayText = displayColorId;
+
+            ctx.strokeText(displayText, px + cellSize / 2, py + cellSize / 2);
+            ctx.fillText(displayText, px + cellSize / 2, py + cellSize / 2);
+          }
+        }
+      }
+
       if (showGrid) {
         ctx.strokeStyle = 'rgba(0,0,0,0.15)';
         ctx.lineWidth = 0.5;
         for (let x = 0; x <= pageW; x++) {
           ctx.beginPath();
-          ctx.moveTo(x * cellSize, offsetY);
-          ctx.lineTo(x * cellSize, offsetY + pageH * cellSize);
+          ctx.moveTo(patternOffsetX + x * cellSize, patternOffsetY);
+          ctx.lineTo(patternOffsetX + x * cellSize, patternOffsetY + pageH * cellSize);
           ctx.stroke();
         }
         for (let y = 0; y <= pageH; y++) {
           ctx.beginPath();
-          ctx.moveTo(0, y * cellSize + offsetY);
-          ctx.lineTo(pageW * cellSize, y * cellSize + offsetY);
+          ctx.moveTo(patternOffsetX, patternOffsetY + y * cellSize);
+          ctx.lineTo(patternOffsetX + pageW * cellSize, patternOffsetY + y * cellSize);
           ctx.stroke();
         }
       }
 
-      // 大网格线
       if (showMajorGrid) {
-        // 5x5 蓝线
-        ctx.strokeStyle = 'rgba(100,150,255,0.4)';
-        ctx.lineWidth = 1;
-        for (let x = 0; x <= pageW; x++) {
-          if ((startX + x) % 5 === 0) {
-            ctx.beginPath();
-            ctx.moveTo(x * cellSize, offsetY);
-            ctx.lineTo(x * cellSize, offsetY + pageH * cellSize);
-            ctx.stroke();
-          }
-        }
-        for (let y = 0; y <= pageH; y++) {
-          if ((startY + y) % 5 === 0) {
-            ctx.beginPath();
-            ctx.moveTo(0, y * cellSize + offsetY);
-            ctx.lineTo(pageW * cellSize, y * cellSize + offsetY);
-            ctx.stroke();
-          }
-        }
-
-        // 10x10 黑线
-        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.strokeStyle = 'rgba(0,0,0,0.78)';
         ctx.lineWidth = 1.5;
+        const guideOffsets = getPhysicalBoardGuideOffsets(physicalBoardSize);
+
         for (let x = 0; x <= pageW; x++) {
-          if ((startX + x) % 10 === 0) {
+          if ((startX + x) % physicalBoardSize === 0) {
             ctx.beginPath();
-            ctx.moveTo(x * cellSize, offsetY);
-            ctx.lineTo(x * cellSize, offsetY + pageH * cellSize);
+            ctx.moveTo(patternOffsetX + x * cellSize, patternOffsetY);
+            ctx.lineTo(patternOffsetX + x * cellSize, patternOffsetY + pageH * cellSize);
             ctx.stroke();
           }
         }
         for (let y = 0; y <= pageH; y++) {
-          if ((startY + y) % 10 === 0) {
+          if ((startY + y) % physicalBoardSize === 0) {
             ctx.beginPath();
-            ctx.moveTo(0, y * cellSize + offsetY);
-            ctx.lineTo(pageW * cellSize, y * cellSize + offsetY);
+            ctx.moveTo(patternOffsetX, patternOffsetY + y * cellSize);
+            ctx.lineTo(patternOffsetX + pageW * cellSize, patternOffsetY + y * cellSize);
+            ctx.stroke();
+          }
+        }
+
+        for (const offset of guideOffsets) {
+          for (let boardStartX = Math.floor(startX / physicalBoardSize) * physicalBoardSize; boardStartX < endX; boardStartX += physicalBoardSize) {
+            const guideX = boardStartX + offset;
+            if (guideX <= startX || guideX >= endX) continue;
+            ctx.beginPath();
+            ctx.moveTo(patternOffsetX + (guideX - startX) * cellSize, patternOffsetY);
+            ctx.lineTo(patternOffsetX + (guideX - startX) * cellSize, patternOffsetY + pageH * cellSize);
+            ctx.stroke();
+          }
+          for (let boardStartY = Math.floor(startY / physicalBoardSize) * physicalBoardSize; boardStartY < endY; boardStartY += physicalBoardSize) {
+            const guideY = boardStartY + offset;
+            if (guideY <= startY || guideY >= endY) continue;
+            ctx.beginPath();
+            ctx.moveTo(patternOffsetX, patternOffsetY + (guideY - startY) * cellSize);
+            ctx.lineTo(patternOffsetX + pageW * cellSize, patternOffsetY + (guideY - startY) * cellSize);
             ctx.stroke();
           }
         }
       }
 
-      // 坐标刻度
       if (showCoords) {
-        ctx.fillStyle = '#666';
-        ctx.font = `${Math.max(8, cellSize * 0.3)}px Arial, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        // X 轴
-        for (let x = 0; x < pageW; x += 5) {
-          ctx.fillText(`${startX + x + 1}`, x * cellSize + cellSize / 2, offsetY + pageH * cellSize + 2);
-        }
-        // Y 轴
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        for (let y = 0; y < pageH; y += 5) {
-          ctx.fillText(`${startY + y + 1}`, -2, y * cellSize + cellSize / 2 + offsetY);
-        }
+        drawCoordsAroundPattern(
+          ctx,
+          patternOffsetX,
+          patternOffsetY,
+          patternWidth,
+          patternHeight,
+          pageW,
+          pageH,
+          cellSize,
+          physicalBoardSize,
+          coordFontSize,
+          coordGutters,
+          startX,
+          startY,
+        );
       }
+
+      ctx.strokeStyle = 'rgba(53, 36, 92, 0.32)';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(patternOffsetX, patternOffsetY, patternWidth, patternHeight);
 
       pages.push({
         canvas,
@@ -1438,3 +1606,5 @@ export default {
   exportBeadPattern,
   generateBeadList,
 };
+
+

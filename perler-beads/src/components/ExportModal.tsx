@@ -1,15 +1,71 @@
-import React, { useMemo, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Download, FileImage, Image, X } from '@phosphor-icons/react';
 import { colors, radius, shadows, typography } from '../styles/designSystem';
+import { useToast } from './Toast';
 import {
   BeadPixelData,
   renderBeadsPaginated,
   renderBeadsToCanvas,
   renderBeadsToCanvasWithList,
 } from '../services/colorMatchService';
-import { getAllBoardOptions, recommendBoard } from '../services/boardService';
+import { BOARD_SPECS, recommendBoard } from '../services/boardService';
 import { adService } from '../services/adService';
+
+const EXPORT_MAX_DIMENSION = 32767;
+const EXPORT_MAX_AREA = 268000000;
+
+const getSafeExportCellSize = (
+  width: number,
+  height: number,
+  requestedCellSize: number,
+) => {
+  const maxByDimension = Math.floor(
+    EXPORT_MAX_DIMENSION / Math.max(1, Math.max(width, height)),
+  );
+  const maxByArea = Math.floor(
+    Math.sqrt(EXPORT_MAX_AREA / Math.max(1, width * height)),
+  );
+  return Math.max(
+    4,
+    Math.min(requestedCellSize, maxByDimension || requestedCellSize, maxByArea || requestedCellSize),
+  );
+};
+
+const downloadCanvasAsPng = async (canvas: HTMLCanvasElement, filename: string) => {
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((nextBlob) => resolve(nextBlob), 'image/png');
+  });
+  if (!blob) {
+    throw new Error('导出失败：浏览器未能生成图片数据');
+  }
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = url;
+    link.click();
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+};
+
+const buildExportRetryCellSizes = (
+  width: number,
+  height: number,
+  requestedCellSize: number,
+) => {
+  const safeCellSize = getSafeExportCellSize(width, height, requestedCellSize);
+  const retryFactors = [1, 0.92, 0.85, 0.75, 0.65, 0.55, 0.45, 0.35];
+  const sizes = retryFactors
+    .map((factor) => Math.max(4, Math.floor(safeCellSize * factor)))
+    .filter((size, index, list) => list.indexOf(size) === index)
+    .sort((a, b) => b - a);
+  if (sizes[sizes.length - 1] !== 4) {
+    sizes.push(4);
+  }
+  return sizes;
+};
 
 interface ExportModalProps {
   visible: boolean;
@@ -34,6 +90,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
   beadData,
   onNeedRewardUnlock,
 }) => {
+  const toast = useToast();
   const [selectedOption, setSelectedOption] = useState<ExportOption['id']>('hd');
   const [isExporting, setIsExporting] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
@@ -44,7 +101,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
 
   const smartBoard = useMemo(
     () => recommendBoard(beadData.width, beadData.height),
-    [beadData.width, beadData.height]
+    [beadData.width, beadData.height],
   );
   const [boardSize, setBoardSize] = useState(smartBoard.boardSize);
 
@@ -55,7 +112,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
     {
       id: 'small',
       label: '小图',
-      description: `${patternWidth * 10}x${patternHeight * 10}px · 快速分享`,
+      description: `${patternWidth * 10}x${patternHeight * 10}px · 快速预览或临时分享`,
       cellSize: 10,
       icon: Image,
       color: colors.bead.green,
@@ -63,7 +120,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
     {
       id: 'standard',
       label: '标准',
-      description: `${patternWidth * 20}x${patternHeight * 20}px · 日常使用`,
+      description: `${patternWidth * 20}x${patternHeight * 20}px · 日常查看与普通保存`,
       cellSize: 20,
       icon: FileImage,
       color: colors.bead.cyan,
@@ -71,7 +128,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
     {
       id: 'hd',
       label: '高清',
-      description: `${patternWidth * 40}x${patternHeight * 40}px · 适合打印`,
+      description: `${patternWidth * 40}x${patternHeight * 40}px · 适合打印与精细对照`,
       cellSize: 40,
       icon: FileImage,
       color: colors.bead.purple,
@@ -80,7 +137,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
     {
       id: 'ultra',
       label: '超高清',
-      description: `${patternWidth * 80}x${patternHeight * 80}px · 高质量打印`,
+      description: `${patternWidth * 80}x${patternHeight * 80}px · 高质量打印版`,
       cellSize: 80,
       icon: FileImage,
       color: colors.bead.pink,
@@ -88,22 +145,34 @@ const ExportModal: React.FC<ExportModalProps> = ({
     {
       id: 'max',
       label: '极清',
-      description: `${patternWidth * 100}x${patternHeight * 100}px · 海报级输出`,
+      description: `${patternWidth * 100}x${patternHeight * 100}px · 超大图纸输出`,
       cellSize: 100,
       icon: FileImage,
       color: colors.bead.orange,
     },
   ];
 
-  const currentOption = exportOptions.find((opt) => opt.id === selectedOption) || exportOptions[1];
+  const currentOption = exportOptions.find((opt) => opt.id === selectedOption) || exportOptions[2];
 
   const estimateFileSize = (cellSize: number): string => {
-    const pixels = patternWidth * cellSize * patternHeight * cellSize;
+    const safeCellSize = getSafeExportCellSize(patternWidth, patternHeight, cellSize);
+    const pixels = patternWidth * safeCellSize * patternHeight * safeCellSize;
     const estimatedBytes = pixels * 0.5;
     if (estimatedBytes < 1024) return `${Math.round(estimatedBytes)} B`;
     if (estimatedBytes < 1024 * 1024) return `${Math.round(estimatedBytes / 1024)} KB`;
     return `${(estimatedBytes / 1024 / 1024).toFixed(1)} MB`;
   };
+
+  const getEffectiveCellSize = (cellSize: number) =>
+    getSafeExportCellSize(patternWidth, patternHeight, cellSize);
+
+  const ultraEffectiveCellSize = getEffectiveCellSize(
+    exportOptions.find((item) => item.id === 'ultra')?.cellSize ?? 80,
+  );
+  const maxEffectiveCellSize = getEffectiveCellSize(
+    exportOptions.find((item) => item.id === 'max')?.cellSize ?? 100,
+  );
+  const ultraAndMaxEquivalent = ultraEffectiveCellSize === maxEffectiveCellSize;
 
   const paginatedPageCount = paginateMode
     ? Math.ceil(patternWidth / boardSize) * Math.ceil(patternHeight / boardSize)
@@ -132,47 +201,87 @@ const ExportModal: React.FC<ExportModalProps> = ({
     setIsExporting(true);
     try {
       const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const retryCellSizes = buildExportRetryCellSizes(
+        patternWidth,
+        patternHeight,
+        currentOption.cellSize,
+      );
+      let successfulCellSize: number | null = null;
       if (paginateMode) {
-        const pages = renderBeadsPaginated(beadData, currentOption.cellSize, boardSize, {
-          showGrid,
-          showCoords,
-          showMajorGrid,
-        });
+        let lastError: unknown = null;
+        for (const cellSize of retryCellSizes) {
+          try {
+            const pages = renderBeadsPaginated(beadData, cellSize, boardSize, {
+              showGrid,
+              showCoords,
+              showMajorGrid,
+              showColorCode: true,
+            });
 
-        for (const page of pages) {
-          const link = document.createElement('a');
-          link.download = `perler-${patternWidth}x${patternHeight}-p${page.pageIndex + 1}of${page.totalPages}-${timestamp}.png`;
-          link.href = page.canvas.toDataURL('image/png');
-          link.click();
-          await new Promise((resolve) => setTimeout(resolve, 200));
+            for (const page of pages) {
+              await downloadCanvasAsPng(
+                page.canvas,
+                `perler-${patternWidth}x${patternHeight}-p${page.pageIndex + 1}of${page.totalPages}-${timestamp}.png`,
+              );
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+            successfulCellSize = cellSize;
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        if (!successfulCellSize) {
+          throw lastError || new Error('导出失败：浏览器无法生成分页图纸');
         }
       } else {
-        const canvas = document.createElement('canvas');
-        if (showBeadList) {
-          renderBeadsToCanvasWithList(
-            beadData,
-            canvas,
-            currentOption.cellSize,
-            showGrid,
-            showCoords,
-            showMajorGrid,
-            true
-          );
-        } else {
-          renderBeadsToCanvas(
-            beadData,
-            canvas,
-            currentOption.cellSize,
-            showGrid,
-            showCoords,
-            showMajorGrid
-          );
+        let lastError: unknown = null;
+        for (const cellSize of retryCellSizes) {
+          try {
+            const canvas = document.createElement('canvas');
+            if (showBeadList) {
+              renderBeadsToCanvasWithList(
+                beadData,
+                canvas,
+                cellSize,
+                showGrid,
+                true,
+                showMajorGrid,
+                true,
+                { showCoords, boardSize },
+              );
+            } else {
+              renderBeadsToCanvas(
+                beadData,
+                canvas,
+                cellSize,
+                showGrid,
+                true,
+                showMajorGrid,
+                { showCoords, boardSize },
+              );
+            }
+            await downloadCanvasAsPng(
+              canvas,
+              `perler-${patternWidth}x${patternHeight}-${currentOption.id}-${timestamp}.png`,
+            );
+            successfulCellSize = cellSize;
+            break;
+          } catch (error) {
+            lastError = error;
+          }
         }
+        if (!successfulCellSize) {
+          throw lastError || new Error('导出失败：浏览器无法生成图片');
+        }
+      }
 
-        const link = document.createElement('a');
-        link.download = `perler-${patternWidth}x${patternHeight}-${currentOption.id}-${timestamp}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
+      const declaredCellSize = getEffectiveCellSize(currentOption.cellSize);
+      if (successfulCellSize && successfulCellSize < declaredCellSize) {
+        toast.warning(
+          `当前图案过大，已自动按每格 ${successfulCellSize}px 安全导出。若需要更清楚的图纸，建议使用分页打印版。`,
+          5000,
+        );
       }
 
       setTimeout(() => {
@@ -181,6 +290,11 @@ const ExportModal: React.FC<ExportModalProps> = ({
       }, 300);
     } catch (error) {
       console.error('导出失败:', error);
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : '导出失败：当前图案过大，请尝试降低清晰度或改用分页打印版。';
+      toast.error(message, 5000);
       setIsExporting(false);
     }
   };
@@ -191,7 +305,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
-          <h2 style={styles.title}>导出图案</h2>
+          <h2 style={styles.title}>导出图纸</h2>
           <button style={styles.closeBtn} onClick={onClose}>
             <X size={18} weight="bold" />
           </button>
@@ -199,7 +313,13 @@ const ExportModal: React.FC<ExportModalProps> = ({
 
         <div style={styles.content}>
           <section style={styles.section}>
-            <h3 style={styles.sectionTitle}>选择分辨率</h3>
+            <h3 style={styles.sectionTitle}>导出清晰度</h3>
+            <p style={styles.sectionDesc}>高清和分页打印版更适合真正照着做，普通导出适合临时查看。</p>
+            {ultraAndMaxEquivalent ? (
+              <p style={styles.precisionHint}>
+                当前图案尺寸较大，`超高清` 与 `极清` 的实际导出精度相同，继续提高档位不会再增加清晰度。
+              </p>
+            ) : null}
             <div style={styles.optionList}>
               {exportOptions.map((option) => (
                 <button
@@ -226,7 +346,9 @@ const ExportModal: React.FC<ExportModalProps> = ({
                       {option.recommended ? <span style={styles.recommendTag}>推荐</span> : null}
                     </div>
                     <span style={styles.optionDesc}>{option.description}</span>
-                    <span style={styles.optionMeta}>预计文件大小：{estimateFileSize(option.cellSize)}</span>
+                    <span style={styles.optionMeta}>
+                      实际导出精度：每格 {getEffectiveCellSize(option.cellSize)} px · 预计文件大小：{estimateFileSize(option.cellSize)}
+                    </span>
                   </div>
                   {selectedOption === option.id ? (
                     <span style={{ ...styles.checkedIcon, background: option.color }}>
@@ -239,7 +361,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
           </section>
 
           <section style={styles.section}>
-            <h3 style={styles.sectionTitle}>导出选项</h3>
+            <h3 style={styles.sectionTitle}>导出内容</h3>
             <div style={styles.switchList}>
               <label style={styles.switchItem}>
                 <span style={styles.switchLabel}>显示网格线</span>
@@ -250,7 +372,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
                 <input type="checkbox" checked={showCoords} onChange={(e) => setShowCoords(e.target.checked)} />
               </label>
               <label style={styles.switchItem}>
-                <span style={styles.switchLabel}>显示大网格线（5x5/10x10）</span>
+                <span style={styles.switchLabel}>显示现实豆板分区线</span>
                 <input
                   type="checkbox"
                   checked={showMajorGrid}
@@ -258,7 +380,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
                 />
               </label>
               <label style={styles.switchItem}>
-                <span style={styles.switchLabel}>显示豆子清单</span>
+                <span style={styles.switchLabel}>附带珠子清单</span>
                 <input
                   type="checkbox"
                   checked={showBeadList}
@@ -266,7 +388,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
                 />
               </label>
               <label style={styles.switchItem}>
-                <span style={styles.switchLabel}>按拼豆板分页导出</span>
+                <span style={styles.switchLabel}>按拼豆板分页导出（打印版）</span>
                 <input
                   type="checkbox"
                   checked={paginateMode}
@@ -278,7 +400,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
 
           {paginateMode ? (
             <section style={styles.section}>
-              <h3 style={styles.sectionTitle}>分页设置</h3>
+              <h3 style={styles.sectionTitle}>分页打印设置</h3>
               <div style={styles.pageSetting}>
                 <label style={styles.pageSettingLabel}>拼豆板规格</label>
                 <select
@@ -286,9 +408,9 @@ const ExportModal: React.FC<ExportModalProps> = ({
                   onChange={(e) => setBoardSize(Number(e.target.value))}
                   style={styles.select}
                 >
-                  {getAllBoardOptions().map((item) => (
+                  {BOARD_SPECS.map((item) => (
                     <option key={item.size} value={item.size}>
-                      {item.name}
+                      {item.label}
                     </option>
                   ))}
                 </select>
@@ -303,12 +425,12 @@ const ExportModal: React.FC<ExportModalProps> = ({
         <div style={styles.footer}>
           <button style={styles.exportBtn} onClick={handleExport} disabled={isExporting}>
             <Download size={16} weight="bold" />
-            <span>{isExporting ? '导出中...' : '导出图片'}</span>
+            <span>{isExporting ? '导出中...' : paginateMode ? '导出打印版图纸' : '导出图片'}</span>
           </button>
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 };
 
@@ -378,6 +500,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.text.primary,
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.semibold,
+  },
+  sectionDesc: {
+    margin: '2px 0 0',
+    fontSize: 12,
+    color: colors.text.secondary,
+    lineHeight: 1.5,
+  },
+  precisionHint: {
+    margin: '2px 0 0',
+    fontSize: 12,
+    color: colors.bead.orange,
+    lineHeight: 1.5,
   },
   optionList: {
     display: 'flex',

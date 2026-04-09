@@ -65,8 +65,10 @@ export interface EditorStateData {
 interface EditorResumeDraft extends EditorStateData {
   beadData?: BeadPixelData;
   initialBeadData?: BeadPixelData | null;
+  regeneratedBaseData?: BeadPixelData | null;
   saturationBoost?: number;
   vibrancyPreference?: number;
+  isHorizontallyMirrored?: boolean;
   pendingAction?: 'startMaking';
 }
 
@@ -75,12 +77,35 @@ type RemovedBackgroundCell = {
   bead: NonNullable<BeadPixelData['beads'][number]>;
 };
 
+type ManualEditPatch = {
+  index: number;
+  bead: BeadPixelData['beads'][number];
+};
+
 type BackgroundManualSelection = {
   seedIndex: number;
   colorId: string;
 };
 
 type BackgroundEditMode = 'select' | 'view' | 'erase' | 'restore';
+
+const applyHorizontalMirrorToBeadData = (data: BeadPixelData): BeadPixelData => {
+  const { width, height, beads } = data;
+  const nextBeads = new Array(beads.length).fill(null);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const sourceIndex = y * width + x;
+      const targetIndex = y * width + (width - 1 - x);
+      nextBeads[targetIndex] = beads[sourceIndex];
+    }
+  }
+
+  return {
+    ...data,
+    beads: nextBeads,
+  };
+};
 
 
 
@@ -113,6 +138,7 @@ const SATURATION_PRESETS = [
 ];
 
 const EDITOR_RESUME_DRAFT_KEY = 'editorResumeDraft';
+const BACKGROUND_MODE_HINT_DISMISSED_KEY = 'editorBackgroundModeHintDismissed';
 
 const normalizeGridSize = (value: number) => {
 
@@ -186,6 +212,113 @@ const mapIndicesFromReferenceGrid = (
   return mappedIndices;
 };
 
+const mapTransparentIndicesBetweenGrids = (
+  referenceData: BeadPixelData,
+  targetData: BeadPixelData,
+  referenceIndices: number[],
+  threshold: number = 0.18
+): number[] => {
+  if (
+    referenceData.width === targetData.width &&
+    referenceData.height === targetData.height
+  ) {
+    return referenceIndices;
+  }
+
+  const referenceSet = new Set(referenceIndices);
+  const mappedIndices: number[] = [];
+
+  for (let targetY = 0; targetY < targetData.height; targetY += 1) {
+    const refYStart = Math.floor((targetY / targetData.height) * referenceData.height);
+    const refYEnd = Math.max(
+      refYStart + 1,
+      Math.ceil(((targetY + 1) / targetData.height) * referenceData.height)
+    );
+
+    for (let targetX = 0; targetX < targetData.width; targetX += 1) {
+      const targetIndex = targetY * targetData.width + targetX;
+      const refXStart = Math.floor((targetX / targetData.width) * referenceData.width);
+      const refXEnd = Math.max(
+        refXStart + 1,
+        Math.ceil(((targetX + 1) / targetData.width) * referenceData.width)
+      );
+
+      let total = 0;
+      let matched = 0;
+
+      for (let refY = refYStart; refY < refYEnd; refY += 1) {
+        for (let refX = refXStart; refX < refXEnd; refX += 1) {
+          const refIndex = refY * referenceData.width + refX;
+          total += 1;
+          if (referenceSet.has(refIndex)) {
+            matched += 1;
+          }
+        }
+      }
+
+      if (total > 0 && matched / total >= threshold) {
+        mappedIndices.push(targetIndex);
+      }
+    }
+  }
+
+  return mappedIndices;
+};
+
+const areBeadsEquivalent = (
+  left: BeadPixelData['beads'][number],
+  right: BeadPixelData['beads'][number]
+): boolean => {
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+  return left.id === right.id && left.hex === right.hex;
+};
+
+const collectManualEditPatches = (
+  currentData: BeadPixelData,
+  baseData: BeadPixelData | null
+): ManualEditPatch[] => {
+  if (!baseData) return [];
+
+  return currentData.beads
+    .map((bead, index) => {
+      const baseBead = baseData.beads[index];
+      if (areBeadsEquivalent(bead, baseBead)) {
+        return null;
+      }
+
+      return {
+        index,
+        bead,
+      };
+    })
+    .filter((item): item is ManualEditPatch => Boolean(item));
+};
+
+const applyMappedManualEditPatches = (
+  referenceData: BeadPixelData,
+  targetData: BeadPixelData,
+  patches: ManualEditPatch[]
+): BeadPixelData => {
+  if (patches.length === 0) {
+    return targetData;
+  }
+
+  const nextBeads = [...targetData.beads];
+
+  patches.forEach(({ index, bead }) => {
+    const mappedIndices = mapTransparentIndicesBetweenGrids(referenceData, targetData, [index], 0.22);
+    mappedIndices.forEach((mappedIndex) => {
+      nextBeads[mappedIndex] = bead ? { ...bead } : null;
+    });
+  });
+
+  return {
+    ...targetData,
+    beads: nextBeads,
+  };
+};
+
 const collectManualLikeBackgroundRegion = (
   beadData: BeadPixelData,
   seedIndex: number,
@@ -197,6 +330,17 @@ const collectManualLikeBackgroundRegion = (
   if (!seedBead) return [];
 
   const { width, height, beads } = beadData;
+  const seedX = seedIndex % width;
+  const seedY = Math.floor(seedIndex / width);
+  const edgeDistance = Math.min(seedX, width - 1 - seedX, seedY, height - 1 - seedY);
+  const isInteriorSeed = edgeDistance > 3;
+  const effectiveStrictThresholds = isInteriorSeed
+    ? { seed: 28, average: 22, brightness: 22 }
+    : strictThresholds;
+  const effectiveRelaxedThresholds = isInteriorSeed
+    ? { seed: 38, average: 30, brightness: 26 }
+    : relaxedThresholds;
+  const effectiveMinStrictRegionSize = isInteriorSeed ? 10 : minStrictRegionSize;
 
   const calcDistance = (source: [number, number, number], target: [number, number, number]) => {
     const redDiff = source[0] - target[0];
@@ -210,7 +354,8 @@ const collectManualLikeBackgroundRegion = (
   const runFloodFill = (
     seedDistanceThreshold: number,
     averageDistanceThreshold: number,
-    brightnessTolerance: number
+    brightnessTolerance: number,
+    useDiagonalNeighbors: boolean
   ): number[] => {
     const visited = new Set<number>([seedIndex]);
     const queue: number[] = [seedIndex];
@@ -236,16 +381,21 @@ const collectManualLikeBackgroundRegion = (
 
       const x = index % width;
       const y = Math.floor(index / width);
-      const neighbors = [
+      const orthogonalNeighbors = [
         x > 0 ? index - 1 : -1,
         x < width - 1 ? index + 1 : -1,
         y > 0 ? index - width : -1,
         y < height - 1 ? index + width : -1,
-        x > 0 && y > 0 ? index - width - 1 : -1,
-        x < width - 1 && y > 0 ? index - width + 1 : -1,
-        x > 0 && y < height - 1 ? index + width - 1 : -1,
-        x < width - 1 && y < height - 1 ? index + width + 1 : -1,
       ];
+      const diagonalNeighbors = useDiagonalNeighbors
+        ? [
+            x > 0 && y > 0 ? index - width - 1 : -1,
+            x < width - 1 && y > 0 ? index - width + 1 : -1,
+            x > 0 && y < height - 1 ? index + width - 1 : -1,
+            x < width - 1 && y < height - 1 ? index + width + 1 : -1,
+          ]
+        : [];
+      const neighbors = [...orthogonalNeighbors, ...diagonalNeighbors];
 
       neighbors.forEach((nextIndex) => {
         if (nextIndex < 0 || visited.has(nextIndex)) return;
@@ -272,19 +422,25 @@ const collectManualLikeBackgroundRegion = (
   };
 
   const strictResult = runFloodFill(
-    strictThresholds.seed,
-    strictThresholds.average,
-    strictThresholds.brightness
+    effectiveStrictThresholds.seed,
+    effectiveStrictThresholds.average,
+    effectiveStrictThresholds.brightness,
+    !isInteriorSeed
   );
 
-  if (strictResult.length >= minStrictRegionSize) {
+  if (strictResult.length >= effectiveMinStrictRegionSize) {
+    return strictResult;
+  }
+
+  if (isInteriorSeed && strictResult.length > 0) {
     return strictResult;
   }
 
   return runFloodFill(
-    relaxedThresholds.seed,
-    relaxedThresholds.average,
-    relaxedThresholds.brightness
+    effectiveRelaxedThresholds.seed,
+    effectiveRelaxedThresholds.average,
+    effectiveRelaxedThresholds.brightness,
+    !isInteriorSeed
   );
 };
 
@@ -363,6 +519,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const interactiveCanvasRef = useRef<InteractiveCanvasHandle>(null);
   const bgInteractiveCanvasRef = useRef<InteractiveCanvasHandle>(null);
+  const saveAbortControllerRef = useRef<AbortController | null>(null);
 
   const savedScrollPosition = useRef<number>(0);
 
@@ -460,6 +617,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const [isEditMode, setIsEditMode] = useState(false);
   const [isEditPanelClosing, setIsEditPanelClosing] = useState(false);
   const [initialBeadData, setInitialBeadData] = useState<BeadPixelData | null>(null);
+  const [regeneratedBaseData, setRegeneratedBaseData] = useState<BeadPixelData | null>(null);
+  const processRequestIdRef = useRef(0);
 
   const [showSaveModal, setShowSaveModal] = useState(false); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸閻忕偠顕ч埀顒佺箞閻涱喗绗熼埀顒勭嵁閹烘绠ｆ繝闈涙－濞笺儵姊婚崒娆戭槮闁圭⒈鍋婇幆澶嬬附缁嬭法鐛ラ梺鍝勭▉閸樺ジ鎷戦悢鍏肩厪濠电偟鍋撳▍鍡涙煕鐎ｎ亜顏柡灞剧☉閳藉顫滈崼婵嗩潬濠电偛顕崢褏鈧碍婢橀～蹇斻偊鐟併倓姹楅梺鍦劋缁诲啴藟閺嶎厽鈷戠紒瀣硶缁犳煡鏌ㄩ弴妯虹仼妞ゆ洩缍侀、鏇㈡晝閳ь剛绮绘繝姘仯闁搞儜鍐獓濡炪們鍎茬换鍫濐潖濞差亝顥堟繛鎴炶壘椤ｅ搫鈹戦埥鍡椾簼妞ゃ劌锕妴渚€寮崼婵嬪敹闂佸搫娲ㄩ崯鍧楀箯濞差亝鐓熼柣妯哄帠閼割亪鏌涢弬璺ㄧ劯鐎殿喗鎮傞獮瀣晜閻ｅ苯骞愰梺璇插嚱缂嶅棙绂嶉崼鏇熷亗闁稿繒鈷堝▓?
   const [isSaving, setIsSaving] = useState(false); // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹诧紕鎷归敓鐘崇厱闊洦妫戦懓鍧楁寠閻斿吋鐓欓柟顖嗗懏鎲奸梺??
@@ -490,6 +649,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const [bgBaselineData, setBgBaselineData] = useState<BeadPixelData | null>(null);
   const [bgCompareMode, setBgCompareMode] = useState<'current' | 'before'>('current');
   const [bgPanMode, setBgPanMode] = useState(false);
+  const [isHorizontallyMirrored, setIsHorizontallyMirrored] = useState(false);
   const [resumeStartMakingAfterLogin, setResumeStartMakingAfterLogin] = useState(
     pendingResumeDraft?.pendingAction === 'startMaking' || Boolean(navigationState.resumeStartMaking)
   );
@@ -568,14 +728,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   ) => {
 
     if (!currentImageData) return;
+    const requestId = ++processRequestIdRef.current;
+    setIsProcessing(true);
 
-
-
-    if (!isRegenerate) {
-
-      setIsProcessing(true);
-
-    }
+    const currentTransparentIndices = beadData
+      ? beadData.beads
+          .map((bead, index) => (bead ? -1 : index))
+          .filter((index) => index >= 0)
+      : [];
+    const currentManualEditPatches =
+      isRegenerate && beadData
+        ? collectManualEditPatches(beadData, regeneratedBaseData)
+        : [];
 
 
 
@@ -638,7 +802,35 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
+      if (requestId !== processRequestIdRef.current) {
+        return;
+      }
+
+      if (isHorizontallyMirrored) {
+        beads = applyHorizontalMirrorToBeadData(beads);
+      }
+
+      if (isRegenerate && beadData && currentTransparentIndices.length > 0) {
+        const remappedTransparentIndices = mapTransparentIndicesBetweenGrids(
+          beadData,
+          beads,
+          currentTransparentIndices,
+          0.22
+        );
+
+        if (remappedTransparentIndices.length > 0) {
+          beads = applyTransparentIndices(beads, remappedTransparentIndices);
+        }
+      }
+
+      const nextBaseData = JSON.parse(JSON.stringify(beads)) as BeadPixelData;
+
+      if (isRegenerate && beadData && currentManualEditPatches.length > 0) {
+        beads = applyMappedManualEditPatches(beadData, beads, currentManualEditPatches);
+      }
+
       initializeBeadData(beads);
+      setRegeneratedBaseData(nextBaseData);
       setBgLastRemoval([]);
 
 
@@ -673,25 +865,27 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     } finally {
 
-      setIsProcessing(false);
-
-      requestAnimationFrame(() => {
+      if (requestId === processRequestIdRef.current) {
+        setIsProcessing(false);
 
         requestAnimationFrame(() => {
 
-          if (containerRef.current && savedScrollPosition.current > 0) {
+          requestAnimationFrame(() => {
 
-            containerRef.current.scrollTop = savedScrollPosition.current;
+            if (containerRef.current && savedScrollPosition.current > 0) {
 
-          }
+              containerRef.current.scrollTop = savedScrollPosition.current;
+
+            }
+
+          });
 
         });
-
-      });
+      }
 
     }
 
-  }, [currentImageData, gridSize, colorCount, simplifyLevel, saturationBoost, vibrancyPreference, activeCustomColorIds, initializeBeadData, currentColor, setCurrentColor]);
+  }, [activeCustomColorIds, colorCount, currentColor, currentImageData, gridSize, initializeBeadData, isHorizontallyMirrored, setCurrentColor, simplifyLevel, saturationBoost, vibrancyPreference, beadData, regeneratedBaseData]);
 
   const buildBackgroundDetectionData = useCallback(async (): Promise<BeadPixelData | null> => {
     if (!currentImageData || !beadData) {
@@ -809,6 +1003,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       setInitialBeadData(JSON.parse(JSON.stringify(pendingResumeDraft.beadData)));
 
     }
+
+    setIsHorizontallyMirrored(Boolean(pendingResumeDraft.isHorizontallyMirrored));
+    setRegeneratedBaseData(
+      pendingResumeDraft.regeneratedBaseData
+        ? JSON.parse(JSON.stringify(pendingResumeDraft.regeneratedBaseData))
+        : pendingResumeDraft.beadData
+          ? JSON.parse(JSON.stringify(pendingResumeDraft.beadData))
+          : null
+    );
 
   }, [beadData, initializeBeadData, pendingResumeDraft]);
 
@@ -1075,7 +1278,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-  const handleEnterBackgroundMode = useCallback(() => {
+  const openBackgroundMode = useCallback(() => {
 
     if (beadData) {
       setBgBaselineData(JSON.parse(JSON.stringify(beadData)));
@@ -1099,6 +1302,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setBgViewMode('select'); // 婵犵數濮甸鏍窗濡ゅ啯鏆滄俊銈呭暟閻瑩鏌熼悜姗嗘畷闁哄懏绻堥弻鏇＄疀鐎ｎ亖鍋撻弴銏犲嚑濞撴埃鍋撻柡宀€鍠栭獮鎴﹀箛闂堟稒顔勬繝纰樻閸嬪懘鏁冮姀銈呰摕闁哄洢鍨归柋鍥ㄧ節闂堟稒绁╂俊顐ゅ仜椤啴濡堕崨顖滎唶闂佺粯鐗滈崢褔锝炶箛鎾佹椽顢斿鍡樻珖闂備線娼х换鍡涘疾濠婂牆鐓濋柛顐犲劜閳锋垿寮堕悙鏉戭棆闁告柨绉归弻鐔兼偡閻楀牊鎮欏銈嗘穿缂嶄線銆佸Δ鍛妞ゆ劕鐟崶銊у幈闂佹枼鏅涢崰姘枔閵忕妴褰掑礂閸忕厧纰嶉梺瀹狀潐閸ㄥ潡宕洪妷鈺佸耿婵°倕鍟╃划鎾⒒娓氣偓閳ь剛鍋涢懟顖涙櫠椤斿墽妫紓浣靛灩楠炴ɑ绻涢幋鐘虫毈闁糕斁鍋?
 
   }, [beadData]);
+
+  const handleEnterBackgroundMode = useCallback(() => {
+    const dismissed = localStorage.getItem(BACKGROUND_MODE_HINT_DISMISSED_KEY) === '1';
+    if (!dismissed) {
+      localStorage.setItem(BACKGROUND_MODE_HINT_DISMISSED_KEY, '1');
+      toast.info('去背景会先处理明显背景，复杂边缘仍可能需要手动补几下。');
+    }
+    openBackgroundMode();
+  }, [openBackgroundMode]);
 
 
 
@@ -1267,6 +1479,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     setBgSelectionSource(null);
     setBgDetectionMessage('');
     setBgPanMode(false);
+    setBgCompareMode('current');
+    setBgBaselineData(null);
+    setBgViewMode('select');
+    setIsBackgroundMode(false);
 
   }, [beadData, getBgHighlightedIndices, setBeadData, saveToHistory]);
 
@@ -1472,6 +1688,16 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const applyMirrorTransform = useCallback((direction: 'horizontal' | 'vertical') => {
     if (!beadData) return;
+    if (isProcessing) {
+      toast.info('当前编辑结果还在更新，请稍候再镜像。');
+      return;
+    }
+
+    if (direction === 'horizontal') {
+      applyBeadDataChange(applyHorizontalMirrorToBeadData(beadData));
+      setIsHorizontallyMirrored((prev) => !prev);
+      return;
+    }
 
     const { width, height, beads } = beadData;
     const nextBeads = new Array(beads.length).fill(null);
@@ -1479,9 +1705,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const sourceIndex = y * width + x;
-        const targetX = direction === 'horizontal' ? width - 1 - x : x;
-        const targetY = direction === 'vertical' ? height - 1 - y : y;
-        const targetIndex = targetY * width + targetX;
+        const targetIndex = (height - 1 - y) * width + x;
         nextBeads[targetIndex] = beads[sourceIndex];
       }
     }
@@ -1490,7 +1714,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       ...beadData,
       beads: nextBeads,
     });
-  }, [applyBeadDataChange, beadData]);
+  }, [applyBeadDataChange, beadData, isProcessing, toast]);
 
   const bgRecoverableIndices = React.useMemo(
     () => {
@@ -1535,6 +1759,23 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     mediaQuery.addListener(updatePointerMode);
     return () => mediaQuery.removeListener(updatePointerMode);
   }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    if (isBackgroundMode) {
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [isBackgroundMode]);
 
   useEffect(() => {
     if (!beadData || !isBackgroundMode || bgSelectionSource !== 'auto') {
@@ -1651,6 +1892,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
         initialBeadData: initialBeadData ? JSON.parse(JSON.stringify(initialBeadData)) : null,
 
+        regeneratedBaseData: regeneratedBaseData ? JSON.parse(JSON.stringify(regeneratedBaseData)) : null,
+
+        isHorizontallyMirrored,
+
         pendingAction,
 
       };
@@ -1663,7 +1908,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [activeCustomColorIds, beadData, colorCount, currentImageData, gridSize, initialBeadData, saturationBoost, vibrancyPreference]);
+  }, [activeCustomColorIds, beadData, colorCount, currentImageData, gridSize, initialBeadData, isHorizontallyMirrored, regeneratedBaseData, saturationBoost, vibrancyPreference]);
 
 
 
@@ -1765,6 +2010,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   }, [beadData]);
 
+  const handleCancelSave = useCallback(() => {
+    if (isSaving) {
+      saveAbortControllerRef.current?.abort();
+      saveAbortControllerRef.current = null;
+      setIsSaving(false);
+      setShowSaveModal(false);
+      toast.info('已取消保存。');
+      return;
+    }
+    setShowSaveModal(false);
+  }, [isSaving, toast]);
+
 
 
   const handleSaveProject = async (name: string) => {
@@ -1778,7 +2035,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     }
 
 
-
+    saveAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    saveAbortControllerRef.current = abortController;
     setIsSaving(true);
     const thumbnail = generateThumbnail();
     const originalImage = imageData || thumbnail;
@@ -1797,9 +2056,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           const [thumbUrl, origUrl] = await Promise.all([
 
-            uploadApi.uploadImage(thumbnail, 'thumbnails'),
+            uploadApi.uploadImage(thumbnail, 'thumbnails', abortController.signal),
 
-            uploadApi.uploadImage(originalImage, 'originals'),
+            uploadApi.uploadImage(originalImage, 'originals', abortController.signal),
 
           ]);
 
@@ -1808,6 +2067,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
           originalImageUrl = origUrl;
 
         } catch (uploadError) {
+          if (abortController.signal.aborted) {
+            return;
+          }
 
           console.error('上传图片失败:', uploadError);
 
@@ -1843,7 +2105,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           },
 
-        });
+        }, abortController.signal);
 
 
 
@@ -1875,11 +2137,17 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     } catch (error) {
 
+      if (abortController.signal.aborted) {
+        return;
+      }
+
       console.error('保存方案异常:', error);
       saveToLocal(name, thumbnail, originalImage, { fromCloudFallback: true });
 
     } finally {
-
+      if (saveAbortControllerRef.current === abortController) {
+        saveAbortControllerRef.current = null;
+      }
       setIsSaving(false);
 
     }
@@ -1980,7 +2248,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     if (canUndo) {
 
-      if (!window.confirm('当前还有未保存的编辑结果，重新生成会覆盖这些修改，确定继续吗？')) {
+      if (!window.confirm('重新生成会按新的参数重新计算图案。已去背景区域会尽量保留，但其他手动编辑可能被覆盖，确定继续吗？')) {
 
         setGridSize(lastAppliedParamsRef.current.gridSize);
 
@@ -2028,7 +2296,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     if (canUndo) {
 
-      if (!window.confirm('当前还有未保存的编辑结果，重新生成会覆盖这些修改，确定继续吗？')) {
+      if (!window.confirm('重新生成会按新的参数重新计算图案。已去背景区域会尽量保留，但其他手动编辑可能被覆盖，确定继续吗？')) {
 
         setGridSize(lastAppliedParamsRef.current.gridSize);
 
@@ -2076,9 +2344,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   };
 
-  const handleApplyColorCount = (nextValue: number) => {
+  const handleAdjustGridSize = (delta: number) => {
+    handleRegenerateWithGridSize(gridSize + delta);
+  };
 
-    if (nextValue === colorCount) {
+  const handleApplyColorCount = (nextValue: number) => {
+    if (!useMyColors && nextValue === colorCount) {
 
       return;
 
@@ -2086,7 +2357,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     if (canUndo) {
 
-      if (!window.confirm('当前还有未保存的编辑结果，重新生成会覆盖这些修改，确定继续吗？')) {
+      if (!window.confirm('重新生成会按新的参数重新计算图案。已去背景区域会尽量保留，但其他手动编辑可能被覆盖，确定继续吗？')) {
 
         return;
 
@@ -2095,6 +2366,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     }
 
     setColorCount(nextValue);
+    setUseMyColors(false);
+    setActiveCustomColorIds(undefined);
 
     lastAppliedParamsRef.current = {
       gridSize,
@@ -2139,7 +2412,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     if (canUndo) {
 
-      if (!window.confirm('当前还有未保存的编辑结果，重新生成会覆盖这些修改，确定继续吗？')) {
+      if (!window.confirm('重新生成会按新的参数重新计算图案。已去背景区域会尽量保留，但其他手动编辑可能被覆盖，确定继续吗？')) {
 
         setGridSize(lastAppliedParamsRef.current.gridSize);
 
@@ -2185,14 +2458,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   };
 
-
-
-
-  const currentColorOption = colorCountOptions.find(opt => opt.count === colorCount);
-
-
-
-
   const handleToggleMyColors = () => {
 
     if (!useMyColors) {
@@ -2200,8 +2465,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       const selectedIds = myColorsService.getSelectedIds();
 
       if (selectedIds.length === 0) {
-
-        setShowMyColorsModal(true);
+        toast.info('请先点击“管理”选择个人色系。');
 
         return;
 
@@ -2241,32 +2505,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     });
 
   };
-
-
-
-  const handleApplyPaletteSettings = () => {
-
-    if (useMyColors) {
-
-      const selectedIds = myColorsService.getSelectedIds();
-
-      setActiveCustomColorIds(selectedIds.length > 0 ? selectedIds : undefined);
-
-      setMyColorCount(selectedIds.length);
-
-    } else {
-
-      setActiveCustomColorIds(undefined);
-
-    }
-
-    handleRegenerate();
-
-  };
-
-
-
-
 
 
   const dominantBrand = React.useMemo(() => {
@@ -2566,7 +2804,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                         <span style={styles.drawerPanelSummary}>
                           {useMyColors
                             ? <>当前仅使用我的颜色{myColorCount > 0 && <>，共 {myColorCount} 色</>}</>
-                            : <>当前 {colorCount} 色{myColorCount > 0 && <>，我的颜色 {myColorCount}</>}</>}
+                            : <>当前 {colorCount} 色</>}
                         </span>
                       </div>
                     </div>
@@ -2577,61 +2815,58 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                     </div>
                   </div>
 
-                  {!useMyColors ? (
-                    <>
-                      <div style={styles.colorCountTabs}>
-                        {colorCountOptions.map((opt) => (
-                          <button
-                            key={opt.count}
-                            style={{
-                              ...styles.colorCountTab,
-                              ...(colorCount === opt.count ? styles.colorCountTabActive : {}),
-                            }}
-                            onClick={() => handleApplyColorCount(opt.count)}
-                          >
-                            <span>{opt.label}</span>
-                          </button>
-                        ))}
+                  <div style={styles.paletteSection}>
+                    <div style={styles.paletteSectionHeader}>
+                      <span style={styles.paletteSectionTitle}>系统色系</span>
+                    </div>
+                    <div style={styles.colorCountTabs}>
+                      {colorCountOptions.map((opt) => (
+                        <button
+                          key={opt.count}
+                          style={{
+                            ...styles.colorCountTab,
+                            ...(!useMyColors && colorCount === opt.count ? styles.colorCountTabActive : {}),
+                          }}
+                          onClick={() => handleApplyColorCount(opt.count)}
+                        >
+                          <span>{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {useMyColors && (
+                      <div style={styles.paletteModeHint}>
+                        当前仅使用“我的颜色”生成，系统色数已停用。
                       </div>
-
-                      <div style={styles.paletteSettingsHint}>
-                        {currentColorOption?.description} · {currentColorOption?.detailDesc}
-                      </div>
-                    </>
-                  ) : (
-                    <div style={styles.paletteModeHint}>
-                      当前仅使用“我的颜色”生成，系统色数已停用。
-                    </div>
-                  )}
-
-                  <div style={styles.paletteSwitchRow}>
-                    <div style={styles.paletteSwitchInfo}>
-                      <span style={styles.paletteSwitchTitle}>我的颜色</span>
-                      {myColorCount > 0 && (
-                        <span style={styles.paletteSwitchBadge}>{myColorCount} 色</span>
-                      )}
-                    </div>
-                    <div style={styles.paletteSwitchActions}>
-                      <button style={styles.paletteManageBtn} onClick={() => setShowMyColorsModal(true)}>
-                        管理
-                      </button>
-                      <button
-                        style={{
-                          ...styles.paletteUseBtn,
-                          ...(useMyColors ? styles.paletteUseBtnActive : {}),
-                        }}
-                        onClick={handleToggleMyColors}
-                      >
-                        {useMyColors ? "已启用" : "启用"}
-                      </button>
-                    </div>
+                    )}
                   </div>
 
-                  {!useMyColors && (
-                    <button style={styles.applyPaletteBtn} onClick={handleApplyPaletteSettings}>
-                      应用当前色系设置
-                    </button>
-                  )}
+                  <div style={styles.paletteSection}>
+                    <div style={styles.paletteSectionHeader}>
+                      <span style={styles.paletteSectionTitle}>个人色系</span>
+                    </div>
+                    <div style={styles.paletteSwitchRow}>
+                      <div style={styles.paletteSwitchInfo}>
+                        <span style={styles.paletteSwitchTitle}>我的颜色</span>
+                        {myColorCount > 0 && (
+                          <span style={styles.paletteSwitchBadge}>{myColorCount} 色</span>
+                        )}
+                      </div>
+                      <div style={styles.paletteSwitchActions}>
+                        <button style={styles.paletteManageBtn} onClick={() => setShowMyColorsModal(true)}>
+                          管理
+                        </button>
+                        <button
+                          style={{
+                            ...styles.paletteUseBtn,
+                            ...(useMyColors ? styles.paletteUseBtnActive : {}),
+                          }}
+                          onClick={handleToggleMyColors}
+                        >
+                          启用
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -2690,6 +2925,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
             </>
           )}
+        {!isBackgroundMode && (
+        <>
         <div style={styles.controlPanel}>
           <div style={styles.controlItem}>
             <div style={styles.controlHeader}>
@@ -2806,6 +3043,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             保存并开始制作
           </button>
         </div>
+        </>
+        )}
 
       </div>
 
@@ -2838,28 +3077,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
         onSave={(selectedIds) => {
 
           setMyColorCount(selectedIds.length);
+          setActiveCustomColorIds(selectedIds.length > 0 ? selectedIds : undefined);
 
-          if (selectedIds.length > 0) {
-
-            setUseMyColors(true);
-
-            setActiveCustomColorIds(selectedIds);
-            lastAppliedParamsRef.current = {
-              gridSize,
-              saturationBoost,
-              vibrancyPreference,
-              colorCount,
-            };
-            processImage(true, {
-              colorCount,
-              customColorIds: selectedIds,
-            });
-
-          } else {
-
+          if (selectedIds.length === 0) {
             setUseMyColors(false);
-
-            setActiveCustomColorIds(undefined);
             lastAppliedParamsRef.current = {
               gridSize,
               saturationBoost,
@@ -2870,7 +3091,20 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               colorCount,
               customColorIds: undefined,
             });
+            return;
+          }
 
+          if (useMyColors) {
+            lastAppliedParamsRef.current = {
+              gridSize,
+              saturationBoost,
+              vibrancyPreference,
+              colorCount,
+            };
+            processImage(true, {
+              colorCount,
+              customColorIds: selectedIds,
+            });
           }
 
         }}
@@ -2895,7 +3129,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
         visible={showSaveModal}
         onSave={handleSaveProject}
         title="保存方案"
-        onCancel={() => setShowSaveModal(false)}
+        onCancel={handleCancelSave}
         message="给这份拼豆方案起个名字，方便稍后继续制作。"
         loading={isSaving}
         isLoggedIn={isLoggedIn}
@@ -2952,8 +3186,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       <Modal {...modalProps} />
 
-
-
       {/* 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇鐗堢厸鐎光偓鐎ｎ剛鐦堥悗瑙勬礃鐢帟鐏掗柣鐐寸▓閳ь剙鍘栨竟鏇㈡⒑閸濆嫮鈻夐柛瀣у亾闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噹缁愭稒绻濋悽闈浶㈤悗姘间簽濡叉劙寮撮姀鈾€鎷绘繛杈剧到閹芥粎绮旈悜妯镐簻闁靛闄勫畷宀€鈧娲橀〃鍛达綖濠婂牆鐒垫い鎺嗗亾妞ゆ洩缍侀、鏇㈡晝閳ь剛绮绘繝姘仯闁搞儜鍐獓濡炪們鍎茬换鍫濐潖濞差亝顥堟繛鎴炶壘椤ｅ搫鈹戦埥鍡椾簼妞ゃ劌锕妴渚€寮崼鐔锋疂闂佺绻愰幗婊呯不濮橆剦娓婚柕鍫濇婢ь剟鏌曢崶銊ф创鐎规洘鍨块獮妯虹暦閸ャ劍顔曢梻浣规偠閸庮噣寮查埡鍛哗闁靛ň鏅滈埛鎺楁煕鐏炲墽鎳勭紒浣哄缁绘稒寰勭€ｎ偆顦伴悗瑙勬磻閸楁娊鐛崶顒€绾ч柛顭戝枛濞堛倕鈹戦悩鍨毄濠殿喚鏁婚幊婵嬪礈瑜忔稉宥嗐亜閺嶎偄浠﹂柣鎾跺枛閺岀喐娼忛崜褍鍩岄悶姘哺濮婃椽宕崟顒€娅ら梺璇″枛閸婂灝顕ｆ繝姘櫢闁绘灏欓敍婊冣攽閳藉棗鐏ラ柕鍡忓亾闂佺顑嗛幑鍥ь嚕娴犲鏁冮柣鏃囨腹婢??*/}
 
       {isBackgroundMode && beadData && bgPreviewBeadData && (
@@ -2963,28 +3195,26 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               <ArrowLeft size={18} weight="bold" />
             </button>
             <span style={styles.bgModeTitle}>背景处理模式</span>
-            <span style={styles.bgModeCount}>
-              {bgSelectionSource === 'auto'
-                ? '已圈出 ' + getBgHighlightedIndices().length + ' 格背景'
-                : bgSelectionSource === 'manual' && bgManualSelections.length > 0
-                  ? '已选中 ' + getBgHighlightedIndices().length + ' 格'
-                  : '点击格子选择背景色'}
-            </span>
+            {getBgHighlightedIndices().length > 0 && (
+              <span style={styles.bgModeCount}>
+                {bgSelectionSource === 'auto'
+                  ? '已圈出 ' + getBgHighlightedIndices().length + ' 格背景'
+                  : '已选中 ' + getBgHighlightedIndices().length + ' 格'}
+              </span>
+            )}
           </div>
 
           <div style={styles.bgModePreview}>
-            {!isCoarsePointer && (
-              <button
-                style={{
-                  ...styles.bgModePreviewFloatingBtn,
-                  ...(bgPanMode ? styles.bgModePreviewFloatingBtnActive : {}),
-                }}
-                onClick={handleBgTogglePanMode}
-                aria-label={bgPanMode ? '切换到选背景' : '切换到移动画面'}
-              >
-                {bgPanMode ? '选背景' : '移动画面'}
-              </button>
-            )}
+            <button
+              style={{
+                ...styles.bgModePreviewFloatingBtn,
+                ...(bgPanMode ? styles.bgModePreviewFloatingBtnActive : {}),
+              }}
+              onClick={handleBgTogglePanMode}
+              aria-label={bgPanMode ? '切换到选背景' : '切换到移动画面'}
+            >
+              {bgPanMode ? '选背景' : '移动画面'}
+            </button>
             <InteractiveCanvas
               ref={bgInteractiveCanvasRef}
               beadData={bgPreviewBeadData}
@@ -3010,6 +3240,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               onPickColor={() => {}}
               showControls={false}
               onScaleChange={setPreviewZoom}
+              backgroundModeFillParent={true}
             />
           </div>
 
@@ -3058,24 +3289,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               </button>
             </div>
           </div>
-
-          {(bgDetectionMessage || bgLastRemoval.length > 0 || bgViewMode === 'view' || bgPanMode) && (
-            <div style={styles.bgModeHint}>
-              {bgDetectionMessage && (
-                <p style={styles.bgModeDetectionText}>{bgDetectionMessage}</p>
-              )}
-
-              {bgLastRemoval.length > 0 && (
-                <p style={styles.bgModeRecoveryHint}>虚线框表示可恢复的误删背景格，点格子可逐个恢复。</p>
-              )}
-
-              {bgViewMode === 'view' ? (
-                <p>当前是查看模式，不会修改图案。</p>
-              ) : bgPanMode ? (
-                <p>当前是移动画面模式，拖动画面查看别的位置。</p>
-              ) : null}
-            </div>
-          )}
 
           <div style={styles.bgModeActions}>
             <div style={styles.bgModePrimaryActionRow}>
@@ -3606,7 +3819,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   drawerPanelTitle: {
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.bold,
     color: editorCandy.text,
   },
@@ -4460,6 +4673,44 @@ const styles: Record<string, React.CSSProperties> = {
 
 
 
+  paletteSection: {
+
+    display: 'flex',
+
+    flexDirection: 'column',
+
+    gap: '10px',
+
+  },
+
+
+
+  paletteSectionHeader: {
+
+    display: 'flex',
+
+    alignItems: 'center',
+
+    justifyContent: 'space-between',
+
+  },
+
+
+
+  paletteSectionTitle: {
+
+    fontSize: typography.fontSize.sm,
+
+    fontWeight: typography.fontWeight.semibold,
+
+    color: editorCandy.text,
+
+    fontFamily: typography.fontFamilyAlt,
+
+  },
+
+
+
   paletteSwitchRow: {
 
     display: 'flex',
@@ -5306,13 +5557,15 @@ const styles: Record<string, React.CSSProperties> = {
 
     background: `linear-gradient(180deg, ${editorCandy.bg} 0%, ${editorCandy.bgSoft} 100%)`,
 
-    zIndex: 1200,
+    zIndex: 2147483646,
 
     display: 'flex',
 
     flexDirection: 'column',
 
-    paddingBottom: '156px',
+    height: '100dvh',
+    paddingBottom: '124px',
+    overflow: 'hidden',
 
   },
 
@@ -5324,13 +5577,14 @@ const styles: Record<string, React.CSSProperties> = {
 
     alignItems: 'center',
 
-    padding: '12px 16px',
+    padding: '10px 16px',
 
     background: "linear-gradient(145deg, " + colors.bead.magenta + "20, " + colors.bead.purple + "20)",
 
     borderBottom: "1px solid " + colors.bead.magenta + "40",
 
     gap: '12px',
+    flexShrink: 0,
 
   },
 
@@ -5386,7 +5640,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     color: editorCandy.textSoft,
 
-    padding: '4px 10px',
+    padding: '4px 8px',
 
     background: editorCandy.panel,
 
@@ -5398,7 +5652,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   bgModePreview: {
 
-    flex: 1,
+    flex: '1 1 auto',
     minHeight: 0,
 
     position: 'relative',
@@ -5409,9 +5663,9 @@ const styles: Record<string, React.CSSProperties> = {
 
     justifyContent: 'center',
 
-    padding: '16px',
+    padding: '12px 12px 8px',
 
-    overflow: 'auto',
+    overflow: 'hidden',
 
   },
 
@@ -5446,13 +5700,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   bgModeZoomPanel: {
-    padding: '10px 16px 12px',
+    padding: '8px 16px 10px',
     background: colors.bg.card,
     borderTop: '1px solid ' + colors.border.soft,
     borderBottom: '1px solid ' + colors.border.soft,
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
+    flexShrink: 0,
   },
 
 
@@ -5807,12 +6062,13 @@ const styles: Record<string, React.CSSProperties> = {
     background: colors.bg.secondary,
 
     borderTop: '1px solid ' + colors.border.soft,
+    flexShrink: 0,
     position: 'fixed',
     left: 0,
     right: 0,
-    bottom: 'calc(66px + env(safe-area-inset-bottom, 0px))',
-    zIndex: 1202,
-    boxShadow: '0 -10px 24px rgba(6, 12, 24, 0.28)',
+    bottom: 'calc(56px + env(safe-area-inset-bottom, 0px))',
+    zIndex: 2147483647,
+    boxShadow: '0 -8px 20px rgba(6, 12, 24, 0.12)',
 
   },
 

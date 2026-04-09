@@ -1,6 +1,7 @@
 ﻿import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
   useMemo,
@@ -8,6 +9,7 @@
 import {
   ArrowLeft,
   CheckCircle,
+  ShareNetwork,
   Eye,
   EyeSlash,
   Gear,
@@ -44,14 +46,19 @@ import {
 import BottomNav from "../../components/BottomNav";
 import {
   recommendBoard,
-  getPhysicalBoardDrawSize,
   getPhysicalBoardGuideOffsets,
+  getPhysicalBoardCenterOffset,
+  getPhysicalBoardBlockCoordinate,
+  getPhysicalBoardBlockRect,
+  getPhysicalBoardSegments,
 } from "../../services/boardService";
 import { getToken } from "../../services/api/authApi";
 import BannerAd from "../../components/ads/BannerAd";
 import RewardedUnlockModal from "../../components/ads/RewardedUnlockModal";
 import { adService } from "../../services/adService";
 import BoardVisionAssistModal from "../../components/BoardVisionAssistModal";
+import countBeadUsage from "../../services/beadUsageService";
+import beadInventoryService from "../../services/beadInventoryService";
 
 const COMMUNITY_MAKING_DRAFT_KEY = "community_making_bead_data";
 type CommunityMakingDraftPayload =
@@ -91,14 +98,85 @@ interface ReplaceHistoryState {
   selection: SelectionState;
 }
 
+type MakingViewMode = "traditional" | "singleBoard";
+
+interface BoardStatusMap {
+  [boardNumber: number]: boolean;
+}
+
 // 缩放阈值：大于该值时点击选颜色，否则选区块
 const ZOOM_THRESHOLD = 2.5;
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 6;
 const ZOOM_STEP = 0.1;
+const SAFE_MAX_CANVAS_DIMENSION = 12288;
+const SAFE_MAX_CANVAS_AREA = 48000000;
+const MAX_INTERNAL_RENDER_SCALE = 2.4;
+const MIN_INTERNAL_DPR = 0.5;
 
-// 区块大小（固定 10x10，匹配常见拼豆板网格）
-const BLOCK_SIZE = 10;
+const getSafeRenderMetrics = (
+  width: number,
+  height: number,
+  baseCellSize: number,
+  scale: number,
+) => {
+  const requestedRenderScale = Math.min(scale, MAX_INTERNAL_RENDER_SCALE);
+  let renderScale = requestedRenderScale;
+  const visualCellSize = baseCellSize * scale;
+  const visualCanvasWidth = width * visualCellSize;
+  const visualCanvasHeight = height * visualCellSize;
+  const renderCanvasWidth = width * baseCellSize * renderScale;
+  const renderCanvasHeight = height * baseCellSize * renderScale;
+
+  let dpr = Math.max(1, window.devicePixelRatio || 1);
+  const maxDimension = Math.max(renderCanvasWidth, renderCanvasHeight);
+  if (maxDimension * dpr > SAFE_MAX_CANVAS_DIMENSION) {
+    dpr = Math.min(dpr, SAFE_MAX_CANVAS_DIMENSION / maxDimension);
+  }
+  const estimatedArea = renderCanvasWidth * renderCanvasHeight * dpr * dpr;
+  if (estimatedArea > SAFE_MAX_CANVAS_AREA) {
+    dpr = Math.min(
+      dpr,
+      Math.sqrt(
+        SAFE_MAX_CANVAS_AREA /
+          Math.max(1, renderCanvasWidth * renderCanvasHeight),
+      ),
+    );
+  }
+  dpr = Math.max(MIN_INTERNAL_DPR, dpr);
+
+  const maxSafeRenderScaleByDimension =
+    SAFE_MAX_CANVAS_DIMENSION /
+    Math.max(1, Math.max(width, height) * baseCellSize * dpr);
+  const maxSafeRenderScaleByArea = Math.sqrt(
+    SAFE_MAX_CANVAS_AREA /
+      Math.max(1, width * height * baseCellSize * baseCellSize * dpr * dpr),
+  );
+  renderScale = Math.max(
+    MIN_SCALE,
+    Math.min(
+      renderScale,
+      maxSafeRenderScaleByDimension,
+      maxSafeRenderScaleByArea,
+    ),
+  );
+
+  const safeRenderCellSize = baseCellSize * renderScale;
+  const safeRenderCanvasWidth = width * safeRenderCellSize;
+  const safeRenderCanvasHeight = height * safeRenderCellSize;
+
+  return {
+    dpr,
+    renderScale,
+    visualCellSize,
+    safeRenderCellSize,
+    safeRenderCanvasWidth,
+    safeRenderCanvasHeight,
+    displayScale: Math.max(1, scale / Math.max(renderScale, 0.0001)),
+    visualCanvasWidth,
+    visualCanvasHeight,
+  };
+};
 
 /**
  * 制作辅助页面
@@ -110,6 +188,7 @@ const MakingPage: React.FC = () => {
   const toast = useToast();
   const { isLoggedIn, initUser } = useUserStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // 拖动和缩放相关状态
@@ -257,10 +336,24 @@ const MakingPage: React.FC = () => {
   const [translateY, setTranslateY] = useState(0);
   const scaleRef = useRef(1);
   const translateRef = useRef({ x: 0, y: 0 });
+  const [selectedCell, setSelectedCell] = useState<{ x: number; y: number } | null>(null);
   const [showColorId, setShowColorId] = useState(true);
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(canSpeak());
+  const [assistPackEnabled, setAssistPackEnabled] = useState(true);
+  const [focusCurrentBoard, setFocusCurrentBoard] = useState(true);
+  const [autoLocateSelection, setAutoLocateSelection] = useState(true);
+  const [viewMode, setViewMode] = useState<MakingViewMode>("traditional");
+  const [activeBoardNumber, setActiveBoardNumber] = useState(1);
+  const [boardStatusMap, setBoardStatusMap] = useState<BoardStatusMap>({});
+  const [singleBoardOverviewCollapsed, setSingleBoardOverviewCollapsed] = useState(false);
+  const [autoAdvanceOnBoardDone, setAutoAdvanceOnBoardDone] = useState(true);
+  const [singleBoardHydrated, setSingleBoardHydrated] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState<null | "preparing" | "shared" | "copied" | "unsupported">(null);
+  const [inventoryVersion, setInventoryVersion] = useState(0);
+  const [inventoryFeedback, setInventoryFeedback] = useState<string | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const singleBoardResumeAppliedRef = useRef(false);
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
 
@@ -288,6 +381,12 @@ const MakingPage: React.FC = () => {
   // 基础 cellSize
   const baseCellSize = 10;
 
+  const singleBoardStorageKey = useMemo(() => {
+    if (!beadData) return null;
+    const scope = projectId ? `project_${projectId}` : localProjectId ? `local_${localProjectId}` : `draft_${beadData.width}x${beadData.height}`;
+    return `making_single_board_state_${scope}`;
+  }, [beadData, localProjectId, projectId]);
+
   const cloneBeadData = useCallback((data: BeadPixelData): BeadPixelData => {
     return {
       ...data,
@@ -302,61 +401,6 @@ const MakingPage: React.FC = () => {
   useEffect(() => {
     translateRef.current = { x: translateX, y: translateY };
   }, [translateX, translateY]);
-
-  const clampTranslate = useCallback(
-    (nextScale: number, x: number, y: number) => {
-      if (!beadData || !wrapperRef.current) {
-        return { x, y };
-      }
-      const wrapperRect = wrapperRef.current.getBoundingClientRect();
-      const canvasWidth = beadData.width * baseCellSize * nextScale;
-      const canvasHeight = beadData.height * baseCellSize * nextScale;
-      const maxOffsetX = Math.max(0, (canvasWidth - wrapperRect.width) / 2);
-      const maxOffsetY = Math.max(0, (canvasHeight - wrapperRect.height) / 2);
-      return {
-        x: Math.min(maxOffsetX, Math.max(-maxOffsetX, x)),
-        y: Math.min(maxOffsetY, Math.max(-maxOffsetY, y)),
-      };
-    },
-    [beadData],
-  );
-
-  const commitTranslate = useCallback(
-    (nextScale: number, x: number, y: number) => {
-      const clamped = clampTranslate(nextScale, x, y);
-      translateRef.current = clamped;
-      setTranslateX(clamped.x);
-      setTranslateY(clamped.y);
-    },
-    [clampTranslate],
-  );
-
-  const applyScaleAtPoint = useCallback(
-    (rawScale: number, focalX: number, focalY: number) => {
-      const wrapper = wrapperRef.current;
-      if (!wrapper) return;
-      const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, rawScale));
-      const prevScale = scaleRef.current;
-      const ratio = nextScale / prevScale;
-      const centerX = wrapper.clientWidth / 2;
-      const centerY = wrapper.clientHeight / 2;
-      const prev = translateRef.current;
-      const nextX = ratio * prev.x + (1 - ratio) * (focalX - centerX);
-      const nextY = ratio * prev.y + (1 - ratio) * (focalY - centerY);
-      scaleRef.current = nextScale;
-      setScale(nextScale);
-      commitTranslate(nextScale, nextX, nextY);
-    },
-    [commitTranslate],
-  );
-
-  const shiftTranslate = useCallback(
-    (deltaX: number, deltaY: number) => {
-      const prev = translateRef.current;
-      commitTranslate(scaleRef.current, prev.x + deltaX, prev.y + deltaY);
-    },
-    [commitTranslate],
-  );
 
   // 初始化用户状态 + 登录保护
   useEffect(() => {
@@ -401,31 +445,58 @@ const MakingPage: React.FC = () => {
     return () => window.removeEventListener("resize", updateViewport);
   }, []);
 
-  useEffect(() => {
-    commitTranslate(
-      scaleRef.current,
-      translateRef.current.x,
-      translateRef.current.y,
-    );
-  }, [viewportHeight, beadData, commitTranslate]);
+  const physicalBoardSize = useMemo(() => {
+    if (!beadData) return 104;
+    return recommendBoard(beadData.width, beadData.height).boardSize;
+  }, [beadData]);
 
-  // 计算区块数量
-  const blocksX = beadData ? Math.ceil(beadData.width / BLOCK_SIZE) : 0;
-  const blocksY = beadData ? Math.ceil(beadData.height / BLOCK_SIZE) : 0;
+  const physicalBoardCols = useMemo(() => {
+    if (!beadData) return 1;
+    return Math.max(1, Math.ceil(beadData.width / physicalBoardSize));
+  }, [beadData, physicalBoardSize]);
+
+  const physicalBoardRows = useMemo(() => {
+    if (!beadData) return 1;
+    return Math.max(1, Math.ceil(beadData.height / physicalBoardSize));
+  }, [beadData, physicalBoardSize]);
+
+  const totalBoardCount = useMemo(() => physicalBoardCols * physicalBoardRows, [physicalBoardCols, physicalBoardRows]);
+
+  const physicalBoardSegments = useMemo(
+    () => getPhysicalBoardSegments(physicalBoardSize),
+    [physicalBoardSize],
+  );
+
+  const segmentsPerBoard = physicalBoardSegments.length;
+
+  // 计算区块数量（按现实豆板分区，而不是固定 10x10）
+  const blocksX = beadData ? physicalBoardCols * segmentsPerBoard : 0;
+  const blocksY = beadData ? physicalBoardRows * segmentsPerBoard : 0;
+
+  const getBlockRectBySelection = useCallback(
+    (blockX: number, blockY: number) => {
+      if (!beadData) return null;
+      return getPhysicalBoardBlockRect(
+        blockX,
+        blockY,
+        physicalBoardSize,
+        beadData.width,
+        beadData.height,
+      );
+    },
+    [beadData, physicalBoardSize],
+  );
 
   // 获取指定区块内某颜色的全部格子索引
   const getColorIndicesInBlock = useCallback(
     (colorHex: string, blockX: number, blockY: number): number[] => {
       if (!beadData) return [];
+      const rect = getBlockRectBySelection(blockX, blockY);
+      if (!rect) return [];
 
       const indices: number[] = [];
-      const startX = blockX * BLOCK_SIZE;
-      const startY = blockY * BLOCK_SIZE;
-      const endX = Math.min(startX + BLOCK_SIZE, beadData.width);
-      const endY = Math.min(startY + BLOCK_SIZE, beadData.height);
-
-      for (let y = startY; y < endY; y++) {
-        for (let x = startX; x < endX; x++) {
+      for (let y = rect.startY; y < rect.endY; y++) {
+        for (let x = rect.startX; x < rect.endX; x++) {
           const index = y * beadData.width + x;
           const bead = beadData.beads[index];
           if (bead && bead.hex === colorHex) {
@@ -435,7 +506,7 @@ const MakingPage: React.FC = () => {
       }
       return indices;
     },
-    [beadData],
+    [beadData, getBlockRectBySelection],
   );
 
   // 获取选中颜色在当前区块的数量
@@ -454,15 +525,136 @@ const MakingPage: React.FC = () => {
     return beadData.beads.filter((b) => b.hex === selection.colorHex).length;
   }, [beadData, selection.colorHex]);
 
-  const physicalBoardSize = useMemo(() => {
-    if (!beadData) return 104;
-    return getPhysicalBoardDrawSize(beadData.width, beadData.height);
-  }, [beadData]);
+  const boardRects = useMemo(() => {
+    if (!beadData) return [];
+    const rects: Array<{ boardNumber: number; startX: number; startY: number; endX: number; endY: number; boardCol: number; boardRow: number; }> = [];
+    for (let boardRow = 0; boardRow < physicalBoardRows; boardRow++) {
+      for (let boardCol = 0; boardCol < physicalBoardCols; boardCol++) {
+        const startX = boardCol * physicalBoardSize;
+        const startY = boardRow * physicalBoardSize;
+        rects.push({
+          boardNumber: boardRow * physicalBoardCols + boardCol + 1,
+          startX,
+          startY,
+          endX: Math.min(startX + physicalBoardSize, beadData.width),
+          endY: Math.min(startY + physicalBoardSize, beadData.height),
+          boardCol,
+          boardRow,
+        });
+      }
+    }
+    return rects;
+  }, [beadData, physicalBoardCols, physicalBoardRows, physicalBoardSize]);
 
-  const physicalBoardCols = useMemo(() => {
-    if (!beadData) return 1;
-    return Math.max(1, Math.ceil(beadData.width / physicalBoardSize));
-  }, [beadData, physicalBoardSize]);
+  const activeBoardRect = useMemo(() => {
+    return boardRects.find((item) => item.boardNumber === activeBoardNumber) || null;
+  }, [activeBoardNumber, boardRects]);
+
+  const displayBoardRect = useMemo(() => {
+    if (!beadData) return null;
+    if (viewMode === "singleBoard" && activeBoardRect) {
+      return activeBoardRect;
+    }
+    return {
+      boardNumber: 0,
+      startX: 0,
+      startY: 0,
+      endX: beadData.width,
+      endY: beadData.height,
+      boardCol: 0,
+      boardRow: 0,
+    };
+  }, [activeBoardRect, beadData, viewMode]);
+
+  const displayWidth = displayBoardRect
+    ? displayBoardRect.endX - displayBoardRect.startX
+    : 0;
+  const displayHeight = displayBoardRect
+    ? displayBoardRect.endY - displayBoardRect.startY
+    : 0;
+
+  const renderMaxScale = useMemo(() => MAX_SCALE, []);
+  const renderMetrics = useMemo(() => {
+    if (!displayBoardRect || displayWidth <= 0 || displayHeight <= 0) return null;
+    return getSafeRenderMetrics(displayWidth, displayHeight, baseCellSize, scale);
+  }, [displayBoardRect, displayHeight, displayWidth, scale]);
+  const renderDpr = renderMetrics?.dpr ?? 1;
+  const renderScale = renderMetrics?.renderScale ?? 1;
+  const safeRenderCellSize = renderMetrics?.safeRenderCellSize ?? baseCellSize;
+  const safeRenderCanvasWidth = renderMetrics?.safeRenderCanvasWidth ?? 0;
+  const safeRenderCanvasHeight = renderMetrics?.safeRenderCanvasHeight ?? 0;
+  const displayScale = renderMetrics?.displayScale ?? 1;
+
+  const clampTranslate = useCallback(
+    (nextScale: number, x: number, y: number) => {
+      if (!displayBoardRect || !wrapperRef.current || displayWidth <= 0 || displayHeight <= 0) {
+        return { x, y };
+      }
+      const wrapperRect = wrapperRef.current.getBoundingClientRect();
+      const canvasWidth = displayWidth * baseCellSize * nextScale;
+      const canvasHeight = displayHeight * baseCellSize * nextScale;
+      const maxOffsetX = Math.max(0, (canvasWidth - wrapperRect.width) / 2);
+      const maxOffsetY = Math.max(0, (canvasHeight - wrapperRect.height) / 2);
+      return {
+        x: Math.min(maxOffsetX, Math.max(-maxOffsetX, x)),
+        y: Math.min(maxOffsetY, Math.max(-maxOffsetY, y)),
+      };
+    },
+    [displayBoardRect, displayHeight, displayWidth],
+  );
+
+  const commitTranslate = useCallback(
+    (nextScale: number, x: number, y: number) => {
+      const clamped = clampTranslate(nextScale, x, y);
+      translateRef.current = clamped;
+      setTranslateX(clamped.x);
+      setTranslateY(clamped.y);
+    },
+    [clampTranslate],
+  );
+
+  const applyScaleAtPoint = useCallback(
+    (rawScale: number, focalX: number, focalY: number) => {
+      const wrapper = wrapperRef.current;
+      if (!wrapper) return;
+      const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, rawScale));
+      const prevScale = scaleRef.current;
+      const ratio = nextScale / prevScale;
+      const centerX = wrapper.clientWidth / 2;
+      const centerY = wrapper.clientHeight / 2;
+      const prev = translateRef.current;
+      const nextX = ratio * prev.x + (1 - ratio) * (focalX - centerX);
+      const nextY = ratio * prev.y + (1 - ratio) * (focalY - centerY);
+      scaleRef.current = nextScale;
+      setScale(nextScale);
+      commitTranslate(nextScale, nextX, nextY);
+    },
+    [commitTranslate, renderMaxScale],
+  );
+
+  useEffect(() => {
+    if (scaleRef.current <= renderMaxScale) return;
+    const wrapper = wrapperRef.current;
+    const focalX = wrapper ? wrapper.clientWidth / 2 : 0;
+    const focalY = wrapper ? wrapper.clientHeight / 2 : 0;
+    applyScaleAtPoint(renderMaxScale, focalX, focalY);
+  }, [applyScaleAtPoint, renderMaxScale]);
+
+  const shiftTranslate = useCallback(
+    (deltaX: number, deltaY: number) => {
+      const prev = translateRef.current;
+      commitTranslate(scaleRef.current, prev.x + deltaX, prev.y + deltaY);
+    },
+    [commitTranslate],
+  );
+
+  useEffect(() => {
+    commitTranslate(
+      scaleRef.current,
+      translateRef.current.x,
+      translateRef.current.y,
+    );
+  }, [viewportHeight, beadData, commitTranslate]);
 
   const getPhysicalBoardCoordinate = useCallback(
     (cellX: number, cellY: number) => {
@@ -492,19 +684,480 @@ const MakingPage: React.FC = () => {
     if (!beadData || !visionBoardRecommendation) {
       return 0;
     }
+    const rect = getBlockRectBySelection(selection.blockX, selection.blockY);
+    if (!rect) return 0;
     const boardSize = visionBoardRecommendation.boardSize;
-    const boardCol = Math.floor((selection.blockX * BLOCK_SIZE) / boardSize);
-    const boardRow = Math.floor((selection.blockY * BLOCK_SIZE) / boardSize);
+    const boardCol = Math.floor(rect.startX / boardSize);
+    const boardRow = Math.floor(rect.startY / boardSize);
     return boardRow * visionBoardRecommendation.cols + boardCol;
-  }, [beadData, selection.blockX, selection.blockY, visionBoardRecommendation]);
+  }, [beadData, getBlockRectBySelection, selection.blockX, selection.blockY, visionBoardRecommendation]);
 
   const visionInitialColorId =
     selection.type === "color" ? selection.colorId ?? null : null;
 
+  const selectedBlockAnchor = useMemo(() => {
+    if (!beadData || selection.type === null) return null;
+    const rect = getBlockRectBySelection(selection.blockX, selection.blockY);
+    if (!rect) return null;
+    const anchorX = Math.min(
+      rect.startX + Math.floor((rect.endX - rect.startX) / 2),
+      beadData.width - 1,
+    );
+    const anchorY = Math.min(
+      rect.startY + Math.floor((rect.endY - rect.startY) / 2),
+      beadData.height - 1,
+    );
+    return { x: anchorX, y: anchorY };
+  }, [beadData, getBlockRectBySelection, selection.blockX, selection.blockY, selection.type]);
+
+  const currentBoardRect = useMemo(() => {
+    if (!beadData || selection.type === null) return null;
+    const sourceCellX = selectedCell?.x ?? selectedBlockAnchor?.x ?? 0;
+    const sourceCellY = selectedCell?.y ?? selectedBlockAnchor?.y ?? 0;
+    const boardCol = Math.floor(sourceCellX / physicalBoardSize);
+    const boardRow = Math.floor(sourceCellY / physicalBoardSize);
+    const startX = boardCol * physicalBoardSize;
+    const startY = boardRow * physicalBoardSize;
+    const endX = Math.min(startX + physicalBoardSize, beadData.width);
+    const endY = Math.min(startY + physicalBoardSize, beadData.height);
+    return {
+      boardNumber: boardRow * physicalBoardCols + boardCol + 1,
+      startX,
+      startY,
+      endX,
+      endY,
+    };
+  }, [
+    beadData,
+    physicalBoardCols,
+    physicalBoardSize,
+    physicalBoardRows,
+    selectedBlockAnchor,
+    selectedCell,
+    selection.blockX,
+    selection.blockY,
+    selection.type,
+  ]);
+
+  useEffect(() => {
+    if (viewMode !== "traditional") return;
+    if (currentBoardRect) {
+      setActiveBoardNumber(currentBoardRect.boardNumber);
+    }
+  }, [currentBoardRect, viewMode]);
+
+  const centerViewportOnRect = useCallback(
+    (startX: number, startY: number, endX: number, endY: number) => {
+      if (!beadData || !wrapperRef.current) return;
+      const rectCenterX = ((startX + endX) / 2) * baseCellSize * scaleRef.current;
+      const rectCenterY = ((startY + endY) / 2) * baseCellSize * scaleRef.current;
+      const canvasCenterX = (beadData.width * baseCellSize * scaleRef.current) / 2;
+      const canvasCenterY = (beadData.height * baseCellSize * scaleRef.current) / 2;
+      commitTranslate(
+        scaleRef.current,
+        canvasCenterX - rectCenterX,
+        canvasCenterY - rectCenterY,
+      );
+    },
+    [beadData, commitTranslate],
+  );
+
+  const locateCurrentBoard = useCallback(() => {
+    const targetRect = viewMode === "singleBoard" ? activeBoardRect : currentBoardRect;
+    if (!targetRect) return;
+    centerViewportOnRect(
+      targetRect.startX,
+      targetRect.startY,
+      targetRect.endX,
+      targetRect.endY,
+    );
+  }, [activeBoardRect, centerViewportOnRect, currentBoardRect, viewMode]);
+
+  const activateBoard = useCallback(
+    (boardNumber: number, shouldCenter = true) => {
+      if (!beadData) return;
+      const target = boardRects.find((item) => item.boardNumber === boardNumber);
+      if (!target) return;
+      const targetBlock = getPhysicalBoardBlockCoordinate(
+        target.startX,
+        target.startY,
+        physicalBoardSize,
+      );
+      setActiveBoardNumber(boardNumber);
+      setSelection({
+        type: "block",
+        blockX: targetBlock.blockX,
+        blockY: targetBlock.blockY,
+      });
+      setSelectedCell(null);
+      setTooltipState((prev) => ({ ...prev, visible: false }));
+      if (shouldCenter) {
+        centerViewportOnRect(target.startX, target.startY, target.endX, target.endY);
+      }
+    },
+    [beadData, boardRects, centerViewportOnRect, physicalBoardSize],
+  );
+
+  const handleToggleBoardDone = useCallback(() => {
+    if (!activeBoardRect) return;
+    const nextDone = !boardStatusMap[activeBoardRect.boardNumber];
+    setBoardStatusMap((prev) => ({
+      ...prev,
+      [activeBoardRect.boardNumber]: nextDone,
+    }));
+    if (nextDone) {
+      if (autoAdvanceOnBoardDone) {
+        const currentIndex = boardRects.findIndex((item) => item.boardNumber === activeBoardRect.boardNumber);
+        const nextPending = boardRects
+          .slice(currentIndex + 1)
+          .find((item) => !boardStatusMap[item.boardNumber]);
+        if (nextPending) {
+          activateBoard(nextPending.boardNumber, true);
+          toast.info(`已完成板${activeBoardRect.boardNumber}，已切到板${nextPending.boardNumber}`);
+          return;
+        }
+      }
+      const remaining = boardRects.filter((item) => {
+        if (item.boardNumber === activeBoardRect.boardNumber) return false;
+        return !boardStatusMap[item.boardNumber];
+      }).length;
+      if (remaining === 0) {
+        toast.success("所有板已完成");
+      } else {
+        toast.info(`已标记板${activeBoardRect.boardNumber}完成`);
+      }
+      return;
+    }
+    toast.info(`已取消板${activeBoardRect.boardNumber}完成`);
+  }, [activateBoard, activeBoardRect, autoAdvanceOnBoardDone, boardRects, boardStatusMap, toast]);
+
+  const singleBoardProgress = useMemo(() => {
+    const doneCount = Object.values(boardStatusMap).filter(Boolean).length;
+    const totalCount = totalBoardCount;
+    return {
+      doneCount,
+      totalCount,
+      remainingCount: Math.max(totalCount - doneCount, 0),
+      percent: totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0,
+    };
+  }, [boardStatusMap, totalBoardCount]);
+
+  const singleBoardAllDone = useMemo(
+    () => singleBoardProgress.totalCount > 0 && singleBoardProgress.doneCount >= singleBoardProgress.totalCount,
+    [singleBoardProgress.doneCount, singleBoardProgress.totalCount],
+  );
+
+  const nextPendingBoardNumber = useMemo(() => {
+    const nextPending = boardRects.find((item) => !boardStatusMap[item.boardNumber]);
+    return nextPending?.boardNumber ?? null;
+  }, [boardRects, boardStatusMap]);
+
+  const usageSummary = useMemo(() => {
+    if (!beadData) return null;
+    return countBeadUsage(beadData);
+  }, [beadData]);
+
+  const inventoryStorageScope = useMemo(() => {
+    if (projectId) return `project_${projectId}`;
+    if (localProjectId) return `local_${localProjectId}`;
+    if (beadData) return `temp_${beadData.width}x${beadData.height}`;
+    return "unknown";
+  }, [beadData, localProjectId, projectId]);
+
+  const consumedInventoryKey = useMemo(
+    () => `making_inventory_consumed_${inventoryStorageScope}`,
+    [inventoryStorageScope],
+  );
+
+  const [inventoryConsumed, setInventoryConsumed] = useState(false);
+
+  const inventoryCheck = useMemo(() => {
+    if (!usageSummary) {
+      return {
+        totalNeed: 0,
+        shortageTotal: 0,
+        shortageCount: 0,
+        canApply: false,
+      };
+    }
+    const quantities = beadInventoryService.getQuantities();
+    let shortageTotal = 0;
+    let shortageCount = 0;
+    usageSummary.usageList.forEach((item) => {
+      const stock = quantities[item.color.id] || 0;
+      const shortage = Math.max(item.count - stock, 0);
+      if (shortage > 0) {
+        shortageCount += 1;
+        shortageTotal += shortage;
+      }
+    });
+    return {
+      totalNeed: usageSummary.totalBeads,
+      shortageTotal,
+      shortageCount,
+      canApply: shortageTotal === 0,
+    };
+  }, [inventoryVersion, usageSummary]);
+
+  const pendingBoardNumbers = useMemo(() => {
+    return boardRects
+      .filter((item) => !boardStatusMap[item.boardNumber])
+      .map((item) => item.boardNumber);
+  }, [boardRects, boardStatusMap]);
+
+  const resumeBoardNumber = useMemo(() => {
+    if (
+      activeBoardNumber > 0
+      && pendingBoardNumbers.includes(activeBoardNumber)
+    ) {
+      return activeBoardNumber;
+    }
+    return pendingBoardNumbers[0] ?? null;
+  }, [activeBoardNumber, pendingBoardNumbers]);
+
+  const compactBoardNav = useMemo(() => {
+    if (totalBoardCount <= 0) {
+      return [];
+    }
+    const values = new Set<number>([
+      Math.max(1, activeBoardNumber - 1),
+      activeBoardNumber,
+      Math.min(totalBoardCount, activeBoardNumber + 1),
+    ]);
+    return Array.from(values).sort((a, b) => a - b);
+  }, [activeBoardNumber, totalBoardCount]);
+
+  const activeBoardDone = useMemo(() => {
+    if (!activeBoardRect) return false;
+    return Boolean(boardStatusMap[activeBoardRect.boardNumber]);
+  }, [activeBoardRect, boardStatusMap]);
+
+  useEffect(() => {
+    if (!singleBoardStorageKey) return;
+    let cancelled = false;
+    setSingleBoardHydrated(false);
+    try {
+      const raw = localStorage.getItem(singleBoardStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          viewMode?: MakingViewMode;
+          activeBoardNumber?: number;
+          boardStatusMap?: BoardStatusMap;
+          singleBoardOverviewCollapsed?: boolean;
+          autoAdvanceOnBoardDone?: boolean;
+        };
+        if (parsed.viewMode === "singleBoard" || parsed.viewMode === "traditional") {
+          setViewMode(parsed.viewMode);
+        }
+        if (parsed.activeBoardNumber && Number.isFinite(parsed.activeBoardNumber)) {
+          setActiveBoardNumber(parsed.activeBoardNumber);
+        }
+        if (parsed.boardStatusMap && typeof parsed.boardStatusMap === "object") {
+          setBoardStatusMap(parsed.boardStatusMap);
+        }
+        if (typeof parsed.singleBoardOverviewCollapsed === "boolean") {
+          setSingleBoardOverviewCollapsed(parsed.singleBoardOverviewCollapsed);
+        }
+        if (typeof parsed.autoAdvanceOnBoardDone === "boolean") {
+          setAutoAdvanceOnBoardDone(parsed.autoAdvanceOnBoardDone);
+        }
+      }
+    } catch (error) {
+      console.warn("[MakingPage] 读取单板模式本地状态失败", error);
+    }
+    const finishHydrate = () => {
+      if (!cancelled) {
+        setSingleBoardHydrated(true);
+      }
+    };
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => finishHydrate());
+    } else {
+      setTimeout(finishHydrate, 0);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [singleBoardStorageKey]);
+
+  useEffect(() => {
+    try {
+      setInventoryConsumed(localStorage.getItem(consumedInventoryKey) === "1");
+    } catch (error) {
+      console.warn("[MakingPage] 读取豆仓扣减状态失败", error);
+      setInventoryConsumed(false);
+    }
+  }, [consumedInventoryKey]);
+
+  useEffect(() => {
+    if (!singleBoardStorageKey || !singleBoardHydrated) return;
+    try {
+      localStorage.setItem(singleBoardStorageKey, JSON.stringify({
+        viewMode,
+        activeBoardNumber,
+        boardStatusMap,
+        singleBoardOverviewCollapsed,
+        autoAdvanceOnBoardDone,
+      }));
+    } catch (error) {
+      console.warn("[MakingPage] 保存单板模式本地状态失败", error);
+    }
+  }, [activeBoardNumber, autoAdvanceOnBoardDone, boardStatusMap, singleBoardHydrated, singleBoardOverviewCollapsed, singleBoardStorageKey, viewMode]);
+
+  useEffect(() => {
+    if (!singleBoardHydrated || viewMode !== "singleBoard" || !resumeBoardNumber) {
+      return;
+    }
+    if (singleBoardResumeAppliedRef.current) {
+      return;
+    }
+    const shouldResume =
+      !pendingBoardNumbers.includes(activeBoardNumber) || activeBoardNumber !== resumeBoardNumber;
+    if (shouldResume) {
+      activateBoard(resumeBoardNumber, true);
+    }
+    singleBoardResumeAppliedRef.current = true;
+  }, [
+    activateBoard,
+    activeBoardNumber,
+    pendingBoardNumbers,
+    resumeBoardNumber,
+    singleBoardHydrated,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    if (viewMode === "singleBoard" && activeBoardRect) {
+      activateBoard(activeBoardRect.boardNumber, true);
+    }
+  }, [activeBoardRect, activateBoard, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "singleBoard") {
+      singleBoardResumeAppliedRef.current = false;
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (!shareFeedback || shareFeedback === "preparing") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setShareFeedback(null);
+    }, 3200);
+    return () => window.clearTimeout(timer);
+  }, [shareFeedback]);
+
+  useEffect(() => {
+    if (!inventoryFeedback) return;
+    const timer = window.setTimeout(() => setInventoryFeedback(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [inventoryFeedback]);
+
+  useEffect(() => {
+    if (viewMode !== "singleBoard" || !singleBoardAllDone) {
+      setShareFeedback(null);
+      setInventoryFeedback(null);
+    }
+  }, [singleBoardAllDone, viewMode]);
+
+  const handleDeductInventory = useCallback(() => {
+    if (!usageSummary) return;
+    if (inventoryConsumed) {
+      toast.info("这件作品已经扣减过豆仓");
+      return;
+    }
+    if (!inventoryCheck.canApply) {
+      toast.info(`库存不足，还差 ${inventoryCheck.shortageTotal} 颗，先去补仓`);
+      return;
+    }
+    const confirmed = window.confirm(
+      `确认按本作品用量扣减豆仓库存？\n\n总计 ${usageSummary.totalBeads} 颗，涉及 ${usageSummary.colorCount} 种颜色。\n扣减后会标记本作品已扣减，避免重复扣减。`,
+    );
+    if (!confirmed) return;
+    beadInventoryService.applyConsumption(
+      Object.fromEntries(usageSummary.usageList.map((item) => [item.color.id, item.count])),
+    );
+    try {
+      localStorage.setItem(consumedInventoryKey, "1");
+    } catch (error) {
+      console.warn("[MakingPage] 保存豆仓扣减状态失败", error);
+    }
+    setInventoryConsumed(true);
+    setInventoryVersion((prev) => prev + 1);
+    setInventoryFeedback(`已从豆仓扣减本作品所需 ${usageSummary.totalBeads} 颗拼豆`);
+    toast.success("已扣减豆仓库存");
+  }, [consumedInventoryKey, inventoryCheck.canApply, inventoryCheck.shortageTotal, inventoryConsumed, toast, usageSummary]);
+
+  const jumpToBoard = useCallback(
+    (direction: -1 | 1) => {
+      if (!beadData) return;
+      const currentBoardNumber =
+        viewMode === "singleBoard"
+          ? activeBoardNumber
+          : currentBoardRect?.boardNumber;
+      if (!currentBoardNumber) return;
+      const targetBoardNumber = currentBoardNumber + direction;
+      const maxBoardNumber = physicalBoardCols * physicalBoardRows;
+      if (targetBoardNumber < 1 || targetBoardNumber > maxBoardNumber) {
+        return;
+      }
+      activateBoard(targetBoardNumber, true);
+      toast.info(`已切到板${targetBoardNumber}`);
+    },
+    [
+      activeBoardNumber,
+      activateBoard,
+      beadData,
+      currentBoardRect,
+      physicalBoardCols,
+      physicalBoardRows,
+      toast,
+      viewMode,
+    ],
+  );
+
+  const selectedCoordinateSummary = useMemo(() => {
+    if (!beadData || selection.type === null || !currentBoardRect) return null;
+    if (selection.type === "color" && selectedCell) {
+      const boardCoordinate = getPhysicalBoardCoordinate(selectedCell.x, selectedCell.y);
+      return {
+        boardNumber: boardCoordinate.boardNumber,
+        localCol: boardCoordinate.localCol,
+        localRow: boardCoordinate.localRow,
+        globalCol: selectedCell.x + 1,
+        globalRow: selectedCell.y + 1,
+        boardLabel: `板${boardCoordinate.boardNumber}`,
+      };
+    }
+
+    return {
+      boardNumber: currentBoardRect.boardNumber,
+      localCol: ((selectedBlockAnchor?.x ?? 0) % physicalBoardSize) + 1,
+      localRow: ((selectedBlockAnchor?.y ?? 0) % physicalBoardSize) + 1,
+      globalCol: (selectedBlockAnchor?.x ?? 0) + 1,
+      globalRow: (selectedBlockAnchor?.y ?? 0) + 1,
+      boardLabel: `板${currentBoardRect.boardNumber}`,
+    };
+  }, [
+    beadData,
+    currentBoardRect,
+    getPhysicalBoardCoordinate,
+    physicalBoardSize,
+    selectedBlockAnchor,
+    selectedCell,
+    selection.blockX,
+    selection.blockY,
+    selection.type,
+  ]);
+
+  // 点击选择只改变高亮状态，不再自动移动视图。
+  // 视图移动仅保留给“定位当前板”和显式切板等用户主动操作。
+
   // 计算合适缩放（仅首次加载执行，换色等不重置）
   const initialScaleSetRef = useRef(false);
   useEffect(() => {
-    if (beadData && !initialScaleSetRef.current) {
+    if (displayBoardRect && displayWidth > 0 && displayHeight > 0 && !initialScaleSetRef.current) {
       initialScaleSetRef.current = true;
       const timer = setTimeout(() => {
         const viewportHeight = window.innerHeight;
@@ -512,29 +1165,105 @@ const MakingPage: React.FC = () => {
         const wrapperWidth = wrapper?.clientWidth || window.innerWidth;
         const wrapperHeight =
           wrapper?.clientHeight || viewportHeight - 40 - 64 - 50 - 60 - 24;
-        const fitWidth = wrapperWidth / (beadData.width * baseCellSize);
-        const fitHeight = wrapperHeight / (beadData.height * baseCellSize);
+        const fitWidth = wrapperWidth / (displayWidth * baseCellSize);
+        const fitHeight = wrapperHeight / (displayHeight * baseCellSize);
         const fitScale = Math.min(fitWidth, fitHeight);
-        const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, fitScale));
+        const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, fitScale));
         scaleRef.current = nextScale;
         setScale(nextScale);
         commitTranslate(nextScale, 0, 0);
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [beadData, commitTranslate]);
+  }, [commitTranslate, displayBoardRect, displayHeight, displayWidth, renderMaxScale]);
+
+  useEffect(() => {
+    if (viewMode !== "singleBoard" || !displayBoardRect || displayWidth <= 0 || displayHeight <= 0) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      const wrapper = wrapperRef.current;
+      if (!wrapper) return;
+      const wrapperWidth = wrapper.clientWidth;
+      const wrapperHeight = wrapper.clientHeight;
+      if (wrapperWidth <= 0 || wrapperHeight <= 0) return;
+      const fitWidth = wrapperWidth / (displayWidth * baseCellSize);
+      const fitHeight = wrapperHeight / (displayHeight * baseCellSize);
+      const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, Math.min(fitWidth, fitHeight)));
+      scaleRef.current = nextScale;
+      setScale(nextScale);
+      commitTranslate(nextScale, 0, 0);
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [
+    activeBoardNumber,
+    commitTranslate,
+    displayBoardRect,
+    displayHeight,
+    displayWidth,
+    renderMaxScale,
+    viewMode,
+  ]);
 
   // 适应屏幕：重置缩放与位移
   const handleFitScreen = useCallback(() => {
-    if (!beadData) return;
+    if (!displayBoardRect || displayWidth <= 0) return;
     const wrapper = wrapperRef.current;
     const wrapperWidth = wrapper?.clientWidth || window.innerWidth;
-    const fitWidth = wrapperWidth / (beadData.width * baseCellSize);
-    const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, fitWidth));
+    const fitWidth = wrapperWidth / (displayWidth * baseCellSize);
+    const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, fitWidth));
     scaleRef.current = nextScale;
     setScale(nextScale);
     commitTranslate(nextScale, 0, 0);
-  }, [beadData, commitTranslate]);
+  }, [commitTranslate, displayBoardRect, displayWidth, renderMaxScale]);
+
+  const handleOpenTraditionalOverview = useCallback(() => {
+    setViewMode("traditional");
+    requestAnimationFrame(() => {
+      handleFitScreen();
+    });
+  }, [handleFitScreen]);
+
+  const handleBackToEditor = useCallback(() => {
+    handleBackToSource();
+  }, [handleBackToSource]);
+
+  const handleShareFinishedWork = useCallback(async () => {
+    setShareFeedback("preparing");
+    const shareTitle = "拼豆作品已完成";
+    const shareText = beadData
+      ? `我刚完成了一张 ${beadData.width}x${beadData.height} 的拼豆图案，来试试这个单板制作模式。`
+      : "我刚完成了一张拼豆图案，来试试这个单板制作模式。";
+    const shareUrl = `${window.location.origin}/mobile/create`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl,
+        });
+        setShareFeedback("shared");
+        toast.success("已打开系统分享");
+        return;
+      } catch (error) {
+        if ((error as Error)?.name === "AbortError") {
+          setShareFeedback(null);
+          return;
+        }
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+      setShareFeedback("copied");
+      toast.success("已复制分享文案");
+    } catch (error) {
+      console.error("[MakingPage] 复制分享文案失败:", error);
+      setShareFeedback("unsupported");
+      toast.info("当前环境不支持直接分享，请先导出图纸再发送");
+    }
+  }, [beadData, toast]);
 
   // ===== 状态保存与恢复 =====
   const getStorageKey = useCallback(() => {
@@ -715,7 +1444,7 @@ const MakingPage: React.FC = () => {
   // ===== 点击处理（交互核心）=====
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!beadData || !canvasRef.current || !wrapperRef.current) return;
+      if (!beadData || !canvasRef.current || !wrapperRef.current || !displayBoardRect) return;
 
       // 防止触摸事件后的 click 二次触发（touchEnd 已处理）
       if (Date.now() - lastTapProcessedRef.current < 500) return;
@@ -735,26 +1464,36 @@ const MakingPage: React.FC = () => {
       const rect = canvas.getBoundingClientRect();
       const wrapperRect = wrapper.getBoundingClientRect();
 
-      // 计算点击的格子坐标
-      const drawCellSize = baseCellSize * scale;
+      // 计算点击的格子坐标：必须按当前画布真实显示尺寸反推，
+      // 不能继续用 baseCellSize * scale，否则高倍率下会出现焦点漂移。
+      const drawCellWidth = rect.width / displayWidth;
+      const drawCellHeight = rect.height / displayHeight;
       const clickX = e.clientX - rect.left;
       const clickY = e.clientY - rect.top;
-      const cellX = Math.floor(clickX / drawCellSize);
-      const cellY = Math.floor(clickY / drawCellSize);
+      const cellX = Math.floor(clickX / drawCellWidth);
+      const cellY = Math.floor(clickY / drawCellHeight);
 
       // 边界检查
       if (
         cellX < 0 ||
-        cellX >= beadData.width ||
+        cellX >= displayWidth ||
         cellY < 0 ||
-        cellY >= beadData.height
+        cellY >= displayHeight
       ) {
         return;
       }
 
-      // 计算所在区块
-      const blockX = Math.floor(cellX / BLOCK_SIZE);
-      const blockY = Math.floor(cellY / BLOCK_SIZE);
+      const globalCellX = displayBoardRect.startX + cellX;
+      const globalCellY = displayBoardRect.startY + cellY;
+
+      // 计算所在区块（按现实豆板分区）
+      const blockCoordinate = getPhysicalBoardBlockCoordinate(
+        globalCellX,
+        globalCellY,
+        physicalBoardSize,
+      );
+      const blockX = blockCoordinate.blockX;
+      const blockY = blockCoordinate.blockY;
 
       // 根据缩放级别决定行为
       if (scale < ZOOM_THRESHOLD) {
@@ -765,64 +1504,80 @@ const MakingPage: React.FC = () => {
           selection.blockY === blockY
         ) {
           setSelection({ type: null, blockX: 0, blockY: 0 });
+          setSelectedCell(null);
+          setTooltipState((prev) => ({ ...prev, visible: false }));
         } else {
           setSelection({
             type: "block",
             blockX,
             blockY,
           });
+          setSelectedCell(null);
+          setTooltipState((prev) => ({ ...prev, visible: false }));
           toast.info(`选中区块 (${blockX + 1}, ${blockY + 1})`);
         }
       } else {
         // 放大状态：选中颜色
-        const index = cellY * beadData.width + cellX;
-        const bead = beadData.beads[index];
+          const index = globalCellY * beadData.width + globalCellX;
+          const bead = beadData.beads[index];
         if (!bead) {
           setSelection({ type: null, blockX: 0, blockY: 0 });
+          setSelectedCell(null);
+          setTooltipState((prev) => ({ ...prev, visible: false }));
           return;
         }
 
         // 显示坐标提示
         const screenX = e.clientX - wrapperRect.left;
         const screenY = e.clientY - wrapperRect.top;
-        const boardCoordinate = getPhysicalBoardCoordinate(cellX, cellY);
+          const boardCoordinate = getPhysicalBoardCoordinate(globalCellX, globalCellY);
 
-        setTooltipState({
-          visible: true,
-          row: cellY + 1,
-          col: cellX + 1,
-          boardNumber: boardCoordinate.boardNumber,
-          localRow: boardCoordinate.localRow,
-          localCol: boardCoordinate.localCol,
+          setTooltipState({
+            visible: true,
+            row: globalCellY + 1,
+            col: globalCellX + 1,
+            boardNumber: boardCoordinate.boardNumber,
+            localRow: boardCoordinate.localRow,
+            localCol: boardCoordinate.localCol,
           screenX,
           screenY,
         });
 
         if (voiceEnabled) {
-          speakCoordinate(
-            cellY + 1,
-            cellX + 1,
+                speakCoordinate(
+            globalCellY + 1,
+            globalCellX + 1,
             boardCoordinate.boardNumber,
             boardCoordinate.localRow,
             boardCoordinate.localCol,
           );
         }
 
-        // 点击同一颜色：取消选中（不限区块）
-        if (selection.type === "color" && selection.colorHex === bead.hex) {
-          setSelection({ type: null, blockX: 0, blockY: 0 });
+        const sameBlock =
+          selection.blockX === blockX && selection.blockY === blockY;
+
+        // 点击当前区块内相同颜色：回到区块高亮，不清空区块
+        if (
+          selection.type === "color" &&
+          sameBlock &&
+          selection.colorHex === bead.hex
+        ) {
+          setSelection({ type: "block", blockX, blockY });
+          setSelectedCell(null);
+          setTooltipState((prev) => ({ ...prev, visible: false }));
         } else {
           setSelection({
             type: "color",
             blockX,
             blockY,
-            colorHex: bead.hex,
-            colorId: bead.id,
-          });
+                colorHex: bead.hex,
+                colorId: bead.id,
+              });
+          setSelectedCell({ x: globalCellX, y: globalCellY });
         }
       }
     },
-    [beadData, getPhysicalBoardCoordinate, scale, selection, voiceEnabled, toast],
+    [beadData, displayBoardRect, displayHeight, displayWidth, getPhysicalBoardCoordinate, physicalBoardSize, scale, selection, voiceEnabled, toast],
   );
 
   // 触摸拖动处理
@@ -885,7 +1640,7 @@ const MakingPage: React.FC = () => {
         // 以手势起点为基准计算，避免逐帧增量误差放大造成抖动
         const scaleRatio = dist / start.distance;
         const nextScale = Math.min(
-          MAX_SCALE,
+          renderMaxScale,
           Math.max(MIN_SCALE, start.scale * scaleRatio),
         );
 
@@ -908,7 +1663,7 @@ const MakingPage: React.FC = () => {
         commitTranslate(nextScale, nextX, nextY);
       }
     },
-    [isDragging, commitTranslate, shiftTranslate],
+    [isDragging, commitTranslate, renderMaxScale, shiftTranslate],
   );
 
   const handleTouchEnd = useCallback(
@@ -926,7 +1681,7 @@ const MakingPage: React.FC = () => {
           const canvas = canvasRef.current;
           const rect = canvas.getBoundingClientRect();
           const wrapper = wrapperRef.current;
-          if (!wrapper || !beadData) {
+          if (!wrapper || !beadData || !displayBoardRect) {
             setIsDragging(false);
             lastTouchRef.current = null;
             pinchStartRef.current = null;
@@ -935,20 +1690,28 @@ const MakingPage: React.FC = () => {
           }
 
           const wrapperRect = wrapper.getBoundingClientRect();
-          const drawCellSize = baseCellSize * scale;
+          const drawCellWidth = rect.width / displayWidth;
+          const drawCellHeight = rect.height / displayHeight;
           const clickX = touch.clientX - rect.left;
           const clickY = touch.clientY - rect.top;
-          const cellX = Math.floor(clickX / drawCellSize);
-          const cellY = Math.floor(clickY / drawCellSize);
+          const cellX = Math.floor(clickX / drawCellWidth);
+          const cellY = Math.floor(clickY / drawCellHeight);
 
           if (
             cellX >= 0 &&
-            cellX < beadData.width &&
+            cellX < displayWidth &&
             cellY >= 0 &&
-            cellY < beadData.height
+            cellY < displayHeight
           ) {
-            const blockX = Math.floor(cellX / BLOCK_SIZE);
-            const blockY = Math.floor(cellY / BLOCK_SIZE);
+            const globalCellX = displayBoardRect.startX + cellX;
+            const globalCellY = displayBoardRect.startY + cellY;
+            const blockCoordinate = getPhysicalBoardBlockCoordinate(
+              globalCellX,
+              globalCellY,
+              physicalBoardSize,
+            );
+            const blockX = blockCoordinate.blockX;
+            const blockY = blockCoordinate.blockY;
 
             if (scale < ZOOM_THRESHOLD) {
               if (
@@ -957,27 +1720,33 @@ const MakingPage: React.FC = () => {
                 selection.blockY === blockY
               ) {
                 setSelection({ type: null, blockX: 0, blockY: 0 });
+                setSelectedCell(null);
+                setTooltipState((prev) => ({ ...prev, visible: false }));
               } else {
                 setSelection({ type: "block", blockX, blockY });
+                setSelectedCell(null);
+                setTooltipState((prev) => ({ ...prev, visible: false }));
                 toast.info(`选中区块 (${blockX + 1}, ${blockY + 1})`);
               }
             } else {
-              const index = cellY * beadData.width + cellX;
+              const index = globalCellY * beadData.width + globalCellX;
               const bead = beadData.beads[index];
               if (!bead) {
                 setSelection({ type: null, blockX: 0, blockY: 0 });
+                setSelectedCell(null);
+                setTooltipState((prev) => ({ ...prev, visible: false }));
                 lastTapProcessedRef.current = Date.now();
                 return;
               }
 
               const screenX = touch.clientX - wrapperRect.left;
               const screenY = touch.clientY - wrapperRect.top;
-              const boardCoordinate = getPhysicalBoardCoordinate(cellX, cellY);
+              const boardCoordinate = getPhysicalBoardCoordinate(globalCellX, globalCellY);
 
               setTooltipState({
                 visible: true,
-                row: cellY + 1,
-                col: cellX + 1,
+                row: globalCellY + 1,
+                col: globalCellX + 1,
                 boardNumber: boardCoordinate.boardNumber,
                 localRow: boardCoordinate.localRow,
                 localCol: boardCoordinate.localCol,
@@ -987,20 +1756,26 @@ const MakingPage: React.FC = () => {
 
               if (voiceEnabled) {
                 speakCoordinate(
-                  cellY + 1,
-                  cellX + 1,
+                  globalCellY + 1,
+                  globalCellX + 1,
                   boardCoordinate.boardNumber,
                   boardCoordinate.localRow,
                   boardCoordinate.localCol,
                 );
               }
 
-              // 点击同一颜色：取消选中（不限区块）
+              const sameBlock =
+                selection.blockX === blockX && selection.blockY === blockY;
+
+              // 点击当前区块内相同颜色：回到区块高亮，不清空区块
               if (
                 selection.type === "color" &&
+                sameBlock &&
                 selection.colorHex === bead.hex
               ) {
-                setSelection({ type: null, blockX: 0, blockY: 0 });
+                setSelection({ type: "block", blockX, blockY });
+                setSelectedCell(null);
+                setTooltipState((prev) => ({ ...prev, visible: false }));
               } else {
                 setSelection({
                   type: "color",
@@ -1009,6 +1784,7 @@ const MakingPage: React.FC = () => {
                   colorHex: bead.hex,
                   colorId: bead.id,
                 });
+                setSelectedCell({ x: globalCellX, y: globalCellY });
               }
             }
           }
@@ -1023,7 +1799,7 @@ const MakingPage: React.FC = () => {
       pinchStartRef.current = null;
       dragStartPosRef.current = null;
     },
-    [beadData, getPhysicalBoardCoordinate, scale, selection, voiceEnabled, toast],
+    [beadData, displayBoardRect, displayHeight, displayWidth, getPhysicalBoardCoordinate, physicalBoardSize, scale, selection, voiceEnabled, toast],
   );
 
   // 鼠标拖动处理
@@ -1140,6 +1916,7 @@ const MakingPage: React.FC = () => {
     });
     setBeadData(cloneBeadData(lastReplaceSnapshot.beadData));
     setSelection({ ...lastReplaceSnapshot.selection });
+    setSelectedCell(null);
     setLastReplaceSnapshot(null);
     toast.info("已撤销上一次换色");
   }, [lastReplaceSnapshot, beadData, cloneBeadData, selection, toast]);
@@ -1153,46 +1930,40 @@ const MakingPage: React.FC = () => {
     });
     setBeadData(cloneBeadData(redoReplaceSnapshot.beadData));
     setSelection({ ...redoReplaceSnapshot.selection });
+    setSelectedCell(null);
     setRedoReplaceSnapshot(null);
     toast.info("已恢复上一次换色");
   }, [redoReplaceSnapshot, beadData, cloneBeadData, selection, toast]);
 
   // ===== 娓叉煋 Canvas =====
-  useEffect(() => {
-    if (!beadData || !canvasRef.current) return;
+  useLayoutEffect(() => {
+    if (!beadData || !canvasRef.current || !displayBoardRect || displayWidth <= 0 || displayHeight <= 0 || !renderMetrics) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const { width, height, beads } = beadData;
-    const drawCellSize = baseCellSize * scale;
-    const canvasWidth = width * drawCellSize;
-    const canvasHeight = height * drawCellSize;
+    canvas.width = safeRenderCanvasWidth * renderDpr;
+    canvas.height = safeRenderCanvasHeight * renderDpr;
+    canvas.style.width = safeRenderCanvasWidth + "px";
+    canvas.style.height = safeRenderCanvasHeight + "px";
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(renderDpr, renderDpr);
+    ctx.imageSmoothingEnabled = false;
+    const displayStartX = displayBoardRect.startX;
+    const displayStartY = displayBoardRect.startY;
+    const beads = beadData.beads;
 
-    // 楂樻竻娓叉煋
-    const maxCanvasSize = 4096;
-    let dpr = window.devicePixelRatio || 1;
-    const maxDimension = Math.max(canvasWidth, canvasHeight);
-    if (maxDimension * dpr > maxCanvasSize) {
-      dpr = Math.max(1, maxCanvasSize / maxDimension);
-    }
-
-    canvas.width = canvasWidth * dpr;
-    canvas.height = canvasHeight * dpr;
-    canvas.style.width = canvasWidth + "px";
-    canvas.style.height = canvasHeight + "px";
-    ctx.scale(dpr, dpr);
-    ctx.imageSmoothingEnabled = true;
-
-    // 获取选中区块范围
-    const selectedBlockStartX = selection.blockX * BLOCK_SIZE;
-    const selectedBlockStartY = selection.blockY * BLOCK_SIZE;
-    const selectedBlockEndX = Math.min(selectedBlockStartX + BLOCK_SIZE, width);
-    const selectedBlockEndY = Math.min(
-      selectedBlockStartY + BLOCK_SIZE,
-      height,
+    // 获取选中区块范围（按现实豆板分区）
+    const selectedBlockRect = getBlockRectBySelection(
+      selection.blockX,
+      selection.blockY,
     );
+    const selectedBlockStartX = selectedBlockRect?.startX ?? 0;
+    const selectedBlockStartY = selectedBlockRect?.startY ?? 0;
+    const selectedBlockEndX = selectedBlockRect?.endX ?? 0;
+    const selectedBlockEndY = selectedBlockRect?.endY ?? 0;
 
     // 获取选中颜色的索引集合
     const highlightedIndices = new Set(
@@ -1205,311 +1976,501 @@ const MakingPage: React.FC = () => {
         : [],
     );
 
+    const focusedBoardRect =
+      assistPackEnabled && focusCurrentBoard && currentBoardRect && selection.type !== null
+        ? {
+            left: (currentBoardRect.startX - displayStartX) * safeRenderCellSize,
+            top: (currentBoardRect.startY - displayStartY) * safeRenderCellSize,
+            width: (currentBoardRect.endX - currentBoardRect.startX) * safeRenderCellSize,
+            height: (currentBoardRect.endY - currentBoardRect.startY) * safeRenderCellSize,
+          }
+        : null;
+
     // 绘制所有珠子
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const index = y * width + x;
+    for (let localY = 0; localY < displayHeight; localY++) {
+      const globalY = displayStartY + localY;
+      for (let localX = 0; localX < displayWidth; localX++) {
+        const globalX = displayStartX + localX;
+        const index = globalY * beadData.width + globalX;
         const bead = beads[index];
-        const px = x * drawCellSize;
-        const py = y * drawCellSize;
+        const px = localX * safeRenderCellSize;
+        const py = localY * safeRenderCellSize;
 
         // 绘制背景色
         const beadHex = bead?.hex || "#1a1a24";
         ctx.fillStyle = beadHex;
-        ctx.fillRect(px, py, drawCellSize, drawCellSize);
+        ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
 
         // 选中区块时，非选中区半透明
         if (selection.type === "block") {
           const inBlock =
-            x >= selectedBlockStartX &&
-            x < selectedBlockEndX &&
-            y >= selectedBlockStartY &&
-            y < selectedBlockEndY;
+            globalX >= selectedBlockStartX &&
+            globalX < selectedBlockEndX &&
+            globalY >= selectedBlockStartY &&
+            globalY < selectedBlockEndY;
           if (!inBlock) {
             ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-            ctx.fillRect(px, py, drawCellSize, drawCellSize);
+            ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
           }
         }
 
-        // 选中颜色时
+        // 选中颜色时：区块外明显弱化，区块内非目标格子轻度变暗，
+        // 目标颜色整格轻量高亮，让原色仍然可读。
         if (selection.type === "color") {
-          if (!highlightedIndices.has(index)) {
-            // 非高亮区域半透明
+          const inBlock =
+            globalX >= selectedBlockStartX &&
+            globalX < selectedBlockEndX &&
+            globalY >= selectedBlockStartY &&
+            globalY < selectedBlockEndY;
+
+          if (!inBlock) {
             ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-            ctx.fillRect(px, py, drawCellSize, drawCellSize);
-          } else {
-            // 高亮像素：叠加淡白提升亮度
-            ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
-            ctx.fillRect(px, py, drawCellSize, drawCellSize);
+            ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
+          } else if (!highlightedIndices.has(index)) {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+            ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
+          } else if (highlightedIndices.has(index)) {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.14)";
+            ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
           }
         }
       }
     }
 
-    // 绘制网格线
-    // 网格线保持视觉细线，不随缩放显著变粗
-    const tinyLine = Math.max(0.5, 1 / Math.max(scale, 1.4));
-    const normalLine = Math.max(0.7, 1.2 / Math.max(scale, 1.2));
-    const blockLine = Math.max(1, 2 / Math.max(scale, 1.2));
-
-    // 细网格线（深色，避免放大后发白）
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
-    ctx.lineWidth = normalLine;
-    for (let x = 0; x <= width; x++) {
-      ctx.beginPath();
-      ctx.moveTo(x * drawCellSize, 0);
-      ctx.lineTo(x * drawCellSize, canvasHeight);
-      ctx.stroke();
-    }
-    for (let y = 0; y <= height; y++) {
-      ctx.beginPath();
-      ctx.moveTo(0, y * drawCellSize);
-      ctx.lineTo(canvasWidth, y * drawCellSize);
-      ctx.stroke();
-    }
-
-    // 叠加一层更深线，提升清晰度
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.62)";
-    ctx.lineWidth = tinyLine;
-    for (let x = 0; x <= width; x++) {
-      ctx.beginPath();
-      ctx.moveTo(x * drawCellSize, 0);
-      ctx.lineTo(x * drawCellSize, canvasHeight);
-      ctx.stroke();
-    }
-    for (let y = 0; y <= height; y++) {
-      ctx.beginPath();
-      ctx.moveTo(0, y * drawCellSize);
-      ctx.lineTo(canvasWidth, y * drawCellSize);
-      ctx.stroke();
-    }
-
-    // 5×5 中等网格线（深灰）
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.72)";
-    ctx.lineWidth = normalLine;
-    for (let x = 0; x <= width; x++) {
-      if (x % 5 === 0 && x % BLOCK_SIZE !== 0) {
-        ctx.beginPath();
-        ctx.moveTo(x * drawCellSize, 0);
-        ctx.lineTo(x * drawCellSize, canvasHeight);
-        ctx.stroke();
-      }
-    }
-    for (let y = 0; y <= height; y++) {
-      if (y % 5 === 0 && y % BLOCK_SIZE !== 0) {
-        ctx.beginPath();
-        ctx.moveTo(0, y * drawCellSize);
-        ctx.lineTo(canvasWidth, y * drawCellSize);
-        ctx.stroke();
-      }
-    }
-
-    // 10×10 大网格线（黑色）
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
-    ctx.lineWidth = blockLine;
-    for (let x = 0; x <= width; x += BLOCK_SIZE) {
-      ctx.beginPath();
-      ctx.moveTo(x * drawCellSize, 0);
-      ctx.lineTo(x * drawCellSize, canvasHeight);
-      ctx.stroke();
-    }
-    for (let y = 0; y <= height; y += BLOCK_SIZE) {
-      ctx.beginPath();
-      ctx.moveTo(0, y * drawCellSize);
-      ctx.lineTo(canvasWidth, y * drawCellSize);
-      ctx.stroke();
-    }
-
-    // 现实豆板分区线：按常见 54 / 78 / 104 板的对称结构补画。
-    // 大作品统一按 104 板重复，保证制作模式更接近真实豆板观感。
-    const physicalBoardSize = getPhysicalBoardDrawSize(width, height);
-    const physicalGuideOffsets = getPhysicalBoardGuideOffsets(physicalBoardSize);
-    if (physicalGuideOffsets.length > 0) {
-      const physicalBoardCols = Math.ceil(width / physicalBoardSize);
-      const physicalBoardRows = Math.ceil(height / physicalBoardSize);
+    if (focusedBoardRect) {
       ctx.save();
-      ctx.strokeStyle = "rgba(17, 24, 39, 0.98)";
-      ctx.lineWidth = Math.max(blockLine, 1.2 / Math.max(scale, 1.15));
-
-      for (let boardCol = 0; boardCol < physicalBoardCols; boardCol++) {
-        const originX = boardCol * physicalBoardSize;
-        for (const offset of physicalGuideOffsets) {
-          const guideX = originX + offset;
-          if (guideX <= 0 || guideX >= width) {
-            continue;
-          }
-          ctx.beginPath();
-          ctx.moveTo(guideX * drawCellSize, 0);
-          ctx.lineTo(guideX * drawCellSize, canvasHeight);
-          ctx.stroke();
-        }
+      ctx.fillStyle = "rgba(255, 247, 237, 0.56)";
+      if (focusedBoardRect.top > 0) {
+        ctx.fillRect(0, 0, safeRenderCanvasWidth, focusedBoardRect.top);
       }
+      if (focusedBoardRect.left > 0) {
+        ctx.fillRect(0, focusedBoardRect.top, focusedBoardRect.left, focusedBoardRect.height);
+      }
+      const rightStart = focusedBoardRect.left + focusedBoardRect.width;
+      if (rightStart < safeRenderCanvasWidth) {
+        ctx.fillRect(
+          rightStart,
+          focusedBoardRect.top,
+          safeRenderCanvasWidth - rightStart,
+          focusedBoardRect.height,
+        );
+      }
+      const bottomStart = focusedBoardRect.top + focusedBoardRect.height;
+      if (bottomStart < safeRenderCanvasHeight) {
+        ctx.fillRect(
+          0,
+          bottomStart,
+          safeRenderCanvasWidth,
+          safeRenderCanvasHeight - bottomStart,
+        );
+      }
+      ctx.restore();
+    }
 
+    // 网格、板号、中心十字、选中边框和色号改由独立高清覆盖层绘制，
+    // 避免底图随 CSS 放大后一起模糊。
+  }, [
+    assistPackEnabled,
+    beadData,
+    currentBoardRect,
+    displayBoardRect,
+    displayHeight,
+    displayWidth,
+    focusCurrentBoard,
+    getBlockRectBySelection,
+    getColorIndicesInBlock,
+    renderDpr,
+    renderScale,
+    safeRenderCellSize,
+    safeRenderCanvasHeight,
+    safeRenderCanvasWidth,
+    selection,
+    showColorId,
+  ]);
+
+  useLayoutEffect(() => {
+    if (
+      !beadData ||
+      !overlayCanvasRef.current ||
+      !displayBoardRect ||
+      !renderMetrics ||
+      displayWidth <= 0 ||
+      displayHeight <= 0
+    ) return;
+
+    const canvas = overlayCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const drawCellWidth = safeRenderCellSize;
+    const drawCellHeight = safeRenderCellSize;
+    const drawCellSize = safeRenderCellSize;
+    const displayStartX = displayBoardRect.startX;
+    const displayStartY = displayBoardRect.startY;
+    const selectedBlockRect = getBlockRectBySelection(
+      selection.blockX,
+      selection.blockY,
+    );
+    const selectedBlockStartX = selectedBlockRect?.startX ?? 0;
+    const selectedBlockStartY = selectedBlockRect?.startY ?? 0;
+    const selectedBlockEndX = selectedBlockRect?.endX ?? 0;
+    const selectedBlockEndY = selectedBlockRect?.endY ?? 0;
+    const highlightedIndices = new Set(
+      selection.type === "color" && selection.colorHex
+        ? getColorIndicesInBlock(
+            selection.colorHex,
+            selection.blockX,
+            selection.blockY,
+          )
+        : [],
+    );
+    const focusedBoardRect =
+      assistPackEnabled && focusCurrentBoard && currentBoardRect && selection.type !== null
+        ? {
+            left: (currentBoardRect.startX - displayStartX) * drawCellWidth,
+            top: (currentBoardRect.startY - displayStartY) * drawCellHeight,
+            width: (currentBoardRect.endX - currentBoardRect.startX) * drawCellWidth,
+            height: (currentBoardRect.endY - currentBoardRect.startY) * drawCellHeight,
+          }
+        : null;
+
+    canvas.width = Math.max(1, Math.floor(safeRenderCanvasWidth * dpr));
+    canvas.height = Math.max(1, Math.floor(safeRenderCanvasHeight * dpr));
+    canvas.style.width = `${safeRenderCanvasWidth}px`;
+    canvas.style.height = `${safeRenderCanvasHeight}px`;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
+    ctx.imageSmoothingEnabled = false;
+
+    const visibleStartX = 0;
+    const visibleStartY = 0;
+    const visibleEndX = displayWidth;
+    const visibleEndY = displayHeight;
+    const visibleGlobalStartX = displayStartX;
+    const visibleGlobalStartY = displayStartY;
+    const visibleGlobalEndX = displayStartX + displayWidth;
+    const visibleGlobalEndY = displayStartY + displayHeight;
+    const baseGridWidth = Math.min(1, Math.max(0.35, 0.9 / dpr));
+    const guideWidth = Math.min(1.4, Math.max(0.75, 1.15 / dpr));
+    const boardWidth = Math.min(2, Math.max(1.1, 1.6 / dpr));
+    const highlightWidth = Math.min(2.5, Math.max(1.3, 2 / dpr));
+    const snapCanvasCoord = (value: number) => Math.round(value * dpr) / dpr;
+    const drawVLine = (
+      x: number,
+      y1: number,
+      y2: number,
+      strokeStyle: string,
+      lineWidth: number,
+    ) => {
+      const snappedX = snapCanvasCoord(x);
+      const startY = snapCanvasCoord(Math.min(y1, y2));
+      const endY = snapCanvasCoord(Math.max(y1, y2));
+      ctx.save();
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = lineWidth;
+      ctx.beginPath();
+      ctx.moveTo(snappedX, startY);
+      ctx.lineTo(snappedX, endY);
+      ctx.stroke();
+      ctx.restore();
+    };
+    const drawHLine = (
+      y: number,
+      x1: number,
+      x2: number,
+      strokeStyle: string,
+      lineWidth: number,
+    ) => {
+      const snappedY = snapCanvasCoord(y);
+      const startX = snapCanvasCoord(Math.min(x1, x2));
+      const endX = snapCanvasCoord(Math.max(x1, x2));
+      ctx.save();
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = lineWidth;
+      ctx.beginPath();
+      ctx.moveTo(startX, snappedY);
+      ctx.lineTo(endX, snappedY);
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, safeRenderCanvasWidth, safeRenderCanvasHeight);
+    ctx.clip();
+
+    // 1. 基础小格
+    if (drawCellSize >= 7) {
+      for (let x = visibleStartX; x <= visibleEndX; x++) {
+        const screenX = x * drawCellWidth;
+        drawVLine(screenX, 0, safeRenderCanvasHeight, "rgba(17,24,39,0.22)", baseGridWidth);
+      }
+      for (let y = visibleStartY; y <= visibleEndY; y++) {
+        const screenY = y * drawCellHeight;
+        drawHLine(screenY, 0, safeRenderCanvasWidth, "rgba(17,24,39,0.22)", baseGridWidth);
+      }
+    }
+
+    // 2. 现实豆板内部对称分区线
+    const guideOffsets = getPhysicalBoardGuideOffsets(physicalBoardSize);
+    const boardColStart = Math.floor(visibleGlobalStartX / physicalBoardSize);
+    const boardColEnd = Math.ceil(visibleGlobalEndX / physicalBoardSize);
+    const boardRowStart = Math.floor(visibleGlobalStartY / physicalBoardSize);
+    const boardRowEnd = Math.ceil(visibleGlobalEndY / physicalBoardSize);
+
+    for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
+      const originX = boardCol * physicalBoardSize;
+      for (const offset of guideOffsets) {
+        const lineX = originX + offset;
+        if (lineX < visibleGlobalStartX || lineX > visibleGlobalEndX) continue;
+        const screenX = (lineX - displayStartX) * drawCellWidth;
+        drawVLine(screenX, 0, safeRenderCanvasHeight, "rgba(0,0,0,0.72)", guideWidth);
+      }
+    }
+    for (let boardRow = boardRowStart; boardRow <= boardRowEnd; boardRow++) {
+      const originY = boardRow * physicalBoardSize;
+      for (const offset of guideOffsets) {
+        const lineY = originY + offset;
+        if (lineY < visibleGlobalStartY || lineY > visibleGlobalEndY) continue;
+        const screenY = (lineY - displayStartY) * drawCellHeight;
+        drawHLine(screenY, 0, safeRenderCanvasWidth, "rgba(0,0,0,0.72)", guideWidth);
+      }
+    }
+
+    // 3. 豆板边界线
+    for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
+      const lineX = boardCol * physicalBoardSize;
+      if (lineX < visibleGlobalStartX || lineX > visibleGlobalEndX) continue;
+      const screenX = (lineX - displayStartX) * drawCellWidth;
+      drawVLine(screenX, 0, safeRenderCanvasHeight, "rgba(0,0,0,0.92)", boardWidth);
+    }
+    for (let boardRow = boardRowStart; boardRow <= boardRowEnd; boardRow++) {
+      const lineY = boardRow * physicalBoardSize;
+      if (lineY < visibleGlobalStartY || lineY > visibleGlobalEndY) continue;
+      const screenY = (lineY - displayStartY) * drawCellHeight;
+      drawHLine(screenY, 0, safeRenderCanvasWidth, "rgba(0,0,0,0.92)", boardWidth);
+    }
+
+    // 4. 每块板中心十字
+    if (drawCellSize >= 8) {
+      const centerOffset = getPhysicalBoardCenterOffset(physicalBoardSize);
+      const crossArm = Math.min(8, Math.max(4, drawCellSize * 0.38));
       for (let boardRow = 0; boardRow < physicalBoardRows; boardRow++) {
-        const originY = boardRow * physicalBoardSize;
-        for (const offset of physicalGuideOffsets) {
-          const guideY = originY + offset;
-          if (guideY <= 0 || guideY >= height) {
+        for (let boardCol = 0; boardCol < physicalBoardCols; boardCol++) {
+          const centerCellX = boardCol * physicalBoardSize + centerOffset;
+          const centerCellY = boardRow * physicalBoardSize + centerOffset;
+          if (
+            centerCellX < visibleGlobalStartX ||
+            centerCellX > visibleGlobalEndX ||
+            centerCellY < visibleGlobalStartY ||
+            centerCellY > visibleGlobalEndY
+          ) {
             continue;
           }
+          const cx = (centerCellX - displayStartX) * drawCellWidth;
+          const cy = (centerCellY - displayStartY) * drawCellHeight;
+          drawVLine(cx, cy - crossArm, cy + crossArm, "#ff3ea5", highlightWidth);
+          drawHLine(cy, cx - crossArm, cx + crossArm, "#ff3ea5", highlightWidth);
+        }
+      }
+    }
+
+    // 5. 板号标签
+    if (drawCellSize >= 7) {
+      const labelFont = Math.min(16, Math.max(11, drawCellSize * 0.6));
+      for (let boardRow = 0; boardRow < physicalBoardRows; boardRow++) {
+        for (let boardCol = 0; boardCol < physicalBoardCols; boardCol++) {
+          const startX = boardCol * physicalBoardSize;
+          const startY = boardRow * physicalBoardSize;
+          const endX = Math.min(startX + physicalBoardSize, beadData.width);
+          const endY = Math.min(startY + physicalBoardSize, beadData.height);
+          if (
+            endX < visibleGlobalStartX ||
+            startX > visibleGlobalEndX ||
+            endY < visibleGlobalStartY ||
+            startY > visibleGlobalEndY
+          ) {
+            continue;
+          }
+          const x = (startX - displayStartX) * drawCellWidth + 4;
+          const y = (startY - displayStartY) * drawCellHeight + 4;
+          const text = `板${boardRow * physicalBoardCols + boardCol + 1}`;
+          ctx.save();
+          ctx.font = `700 ${labelFont}px "Trebuchet MS", "PingFang SC", sans-serif`;
+          const textWidth = ctx.measureText(text).width;
+          const pillHeight = labelFont + 6;
+          ctx.fillStyle = "rgba(255,153,0,0.95)";
           ctx.beginPath();
-          ctx.moveTo(0, guideY * drawCellSize);
-          ctx.lineTo(canvasWidth, guideY * drawCellSize);
-          ctx.stroke();
+          ctx.roundRect(x, y, textWidth + 12, pillHeight, 6);
+          ctx.fill();
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(text, x + 6, y + labelFont);
+          ctx.restore();
         }
       }
-      ctx.restore();
     }
+    ctx.restore();
 
-    // 拼豆板边界线（智能推荐板尺寸 + 橙色虚线 + 板号标注）
-    const boardRec = recommendBoard(width, height);
-    const BOARD_SIZE = boardRec.boardSize;
-    const boardCols = boardRec.cols;
-    const boardRows = boardRec.rows;
-    if (boardCols > 1 || boardRows > 1) {
+    // 6. 当前板聚焦边框/当前区块边框
+    if (focusedBoardRect) {
+      const x = focusedBoardRect.left;
+      const y = focusedBoardRect.top;
+      const w = focusedBoardRect.width;
+      const h = focusedBoardRect.height;
       ctx.save();
-      ctx.setLineDash([drawCellSize * 0.5, drawCellSize * 0.3]);
-      ctx.strokeStyle = "rgba(255, 160, 0, 0.8)";
-      ctx.lineWidth = blockLine;
-      // 垂直板线
-      for (let c = 1; c < boardCols; c++) {
-        const px = c * BOARD_SIZE * drawCellSize;
-        ctx.beginPath();
-        ctx.moveTo(px, 0);
-        ctx.lineTo(px, canvasHeight);
-        ctx.stroke();
-      }
-      // 水平板线
-      for (let r = 1; r < boardRows; r++) {
-        const py = r * BOARD_SIZE * drawCellSize;
-        ctx.beginPath();
-        ctx.moveTo(0, py);
-        ctx.lineTo(canvasWidth, py);
-        ctx.stroke();
-      }
-      ctx.setLineDash([]);
+      ctx.strokeStyle = "rgba(79,174,225,0.95)";
+      ctx.lineWidth = Math.max(1.5, 2 / dpr);
+      ctx.setLineDash([8, 5]);
+      ctx.strokeRect(x, y, w, h);
+      ctx.restore();
+    }
 
-      // 板号标注
-      const labelSize = Math.max(10, drawCellSize * 0.8);
-      ctx.font = `bold ${labelSize}px Arial, sans-serif`;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      let boardNum = 1;
-      for (let r = 0; r < boardRows; r++) {
-        for (let c = 0; c < boardCols; c++) {
-          const lx = c * BOARD_SIZE * drawCellSize + 3;
-          const ly = r * BOARD_SIZE * drawCellSize + 3;
-          // 背景
-          const text = `板${boardNum}`;
-          const tw = ctx.measureText(text).width + 6;
-          ctx.fillStyle = "rgba(255, 160, 0, 0.85)";
-          ctx.fillRect(lx - 2, ly - 1, tw, labelSize + 4);
-          // 文字
-          ctx.fillStyle = "#fff";
-          ctx.fillText(text, lx + 1, ly + 1);
-          boardNum++;
+    if (selection.type === "block" || selection.type === "color") {
+      const localStartX = selectedBlockStartX - displayStartX;
+      const localStartY = selectedBlockStartY - displayStartY;
+      const x = localStartX * drawCellWidth;
+      const y = localStartY * drawCellHeight;
+      const w = (selectedBlockEndX - selectedBlockStartX) * drawCellWidth;
+      const h = (selectedBlockEndY - selectedBlockStartY) * drawCellHeight;
+      const snappedLeft = snapCanvasCoord(x);
+      const snappedTop = snapCanvasCoord(y);
+      const snappedRight = snapCanvasCoord(x + w);
+      const snappedBottom = snapCanvasCoord(y + h);
+      ctx.save();
+      ctx.strokeStyle = "#ff6aa2";
+      ctx.lineWidth = Math.max(1.5, 2.2 / dpr);
+      ctx.strokeRect(
+        snappedLeft,
+        snappedTop,
+        Math.max(0, snappedRight - snappedLeft),
+        Math.max(0, snappedBottom - snappedTop),
+      );
+      ctx.restore();
+    }
+
+    if (selection.type === "color" && highlightedIndices.size > 0) {
+      ctx.save();
+      const highlightFill = "rgba(255, 106, 162, 0.18)";
+      const selectedStroke = "rgba(255, 255, 255, 0.98)";
+      const selectedStrokeWidth = Math.max(1.5, 2.6 / dpr);
+
+      for (let y = visibleStartY; y < visibleEndY; y++) {
+        const globalY = displayStartY + y;
+        for (let x = visibleStartX; x < visibleEndX; x++) {
+          const globalX = displayStartX + x;
+          const index = globalY * beadData.width + globalX;
+          if (!highlightedIndices.has(index)) continue;
+
+          const px = x * drawCellWidth;
+          const py = y * drawCellHeight;
+          const snappedPx = snapCanvasCoord(px);
+          const snappedPy = snapCanvasCoord(py);
+          const snappedRight = snapCanvasCoord(px + drawCellWidth);
+          const snappedBottom = snapCanvasCoord(py + drawCellHeight);
+          const snappedWidth = Math.max(0, snappedRight - snappedPx);
+          const snappedHeight = Math.max(0, snappedBottom - snappedPy);
+
+          ctx.fillStyle = highlightFill;
+          ctx.fillRect(snappedPx, snappedPy, snappedWidth, snappedHeight);
+
+          if (selectedCell && selectedCell.x === globalX && selectedCell.y === globalY) {
+            ctx.strokeStyle = selectedStroke;
+            ctx.lineWidth = selectedStrokeWidth;
+            ctx.strokeRect(
+              snappedPx + selectedStrokeWidth * 0.5,
+              snappedPy + selectedStrokeWidth * 0.5,
+              Math.max(0, snappedWidth - selectedStrokeWidth),
+              Math.max(0, snappedHeight - selectedStrokeWidth),
+            );
+          }
         }
       }
       ctx.restore();
     }
 
-    // 选中区块时，绘制高亮边框
-    if (selection.type === "block") {
-      ctx.strokeStyle = "#00FFFF";
-      ctx.lineWidth = Math.max(2, blockLine + 1);
-      ctx.shadowColor = "#00FFFF";
-      ctx.shadowBlur = 4;
-      const bw = (selectedBlockEndX - selectedBlockStartX) * drawCellSize;
-      const bh = (selectedBlockEndY - selectedBlockStartY) * drawCellSize;
-      ctx.strokeRect(
-        selectedBlockStartX * drawCellSize,
-        selectedBlockStartY * drawCellSize,
-        bw,
-        bh,
-      );
-      ctx.shadowBlur = 0;
-    }
-
-    // 选中颜色时，高亮像素已在上方绘制阶段完成（白色半透明叠加）
-    // 不再使用粗边框，改为明暗对比突出选中像素
-
-    // 绘制色号
-    const minSizeForColorId = 24;
-    const fullOpacitySize = 40;
-
-    if (showColorId && drawCellSize >= minSizeForColorId) {
-      const fontSize = Math.max(10, Math.min(28, drawCellSize * 0.42));
-      const opacity = Math.min(
-        1,
-        (drawCellSize - minSizeForColorId) /
-          (fullOpacitySize - minSizeForColorId),
-      );
-
-      ctx.font = `700 ${fontSize}px "PingFang SC", "Microsoft YaHei", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif`;
+    // 7. 色号，按屏幕像素直接绘制，避免随底图模糊
+    if (showColorId && drawCellSize >= 10) {
+      const fontSize = Math.min(15, Math.max(8, drawCellSize * 0.46));
+      ctx.save();
+      ctx.font = `700 ${fontSize}px Consolas, "Courier New", monospace`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      ctx.lineWidth = Math.max(0.9, fontSize * 0.14);
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.miterLimit = 2;
 
-      for (let y = 0; y < height; y++) {
-        let currentColorId = "";
-        let segmentCount = 0;
-
-        for (let x = 0; x < width; x++) {
-          const index = y * width + x;
-          const bead = beads[index];
-          const px = x * drawCellSize + drawCellSize / 2;
-          const py = y * drawCellSize + drawCellSize / 2;
-          const beadHex = bead?.hex || "#1a1a24";
-
-          // 判断该像素是否处于“激活”状态（未被遮罩变暗）
-          let isActive = true;
-          if (selection.type === "block") {
-            const inBlock =
-              x >= selectedBlockStartX &&
-              x < selectedBlockEndX &&
-              y >= selectedBlockStartY &&
-              y < selectedBlockEndY;
-            isActive = inBlock;
-          }
-          if (selection.type === "color") {
-            isActive = highlightedIndices.has(index);
-          }
-
-          // 激活像素正常显示，非激活像素降低透明度（仍可见色号）
-          const effectiveOpacity = isActive ? opacity : opacity * 0.35;
-
-          const contrastColor = getContrastColor(beadHex);
-          const r = parseInt(contrastColor.slice(1, 3), 16);
-          const g = parseInt(contrastColor.slice(3, 5), 16);
-          const b = parseInt(contrastColor.slice(5, 7), 16);
-          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${effectiveOpacity})`;
-
-          // 直接使用原始色号（MARD: H9、A1 等已足够简短）
-          const displayColorId = bead?.id || "--";
-
-          let displayText = "";
-          if (bead.id !== currentColorId || segmentCount >= 99) {
-            currentColorId = bead.id;
-            segmentCount = 1;
-            displayText = displayColorId;
-          } else {
-            segmentCount++;
-            displayText = segmentCount.toString();
-          }
-
-          ctx.fillText(displayText, px, py);
+      for (let y = visibleStartY; y < visibleEndY; y++) {
+        const globalY = displayStartY + y;
+        for (let x = visibleStartX; x < visibleEndX; x++) {
+          const globalX = displayStartX + x;
+          const bead = beadData.beads[globalY * beadData.width + globalX];
+          if (!bead?.id) continue;
+          const cx = x * drawCellWidth + drawCellWidth / 2;
+          const cy = y * drawCellHeight + drawCellHeight / 2;
+          const fillColor = getContrastColor(bead.hex);
+          const strokeColor = fillColor === "#000000" ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.95)";
+          ctx.strokeStyle = strokeColor;
+          ctx.fillStyle = fillColor;
+          ctx.strokeText(bead.id, cx, cy);
+          ctx.fillText(bead.id, cx, cy);
         }
       }
+      ctx.restore();
     }
-  }, [beadData, scale, showColorId, selection, getColorIndicesInBlock]);
+  }, [
+    beadData,
+    displayBoardRect,
+    displayHeight,
+    displayWidth,
+    getBlockRectBySelection,
+    getColorIndicesInBlock,
+    showColorId,
+    safeRenderCellSize,
+    safeRenderCanvasHeight,
+    safeRenderCanvasWidth,
+    selection,
+    currentBoardRect,
+    assistPackEnabled,
+    focusCurrentBoard,
+    selectedCell,
+    physicalBoardCols,
+    physicalBoardRows,
+    physicalBoardSize,
+  ]);
 
   // 取消选中
   const handleClearSelection = () => {
     setSelection({ type: null, blockX: 0, blockY: 0 });
+    setSelectedCell(null);
   };
 
   const handleOpenExport = useCallback(() => {
     setShowExportModal(true);
   }, []);
+
+  const handleSingleBoardToolbarPrimaryAction = useCallback(() => {
+    if (singleBoardAllDone) {
+      setSingleBoardOverviewCollapsed(false);
+      handleOpenExport();
+      return;
+    }
+    if (activeBoardDone && nextPendingBoardNumber) {
+      activateBoard(nextPendingBoardNumber, true);
+      return;
+    }
+    handleToggleBoardDone();
+  }, [
+    activateBoard,
+    activeBoardDone,
+    handleOpenExport,
+    handleToggleBoardDone,
+    nextPendingBoardNumber,
+    singleBoardAllDone,
+  ]);
 
   // 如果没有数据
   if (!beadData) {
@@ -1568,10 +2529,57 @@ const MakingPage: React.FC = () => {
     order: isNarrowToolbar ? 2 : 0,
     marginLeft: isNarrowToolbar ? "auto" : 0,
   };
+  const singleBoardToolbarBtnStyle: React.CSSProperties = {
+    ...styles.singleBoardToolbarBtn,
+    ...(isCompactToolbar ? styles.singleBoardToolbarBtnCompact : {}),
+  };
+  const modeSwitchBarStyle: React.CSSProperties = {
+    ...styles.modeSwitchBar,
+    ...(viewMode === "singleBoard"
+      ? {
+        gap: "6px",
+        padding: "6px 8px 0",
+      }
+      : {}),
+  };
+  const modeSwitchBtnStyle = (active: boolean): React.CSSProperties => ({
+    ...styles.modeSwitchBtn,
+    ...(viewMode === "singleBoard"
+      ? {
+        height: "30px",
+        fontSize: "12px",
+      }
+      : {}),
+    ...(active ? styles.modeSwitchBtnActive : {}),
+  });
+  const singleBoardChromeOffset = viewMode === "singleBoard" ? 46 : 50;
+  const shouldShowStatusHint =
+    viewMode !== "singleBoard" ||
+    (!singleBoardAllDone && (selection.type !== null || showSettings));
   const statusHintStyle: React.CSSProperties = {
     ...styles.statusHint,
-    top: isNarrowToolbar ? "88px" : styles.statusHint.top,
+    top: isNarrowToolbar ? `${singleBoardChromeOffset + 38}px` : `${singleBoardChromeOffset}px`,
     maxWidth: isNarrowToolbar ? "calc(100vw - 32px)" : undefined,
+    ...(viewMode === "singleBoard"
+      ? {
+        padding: "4px 10px",
+        fontSize: "11px",
+      }
+      : {}),
+  };
+  const canvasWrapperStyle: React.CSSProperties = {
+    ...styles.canvasWrapper,
+    top: `${singleBoardChromeOffset}px`,
+  };
+  const canvasContainerStyle: React.CSSProperties = {
+    ...styles.canvasContainer,
+    minHeight: viewMode === "singleBoard" ? "clamp(420px, 68vh, 760px)" : undefined,
+  };
+  const canvasStageStyle: React.CSSProperties = {
+    ...styles.canvasStage,
+    width: `${safeRenderCanvasWidth}px`,
+    height: `${safeRenderCanvasHeight}px`,
+    transform: `translate(${translateX}px, ${translateY}px) scale(${displayScale})`,
   };
 
   return (
@@ -1590,11 +2598,330 @@ const MakingPage: React.FC = () => {
 
       {/* 预览区 */}
       <div style={styles.previewSection}>
-        <div style={styles.canvasContainer}>
+        {!(viewMode === "singleBoard" && singleBoardAllDone) && (
+          <div style={modeSwitchBarStyle}>
+            <button
+              style={modeSwitchBtnStyle(viewMode === "traditional")}
+              onClick={() => setViewMode("traditional")}
+            >
+              传统模式
+            </button>
+            <button
+              style={modeSwitchBtnStyle(viewMode === "singleBoard")}
+              onClick={() => {
+                setViewMode("singleBoard");
+                if (resumeBoardNumber) {
+                  activateBoard(resumeBoardNumber, true);
+                } else if (activeBoardRect) {
+                  activateBoard(activeBoardRect.boardNumber, true);
+                } else if (boardRects[0]) {
+                  activateBoard(boardRects[0].boardNumber, true);
+                }
+              }}
+            >
+              单板模式
+            </button>
+          </div>
+        )}
+
+        {viewMode === "singleBoard" && (
+          <div style={styles.singleBoardOverview}>
+            {singleBoardAllDone ? (
+              <div style={styles.singleBoardCompletionEntry}>
+                <div style={styles.singleBoardResumeEntryMeta}>
+                  <span style={styles.singleBoardResumeEntryTitle}>全部板已完成</span>
+                  <span style={styles.singleBoardResumeEntryText}>
+                    {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount} · 导出图纸 / 查看整图
+                  </span>
+                  <span style={styles.singleBoardResumeEntryText}>
+                    {inventoryConsumed
+                      ? "豆仓已扣减"
+                      : inventoryCheck.canApply
+                        ? `可扣减豆仓 · 共 ${inventoryCheck.totalNeed} 颗`
+                        : `库存不足 · 还差 ${inventoryCheck.shortageTotal} 颗`}
+                  </span>
+                  {shareFeedback && (
+                    <span style={styles.singleBoardShareFeedback}>
+                      {shareFeedback === "preparing"
+                        ? "正在准备分享..."
+                        : shareFeedback === "shared"
+                        ? "已打开系统分享"
+                        : shareFeedback === "copied"
+                          ? "已复制分享文案"
+                          : "当前环境不支持直接分享，可先导出图纸"}
+                    </span>
+                  )}
+                  {inventoryFeedback && (
+                    <span style={styles.singleBoardShareFeedback}>{inventoryFeedback}</span>
+                  )}
+                </div>
+                <div style={styles.singleBoardCompletionActions}>
+                  <button
+                    style={{
+                      ...styles.singleBoardResumeEntryBtn,
+                      ...styles.singleBoardSecondaryBtn,
+                      opacity: inventoryConsumed || !inventoryCheck.canApply ? 0.72 : 1,
+                    }}
+                    onClick={handleDeductInventory}
+                    disabled={inventoryConsumed || !inventoryCheck.canApply}
+                  >
+                    {inventoryConsumed
+                      ? "已扣减豆仓"
+                      : inventoryCheck.canApply
+                        ? "扣减豆仓"
+                        : "库存不足"}
+                  </button>
+                  <button
+                    style={{ ...styles.singleBoardResumeEntryBtn, ...styles.singleBoardSecondaryBtn }}
+                    onClick={handleOpenTraditionalOverview}
+                  >
+                    查看整图
+                  </button>
+                  <button
+                    style={styles.singleBoardResumeEntryBtn}
+                    onClick={handleOpenExport}
+                  >
+                    导出图纸
+                  </button>
+                </div>
+              </div>
+            ) : resumeBoardNumber && (
+              <div style={styles.singleBoardResumeEntry}>
+                <div style={styles.singleBoardResumeEntryMeta}>
+                  <span style={styles.singleBoardResumeEntryTitle}>继续上次制作</span>
+                  <span style={styles.singleBoardResumeEntryText}>
+                    板{resumeBoardNumber} · 已完成 {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
+                  </span>
+                </div>
+                <button
+                  style={styles.singleBoardResumeEntryBtn}
+                  onClick={() => activateBoard(resumeBoardNumber, true)}
+                >
+                  继续
+                </button>
+              </div>
+            )}
+            {!singleBoardAllDone && (
+              <>
+                <div style={styles.singleBoardCompactHeader}>
+                  <div style={styles.singleBoardCompactMeta}>
+                    <span style={styles.singleBoardSummaryTitle}>单板</span>
+                    <span style={styles.singleBoardSummaryText}>
+                      {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
+                      {singleBoardProgress.totalCount > 0 ? ` · ${singleBoardProgress.percent}%` : ""}
+                      {` · 剩余${singleBoardProgress.remainingCount}块`}
+                    </span>
+                    {nextPendingBoardNumber && (
+                      <span style={styles.singleBoardSummaryHint}>
+                        下一块：板{nextPendingBoardNumber}
+                      </span>
+                    )}
+                    <span
+                      style={{
+                        ...styles.singleBoardStatePill,
+                        ...(activeBoardDone
+                          ? styles.singleBoardStatePillDone
+                          : styles.singleBoardStatePillTodo),
+                      }}
+                    >
+                      {activeBoardDone ? `板${activeBoardNumber} 已完成` : `板${activeBoardNumber} 进行中`}
+                    </span>
+                  </div>
+                  <button
+                    style={styles.singleBoardCollapseBtn}
+                    onClick={() => setSingleBoardOverviewCollapsed((prev) => !prev)}
+                  >
+                    {singleBoardOverviewCollapsed ? "展开总览" : "收起总览"}
+                  </button>
+                </div>
+                {!singleBoardOverviewCollapsed && (
+                  <div style={styles.singleBoardProgressTrack}>
+                    <div
+                      style={{
+                        ...styles.singleBoardProgressFill,
+                        width: `${singleBoardProgress.percent}%`,
+                      }}
+                    />
+                  </div>
+                )}
+              <div style={styles.singleBoardQuickRow}>
+                <div style={styles.singleBoardQuickControls}>
+                  <button
+                    style={{
+                      ...styles.singleBoardQuickToggle,
+                      ...(autoAdvanceOnBoardDone ? styles.singleBoardQuickToggleActive : {}),
+                    }}
+                    onClick={() => setAutoAdvanceOnBoardDone((prev) => !prev)}
+                  >
+                    {autoAdvanceOnBoardDone ? "自动切下一板" : "完成后停留当前板"}
+                  </button>
+                </div>
+                {pendingBoardNumbers.length > 0 && !singleBoardOverviewCollapsed && (
+                  <div style={styles.singleBoardPendingRow}>
+                    <span style={styles.singleBoardPendingLabel}>未完成：</span>
+                    {pendingBoardNumbers.slice(0, 3).map((boardNumber) => (
+                      <button
+                        key={`pending-${boardNumber}`}
+                        style={styles.singleBoardPendingChip}
+                        onClick={() => activateBoard(boardNumber, true)}
+                      >
+                        板{boardNumber}
+                      </button>
+                    ))}
+                    {pendingBoardNumbers.length > 3 && (
+                      <span style={styles.singleBoardPendingMore}>
+                        +{pendingBoardNumbers.length - 3}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              {!singleBoardOverviewCollapsed && (
+                <div style={styles.singleBoardHeroRow}>
+                  <div style={styles.singleBoardSummaryCard}>
+                    <div style={styles.singleBoardSummary}>
+                      <span style={styles.singleBoardSummaryTitle}>当前板工作流</span>
+                      <span style={styles.singleBoardSummaryText}>
+                        板{activeBoardNumber} / 共 {singleBoardProgress.totalCount} 块
+                      </span>
+                    </div>
+                    <div style={styles.singleBoardActionRow}>
+                      <button
+                        style={styles.singleBoardMinorBtn}
+                        onClick={handleToggleBoardDone}
+                        disabled={!activeBoardRect}
+                      >
+                        {activeBoardRect && boardStatusMap[activeBoardRect.boardNumber]
+                          ? "取消完成"
+                          : "标记本板完成"}
+                      </button>
+                      <button
+                        style={styles.singleBoardMinorBtn}
+                        onClick={locateCurrentBoard}
+                        disabled={!activeBoardRect}
+                      >
+                        找到当前板
+                      </button>
+                    </div>
+                  </div>
+                  <div style={styles.singleBoardMiniMapCard}>
+                    <div style={styles.singleBoardMiniMapFrame}>
+                      <div
+                        style={{
+                          ...styles.singleBoardMiniMapCanvas,
+                          aspectRatio: beadData ? `${beadData.width} / ${beadData.height}` : "1 / 1",
+                        }}
+                      >
+                        {boardRects.map((board) => {
+                          const isActive = board.boardNumber === activeBoardNumber;
+                          const isDone = Boolean(boardStatusMap[board.boardNumber]);
+                          const left = `${(board.startX / beadData!.width) * 100}%`;
+                          const top = `${(board.startY / beadData!.height) * 100}%`;
+                          const width = `${((board.endX - board.startX) / beadData!.width) * 100}%`;
+                          const height = `${((board.endY - board.startY) / beadData!.height) * 100}%`;
+                          return (
+                            <button
+                              key={`mini-${board.boardNumber}`}
+                              style={{
+                                ...styles.singleBoardMiniMapCell,
+                                ...(isDone ? styles.singleBoardMiniMapCellDone : {}),
+                                ...(isActive ? styles.singleBoardMiniMapCellActive : {}),
+                                left,
+                                top,
+                                width,
+                                height,
+                              }}
+                              onClick={() => activateBoard(board.boardNumber, true)}
+                              title={`板${board.boardNumber}`}
+                            >
+                              {isActive ? `板${board.boardNumber}` : ""}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div style={styles.singleBoardMiniMapHint}>整图定位</div>
+                  </div>
+                </div>
+              )}
+              {singleBoardOverviewCollapsed ? (
+                <div style={styles.singleBoardCompactNav}>
+                  <button
+                    style={styles.singleBoardCompactNavBtn}
+                    onClick={() => jumpToBoard(-1)}
+                    disabled={activeBoardNumber <= 1}
+                  >
+                    上一块板
+                  </button>
+                  <div style={styles.singleBoardCompactNavChips}>
+                    {compactBoardNav.map((boardNumber) => {
+                      const isActive = boardNumber === activeBoardNumber;
+                      const isDone = Boolean(boardStatusMap[boardNumber]);
+                      return (
+                        <button
+                          key={`compact-board-${boardNumber}`}
+                          style={{
+                            ...styles.singleBoardChip,
+                            ...(isActive ? styles.singleBoardChipActive : {}),
+                            ...(isDone ? styles.singleBoardChipDone : {}),
+                          }}
+                          onClick={() => activateBoard(boardNumber, true)}
+                        >
+                          板{boardNumber}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    style={styles.singleBoardCompactNavBtn}
+                    onClick={() => jumpToBoard(1)}
+                    disabled={activeBoardNumber >= totalBoardCount}
+                  >
+                    下一块板
+                  </button>
+                </div>
+              ) : (
+                <div style={styles.singleBoardGrid}>
+                  {boardRects.map((board) => {
+                    const isActive = board.boardNumber === activeBoardNumber;
+                    const isDone = Boolean(boardStatusMap[board.boardNumber]);
+                    return (
+                      <button
+                        key={board.boardNumber}
+                        style={{
+                          ...styles.singleBoardChip,
+                          ...(isActive ? styles.singleBoardChipActive : {}),
+                          ...(isDone ? styles.singleBoardChipDone : {}),
+                        }}
+                        onClick={() => activateBoard(board.boardNumber, true)}
+                      >
+                        板{board.boardNumber}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              </>
+            )}
+          </div>
+        )}
+
+        <div style={canvasContainerStyle}>
           {/* 浮动控制栏 */}
           <div style={floatingControlsStyle}>
             {/* 左侧：缩放 */}
-            <div style={zoomControlsStyle}>
+            <div
+              style={{
+                ...zoomControlsStyle,
+                ...(viewMode === "singleBoard"
+                  ? {
+                    padding: singleBoardAllDone ? "3px 6px" : "4px 8px",
+                    gap: singleBoardAllDone ? "3px" : "4px",
+                    borderRadius: "10px",
+                  }
+                  : {}),
+              }}
+            >
               <button
                 style={styles.miniBtn}
                 onClick={() => {
@@ -1613,10 +2940,15 @@ const MakingPage: React.FC = () => {
               <input
                 type="range"
                 min={MIN_SCALE}
-                max={MAX_SCALE}
+                max={renderMaxScale}
                 step={0.05}
                 value={scale}
-                style={zoomRangeStyle}
+                style={{
+                  ...zoomRangeStyle,
+                  ...(viewMode === "singleBoard" && singleBoardAllDone
+                    ? { display: "none" }
+                    : {}),
+                }}
                 onChange={(e) => {
                   const wrapper = wrapperRef.current;
                   const focalX = wrapper ? wrapper.clientWidth / 2 : 0;
@@ -1625,7 +2957,19 @@ const MakingPage: React.FC = () => {
                 }}
                 aria-label="缩放倍率"
               />
-              <span style={zoomLabelStyle}>{Math.round(scale * 100)}%</span>
+              <span
+                style={{
+                  ...zoomLabelStyle,
+                  ...(viewMode === "singleBoard"
+                    ? {
+                      minWidth: singleBoardAllDone ? 30 : 40,
+                      fontSize: singleBoardAllDone ? "11px" : "12px",
+                    }
+                    : {}),
+                }}
+              >
+                {Math.round(scale * 100)}%
+              </span>
               <button
                 style={styles.miniBtn}
                 onClick={() => {
@@ -1642,29 +2986,76 @@ const MakingPage: React.FC = () => {
                 +
               </button>
               <button
-                style={fitBtnStyle}
+                style={{
+                  ...fitBtnStyle,
+                  ...(viewMode === "singleBoard" && singleBoardAllDone
+                    ? { height: "28px", minWidth: "48px", padding: "0 8px", fontSize: "11px" }
+                    : {}),
+                }}
                 onClick={handleFitScreen}
-                title="适应屏幕宽度"
+                title={viewMode === "singleBoard" ? "适应当前板" : "适应屏幕宽度"}
               >
-                适宽
+                {viewMode === "singleBoard" ? "适板" : "适宽"}
               </button>
             </div>
 
             {/* 右侧：功能按钮 */}
             <div style={controlBtnsStyle}>
+              {viewMode === "singleBoard" && !singleBoardAllDone && (
+                <button
+                  style={{ ...singleBoardToolbarBtnStyle, ...styles.singleBoardToolbarPrimaryBtn }}
+                  onClick={handleSingleBoardToolbarPrimaryAction}
+                  title={
+                    singleBoardAllDone
+                      ? "收尾并导出图纸"
+                      : activeBoardDone && nextPendingBoardNumber
+                        ? `继续板${nextPendingBoardNumber}`
+                        : `完成板${activeBoardNumber}`
+                  }
+                >
+                  {singleBoardAllDone
+                    ? "收尾"
+                    : activeBoardDone && nextPendingBoardNumber
+                      ? `继续板${nextPendingBoardNumber}`
+                      : `完成板${activeBoardNumber}`}
+                </button>
+              )}
+              {!(viewMode === "singleBoard" && singleBoardAllDone) && (
+                <button
+                  style={viewMode === "singleBoard" ? singleBoardToolbarBtnStyle : styles.miniBtn}
+                  onClick={handleOpenExport}
+                  title="下载图纸"
+                >
+                  {viewMode === "singleBoard" ? (
+                    <>
+                      <DownloadSimple size={13} />
+                      图纸
+                    </>
+                  ) : (
+                    <DownloadSimple size={14} />
+                  )}
+                </button>
+              )}
               <button
-                style={styles.miniBtn}
-                onClick={handleOpenExport}
-                title="下载图纸"
-              >
-                <DownloadSimple size={14} />
-              </button>
-              <button
-                style={styles.miniBtn}
+                style={
+                  viewMode === "singleBoard"
+                    ? {
+                      ...singleBoardToolbarBtnStyle,
+                      ...(singleBoardAllDone ? styles.singleBoardToolbarBtnCompact : {}),
+                    }
+                    : styles.miniBtn
+                }
                 onClick={() => setShowSettings(!showSettings)}
                 title="设置"
               >
-                <Gear size={14} />
+                {viewMode === "singleBoard" ? (
+                  <>
+                    <Gear size={13} />
+                    辅助
+                  </>
+                ) : (
+                  <Gear size={14} />
+                )}
               </button>
             </div>
           </div>
@@ -1737,6 +3128,48 @@ const MakingPage: React.FC = () => {
                     打开
                   </button>
                 </div>
+                <div style={styles.settingDivider} />
+                <div style={styles.settingRow}>
+                  <span style={styles.settingLabel}>高级制作辅助</span>
+                  <button
+                    style={{
+                      ...styles.toggleBtn,
+                      ...(assistPackEnabled ? styles.toggleBtnActive : {}),
+                    }}
+                    onClick={() => setAssistPackEnabled(!assistPackEnabled)}
+                    title="开启后增强当前板聚焦、定位和固定坐标提示"
+                  >
+                    {assistPackEnabled ? <CheckCircle size={16} weight="fill" /> : <CheckCircle size={16} />}
+                  </button>
+                </div>
+                <div style={styles.settingRow}>
+                  <span style={styles.settingLabel}>聚焦当前板</span>
+                  <button
+                    style={{
+                      ...styles.toggleBtn,
+                      ...(assistPackEnabled && focusCurrentBoard ? styles.toggleBtnActive : {}),
+                      opacity: assistPackEnabled ? 1 : 0.45,
+                    }}
+                    onClick={() => assistPackEnabled && setFocusCurrentBoard(!focusCurrentBoard)}
+                    disabled={!assistPackEnabled}
+                  >
+                    {focusCurrentBoard ? <Eye size={16} /> : <EyeSlash size={16} />}
+                  </button>
+                </div>
+                <div style={styles.settingRow}>
+                  <span style={styles.settingLabel}>自动定位</span>
+                  <button
+                    style={{
+                      ...styles.toggleBtn,
+                      ...(assistPackEnabled && autoLocateSelection ? styles.toggleBtnActive : {}),
+                      opacity: assistPackEnabled ? 1 : 0.45,
+                    }}
+                    onClick={() => assistPackEnabled && setAutoLocateSelection(!autoLocateSelection)}
+                    disabled={!assistPackEnabled}
+                  >
+                    {autoLocateSelection ? <CheckCircle size={16} weight="fill" /> : <CheckCircle size={16} />}
+                  </button>
+                </div>
                 <div style={styles.settingHint}>
                   <p style={styles.hintText}>
                     <strong>操作说明：</strong>
@@ -1750,32 +3183,36 @@ const MakingPage: React.FC = () => {
           )}
 
           {/* 状态提示 */}
-          <div style={statusHintStyle}>
-            {selection.type === null && (
-              <span>
-                {scale < ZOOM_THRESHOLD ? "点击选择区块" : "点击选择颜色"}
-              </span>
-            )}
-            {selection.type === "block" && (
-              <span>
-                区块 ({selection.blockX + 1}, {selection.blockY + 1})
-              </span>
-            )}
-            {selection.type === "color" && selection.colorHex && (
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span
-                  style={{
-                    width: 14,
-                    height: 14,
-                    backgroundColor: selection.colorHex,
-                    borderRadius: 3,
-                    border: "1px solid rgba(255,255,255,0.3)",
-                  }}
-                />
-                区块{colorCountInBlock}颗 / 全部{colorCountTotal}颗
-              </span>
-            )}
-          </div>
+          {shouldShowStatusHint && (
+            <div style={statusHintStyle}>
+              {selection.type === null && (
+                <span>
+                  {viewMode === "singleBoard"
+                    ? (scale < ZOOM_THRESHOLD ? "点格选区块" : "点格选颜色")
+                    : (scale < ZOOM_THRESHOLD ? "点击选择区块" : "点击选择颜色")}
+                </span>
+              )}
+              {selection.type === "block" && (
+                <span>
+                  区块 ({selection.blockX + 1}, {selection.blockY + 1})
+                </span>
+              )}
+              {selection.type === "color" && selection.colorHex && (
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span
+                    style={{
+                      width: 14,
+                      height: 14,
+                      backgroundColor: selection.colorHex,
+                      borderRadius: 3,
+                      border: "1px solid rgba(255,255,255,0.3)",
+                    }}
+                  />
+                  区块{colorCountInBlock}颗 / 全部{colorCountTotal}颗
+                </span>
+              )}
+            </div>
+          )}
 
           {/* 坐标提示框 */}
           <CoordinateTooltip
@@ -1785,20 +3222,17 @@ const MakingPage: React.FC = () => {
             boardNumber={tooltipState.boardNumber}
             localRow={tooltipState.localRow}
             localCol={tooltipState.localCol}
-            cellScreenX={tooltipState.screenX}
-            cellScreenY={tooltipState.screenY}
-            containerWidth={wrapperRef.current?.clientWidth || 300}
-            containerHeight={wrapperRef.current?.clientHeight || 300}
-            onHide={() =>
-              setTooltipState((prev) => ({ ...prev, visible: false }))
-            }
-          />
+          cellScreenX={tooltipState.screenX}
+          cellScreenY={tooltipState.screenY}
+          containerWidth={wrapperRef.current?.clientWidth || 300}
+          containerHeight={wrapperRef.current?.clientHeight || 300}
+        />
 
           {/* Canvas */}
           <div
             ref={wrapperRef}
             style={{
-              ...styles.canvasWrapper,
+              ...canvasWrapperStyle,
               cursor: isDragging ? "grabbing" : "grab",
             }}
             onTouchStart={handleTouchStart}
@@ -1809,30 +3243,190 @@ const MakingPage: React.FC = () => {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
           >
-            <canvas
-              ref={canvasRef}
-              style={{
-                ...styles.canvas,
-                transform: `translate(${translateX}px, ${translateY}px)`,
-              }}
-              onClick={handleCanvasClick}
-            />
+            <div style={canvasStageStyle}>
+              <canvas
+                ref={canvasRef}
+                style={styles.canvas}
+                onClick={handleCanvasClick}
+              />
+              <canvas
+                ref={overlayCanvasRef}
+                style={styles.overlayCanvas}
+              />
+            </div>
           </div>
         </div>
       </div>
 
       {/* 底部操作栏 */}
-      <BannerAd placement="making_bottom" />
+      {viewMode !== "singleBoard" && <BannerAd placement="making_bottom" />}
 
       <div style={styles.bottomBar}>
         {selection.type === null ? (
           <div style={styles.bottomHint}>
-            {scale < ZOOM_THRESHOLD ? "点击画布选择区块" : "点击格子查看坐标"}
+            {viewMode === "singleBoard"
+              ? (scale < ZOOM_THRESHOLD ? "点格选区块" : "点格看坐标")
+              : (scale < ZOOM_THRESHOLD ? "点击画布选择区块" : "点击格子查看坐标")}
           </div>
         ) : (
           <div style={styles.bottomActions}>
-            {/* 提示：再次点击可取消 */}
-            <span style={styles.bottomHintSmall}>再次点击可取消选中</span>
+            {assistPackEnabled && selectedCoordinateSummary && (
+              <div
+                style={{
+                  ...styles.assistDock,
+                  ...(viewMode === "singleBoard"
+                    ? {
+                      padding: "6px 8px",
+                      gap: "8px",
+                      borderRadius: "10px",
+                    }
+                    : {}),
+                }}
+              >
+                <div style={styles.assistMeta}>
+                  {viewMode === "singleBoard" && singleBoardAllDone ? (
+                    <>
+                      <span style={{ ...styles.assistBoardBadge, ...styles.singleBoardFinishBadge }}>
+                        已完工
+                      </span>
+                      <span style={styles.assistCoordText}>作品已完成</span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={styles.assistBoardBadge}>{selectedCoordinateSummary.boardLabel}</span>
+                      <span style={styles.assistCoordText}>
+                        列{selectedCoordinateSummary.localCol} 行{selectedCoordinateSummary.localRow}
+                      </span>
+                    </>
+                  )}
+                  {viewMode === "singleBoard" ? (
+                    <>
+                      <span style={styles.singleBoardTaskPill}>
+                        {singleBoardAllDone
+                          ? "全部完成"
+                          : activeBoardDone
+                            ? `板${activeBoardNumber}已完成`
+                            : `板${activeBoardNumber}任务`}
+                      </span>
+                      <span style={styles.assistCoordMuted}>
+                        {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
+                      </span>
+                      {!singleBoardAllDone && (
+                        <span style={styles.assistCoordMuted}>
+                          剩余 {singleBoardProgress.remainingCount}
+                        </span>
+                      )}
+                      {nextPendingBoardNumber && activeBoardDone && (
+                        <span style={styles.assistCoordMuted}>
+                          下一块 板{nextPendingBoardNumber}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span style={styles.assistCoordMuted}>
+                      全图 {selectedCoordinateSummary.globalCol},{selectedCoordinateSummary.globalRow}
+                    </span>
+                  )}
+                </div>
+                {viewMode === "singleBoard" && (
+                  <button
+                    style={{ ...styles.assistLocateBtn, ...styles.singleBoardAssistPrimaryBtn }}
+                    onClick={() => {
+                      if (singleBoardAllDone) {
+                        setSingleBoardOverviewCollapsed(false);
+                        handleOpenExport();
+                        return;
+                      }
+                      if (activeBoardDone && nextPendingBoardNumber) {
+                        activateBoard(nextPendingBoardNumber, true);
+                        return;
+                      }
+                      handleToggleBoardDone();
+                    }}
+                    disabled={!activeBoardRect}
+                  >
+                    {singleBoardAllDone
+                      ? "导出图纸"
+                      : activeBoardDone && nextPendingBoardNumber
+                      ? `继续板${nextPendingBoardNumber}`
+                      : activeBoardRect && boardStatusMap[activeBoardRect.boardNumber]
+                        ? "取消完成"
+                        : `完成板${activeBoardNumber}`}
+                  </button>
+                )}
+                <button
+                  style={viewMode === "singleBoard" ? styles.singleBoardAssistMinorBtn : styles.assistLocateBtn}
+                  onClick={() => {
+                    if (viewMode === "singleBoard" && singleBoardAllDone) {
+                      handleBackToEditor();
+                      return;
+                    }
+                    jumpToBoard(-1);
+                  }}
+                  disabled={
+                    viewMode === "singleBoard"
+                      ? (singleBoardAllDone ? false : activeBoardNumber <= 1)
+                      : (!currentBoardRect || currentBoardRect.boardNumber <= 1)
+                  }
+                >
+                  {viewMode === "singleBoard"
+                    ? (singleBoardAllDone ? "回到编辑" : "上一板")
+                    : "上一块"}
+                </button>
+                <button
+                  style={viewMode === "singleBoard" ? styles.singleBoardAssistMinorBtn : styles.assistLocateBtn}
+                  onClick={() => {
+                    if (viewMode === "singleBoard" && singleBoardAllDone) {
+                      handleShareFinishedWork();
+                      return;
+                    }
+                    locateCurrentBoard();
+                  }}
+                  disabled={viewMode === "singleBoard" ? (singleBoardAllDone ? false : !activeBoardRect) : !currentBoardRect}
+                >
+                  {viewMode === "singleBoard" && singleBoardAllDone ? "分享作品" : "定位当前板"}
+                </button>
+                {viewMode === "singleBoard" && singleBoardAllDone && (
+                  <button
+                    style={styles.singleBoardAssistMinorBtn}
+                    onClick={handleDeductInventory}
+                    disabled={inventoryConsumed || !inventoryCheck.canApply}
+                  >
+                    {inventoryConsumed
+                      ? "已扣减豆仓"
+                      : inventoryCheck.canApply
+                        ? "扣减豆仓"
+                        : "库存不足"}
+                  </button>
+                )}
+                {!(viewMode === "singleBoard" && singleBoardAllDone) && (
+                  <button
+                    style={viewMode === "singleBoard" ? styles.singleBoardAssistMinorBtn : styles.assistLocateBtn}
+                    onClick={() => {
+                      jumpToBoard(1);
+                    }}
+                    disabled={
+                      viewMode === "singleBoard"
+                        ? activeBoardNumber >= totalBoardCount
+                        : (!currentBoardRect || currentBoardRect.boardNumber >= totalBoardCount)
+                    }
+                  >
+                    {viewMode === "singleBoard" ? "下一板" : "下一块"}
+                  </button>
+                )}
+                {viewMode === "singleBoard" && singleBoardAllDone && (
+                  <button
+                    style={styles.singleBoardAssistMinorBtn}
+                    disabled
+                  >
+                    已完成
+                  </button>
+                )}
+              </div>
+            )}
+            {!(viewMode === "singleBoard" && singleBoardAllDone) && (
+              <span style={styles.bottomHintSmall}>再次点击可取消选中</span>
+            )}
             {/* 选中颜色时显示替换按钮 */}
             {selection.type === "color" && selectedBeadColor && (
               <>
@@ -1974,6 +3568,444 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
   },
 
+  modeSwitchBar: {
+    display: "flex",
+    gap: "8px",
+    padding: "10px 12px 0",
+    flexShrink: 0,
+  },
+
+  modeSwitchBtn: {
+    flex: 1,
+    height: "34px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: 'rgba(255,255,255,0.88)',
+    color: makingCandy.textSoft,
+    fontSize: typography.fontSize.sm,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  modeSwitchBtnActive: {
+    background: 'linear-gradient(145deg, #7fd8ff 0%, #85b7ff 55%, #ff93bf 100%)',
+    color: '#ffffff',
+    borderColor: 'rgba(126,163,255,0.45)',
+    boxShadow: makingCandy.shadow,
+  },
+
+  singleBoardOverview: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    padding: "4px 8px 0",
+    flexShrink: 0,
+  },
+
+  singleBoardResumeEntry: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    padding: "6px 8px",
+    borderRadius: radius.lg,
+    border: `1px solid rgba(96,165,250,0.2)`,
+    background: "linear-gradient(145deg, rgba(125,211,252,0.12), rgba(244,114,182,0.1))",
+    boxShadow: makingCandy.shadowSoft,
+  },
+
+  singleBoardCompletionEntry: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    padding: "6px 8px",
+    borderRadius: radius.lg,
+    border: `1px solid rgba(52,211,153,0.26)`,
+    background: "linear-gradient(145deg, rgba(236,253,245,0.95), rgba(240,249,255,0.96))",
+    boxShadow: "0 10px 20px rgba(52,211,153,0.12)",
+  },
+
+  singleBoardCompletionActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    flexShrink: 0,
+  },
+
+  singleBoardResumeEntryMeta: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "1px",
+    minWidth: 0,
+  },
+
+  singleBoardResumeEntryTitle: {
+    fontSize: "11px",
+    fontWeight: 800,
+    color: makingCandy.text,
+  },
+
+  singleBoardResumeEntryText: {
+    fontSize: "10px",
+    color: makingCandy.textSoft,
+  },
+
+  singleBoardShareFeedback: {
+    fontSize: "10px",
+    color: "#0f766e",
+    fontWeight: 700,
+  },
+
+  singleBoardResumeEntryBtn: {
+    height: "26px",
+    padding: "0 12px",
+    borderRadius: radius.full,
+    border: `1px solid rgba(96,165,250,0.28)`,
+    background: "linear-gradient(145deg, rgba(125,211,252,0.2), rgba(244,114,182,0.18))",
+    color: makingCandy.text,
+    fontSize: "11px",
+    fontWeight: 800,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  singleBoardSecondaryBtn: {
+    background: "rgba(255,255,255,0.92)",
+    borderColor: makingCandy.border,
+    color: makingCandy.textSoft,
+  },
+
+  singleBoardCompactHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    padding: "1px 0",
+  },
+
+  singleBoardCompactMeta: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "8px",
+    minWidth: 0,
+    flexWrap: "wrap" as const,
+  },
+
+  singleBoardSummaryHint: {
+    fontSize: "10px",
+    color: makingCandy.textSoft,
+    fontWeight: 700,
+  },
+
+  singleBoardStatePill: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: "20px",
+    padding: "0 8px",
+    borderRadius: radius.full,
+    fontSize: "10px",
+    fontWeight: 800,
+  },
+
+  singleBoardStatePillTodo: {
+    background: "rgba(96,165,250,0.12)",
+    color: "#1d4ed8",
+  },
+
+  singleBoardStatePillDone: {
+    background: "rgba(52,211,153,0.16)",
+    color: "#0f766e",
+  },
+
+  singleBoardCollapseBtn: {
+    height: "24px",
+    padding: "0 10px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.92)",
+    color: makingCandy.textSoft,
+    fontSize: "10px",
+    fontWeight: 700,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  singleBoardProgressTrack: {
+    width: "100%",
+    height: "5px",
+    borderRadius: radius.full,
+    background: "rgba(148,163,184,0.18)",
+    overflow: "hidden",
+  },
+
+  singleBoardProgressFill: {
+    height: "100%",
+    borderRadius: radius.full,
+    background: "linear-gradient(90deg, rgba(52,211,153,0.95), rgba(96,165,250,0.95))",
+    transition: "width 180ms ease",
+  },
+
+  singleBoardQuickRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    flexWrap: "wrap" as const,
+    marginTop: "-1px",
+  },
+
+  singleBoardQuickControls: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    flexWrap: "wrap" as const,
+  },
+
+  singleBoardResumeBtn: {
+    height: "24px",
+    padding: "0 10px",
+    borderRadius: radius.full,
+    border: `1px solid rgba(96,165,250,0.28)`,
+    background: "linear-gradient(145deg, rgba(125,211,252,0.14), rgba(244,114,182,0.14))",
+    color: makingCandy.text,
+    fontSize: "10px",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+
+  singleBoardQuickToggle: {
+    height: "24px",
+    padding: "0 10px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.9)",
+    color: makingCandy.textSoft,
+    fontSize: "10px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  singleBoardQuickToggleActive: {
+    background: "linear-gradient(145deg, rgba(125,211,252,0.18), rgba(244,114,182,0.16))",
+    color: makingCandy.text,
+    borderColor: makingCandy.borderStrong,
+  },
+
+  singleBoardPendingRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    flexWrap: "wrap" as const,
+  },
+
+  singleBoardPendingLabel: {
+    fontSize: "10px",
+    color: makingCandy.textSoft,
+    fontWeight: 700,
+  },
+
+  singleBoardPendingChip: {
+    height: "22px",
+    padding: "0 8px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.9)",
+    color: makingCandy.text,
+    fontSize: "10px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  singleBoardPendingMore: {
+    fontSize: "10px",
+    color: makingCandy.textSoft,
+    fontWeight: 700,
+  },
+
+  singleBoardHeroRow: {
+    display: "flex",
+    gap: "6px",
+    alignItems: "stretch",
+    minHeight: 60,
+  },
+
+  singleBoardSummaryCard: {
+    flex: 1,
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    padding: "6px 8px",
+    borderRadius: radius.lg,
+    border: `1px solid ${makingCandy.border}`,
+    background: "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,247,242,0.92))",
+    boxShadow: makingCandy.shadowSoft,
+  },
+
+  singleBoardSummary: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+  },
+
+  singleBoardSummaryTitle: {
+    fontSize: "12px",
+    fontWeight: typography.fontWeight.bold,
+    color: makingCandy.text,
+  },
+
+  singleBoardSummaryText: {
+    fontSize: "10px",
+    color: makingCandy.textSoft,
+  },
+
+  singleBoardGrid: {
+    display: "flex",
+    gap: "4px",
+    overflowX: "auto",
+    paddingBottom: "1px",
+  },
+
+  singleBoardCompactNav: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: 0,
+  },
+
+  singleBoardCompactNavBtn: {
+    height: "24px",
+    padding: "0 8px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.92)",
+    color: makingCandy.textSoft,
+    fontSize: "10px",
+    fontWeight: 700,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  singleBoardCompactNavChips: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    minWidth: 0,
+    overflowX: "auto",
+    paddingBottom: "1px",
+  },
+
+  singleBoardChip: {
+    minWidth: "50px",
+    height: "26px",
+    padding: "0 8px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: 'rgba(255,255,255,0.9)',
+    color: makingCandy.textSoft,
+    fontSize: "10px",
+    fontWeight: 700,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  singleBoardChipActive: {
+    background: 'linear-gradient(145deg, rgba(79,174,225,0.22), rgba(139,92,246,0.18))',
+    color: makingCandy.text,
+    borderColor: makingCandy.borderStrong,
+  },
+
+  singleBoardChipDone: {
+    background: 'linear-gradient(145deg, rgba(110,231,183,0.24), rgba(52,211,153,0.16))',
+    borderColor: 'rgba(16,185,129,0.3)',
+    color: '#0f766e',
+  },
+
+  singleBoardActionRow: {
+    display: "flex",
+    gap: "4px",
+    marginTop: "auto",
+  },
+
+  singleBoardMinorBtn: {
+    flex: 1,
+    height: "26px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: 'rgba(255,255,255,0.92)',
+    color: makingCandy.text,
+    fontSize: "10px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  singleBoardMiniMapCard: {
+    width: 78,
+    flexShrink: 0,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    gap: "3px",
+    padding: "6px",
+    borderRadius: radius.lg,
+    border: `1px solid ${makingCandy.border}`,
+    background: "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(245,251,255,0.92))",
+    boxShadow: makingCandy.shadowSoft,
+  },
+
+  singleBoardMiniMapFrame: {
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  singleBoardMiniMapCanvas: {
+    position: "relative" as const,
+    width: "100%",
+    maxHeight: 56,
+    borderRadius: 12,
+    overflow: "hidden",
+    border: `1px solid ${makingCandy.border}`,
+    background: "linear-gradient(180deg, rgba(241,245,249,0.95), rgba(255,255,255,0.96))",
+  },
+
+  singleBoardMiniMapCell: {
+    position: "absolute" as const,
+    border: "1px solid rgba(99,102,241,0.22)",
+    background: "rgba(255,255,255,0.24)",
+    color: "#475569",
+    fontSize: "9px",
+    fontWeight: 800,
+    lineHeight: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    cursor: "pointer",
+  },
+
+  singleBoardMiniMapCellDone: {
+    background: "rgba(52,211,153,0.22)",
+    borderColor: "rgba(16,185,129,0.34)",
+  },
+
+  singleBoardMiniMapCellActive: {
+    background: "linear-gradient(145deg, rgba(125,211,252,0.92), rgba(244,114,182,0.84))",
+    borderColor: "rgba(79,70,229,0.58)",
+    color: "#ffffff",
+    boxShadow: "0 0 0 1px rgba(255,255,255,0.65) inset",
+  },
+
+  singleBoardMiniMapHint: {
+    textAlign: "center" as const,
+    fontSize: "10px",
+    color: makingCandy.textSoft,
+    fontWeight: 700,
+  },
+
   canvasContainer: {
     position: "relative" as const,
     flex: 1,
@@ -2085,6 +4117,38 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "auto",
   },
 
+  singleBoardToolbarBtn: {
+    minWidth: "54px",
+    height: "28px",
+    padding: "0 10px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "5px",
+    background: "rgba(255,255,255,0.96)",
+    border: `1px solid ${makingCandy.border}`,
+    borderRadius: radius.full,
+    color: makingCandy.text,
+    fontSize: "11px",
+    fontWeight: 800,
+    cursor: "pointer",
+    boxShadow: makingCandy.shadowSoft,
+  },
+
+  singleBoardToolbarBtnCompact: {
+    minWidth: "44px",
+    padding: "0 7px",
+    gap: "4px",
+    fontSize: "10px",
+  },
+
+  singleBoardToolbarPrimaryBtn: {
+    minWidth: "74px",
+    background: "linear-gradient(145deg, rgba(125,211,252,0.22), rgba(244,114,182,0.2))",
+    borderColor: makingCandy.borderStrong,
+    color: makingCandy.text,
+  },
+
   settingsPanel: {
     position: "absolute" as const,
     top: "50px",
@@ -2138,6 +4202,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+
+  settingDivider: {
+    height: 1,
+    background: makingCandy.border,
+    margin: "2px 0",
   },
 
   settingLabel: {
@@ -2211,10 +4281,29 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "grab",
   },
 
+  canvasStage: {
+    position: "relative" as const,
+    flexShrink: 0,
+    transformOrigin: "center center",
+    willChange: "transform",
+  },
+
   canvas: {
     borderRadius: radius.bead,
-    imageRendering: "auto",
+    imageRendering: "pixelated",
     flexShrink: 0,
+    width: "100%",
+    height: "100%",
+    display: "block",
+  },
+
+  overlayCanvas: {
+    position: "absolute" as const,
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none" as const,
+    imageRendering: "pixelated",
   },
 
   bottomBar: {
@@ -2234,6 +4323,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: typography.fontSize.sm,
     color: colors.text.muted,
     textAlign: "center" as const,
+    lineHeight: 1.2,
   },
 
   bottomHintSmall: {
@@ -2249,7 +4339,119 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "12px",
     flexWrap: "wrap",
     minWidth: 0,
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+
+  assistDock: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "8px 10px",
+    background: "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(255,244,236,0.96))",
+    border: `1px solid ${makingCandy.border}`,
+    borderRadius: "12px",
+    boxShadow: makingCandy.shadow,
+    flex: "1 1 260px",
+    minWidth: 0,
+  },
+
+  assistMeta: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    minWidth: 0,
+    flexWrap: "wrap",
+    flex: 1,
+  },
+
+  assistBoardBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: "42px",
+    height: "24px",
+    padding: "0 10px",
+    borderRadius: "999px",
+    background: "rgba(79, 174, 225, 0.14)",
+    color: makingCandy.cyan,
+    fontSize: "12px",
+    fontWeight: 700,
+  },
+
+  singleBoardFinishBadge: {
+    background: "rgba(52,211,153,0.16)",
+    color: "#0f766e",
+  },
+
+  assistCoordText: {
+    fontSize: "13px",
+    fontWeight: 700,
+    color: makingCandy.text,
+  },
+
+  assistCoordMuted: {
+    fontSize: "12px",
+    color: makingCandy.textSoft,
+  },
+
+  singleBoardTaskPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: "22px",
+    padding: "0 8px",
+    borderRadius: "999px",
+    background: "rgba(52,211,153,0.14)",
+    color: "#0f766e",
+    fontSize: "11px",
+    fontWeight: 800,
+  },
+
+  assistLocateBtn: {
+    height: "30px",
+    padding: "0 12px",
+    borderRadius: "999px",
+    border: `1px solid ${makingCandy.borderStrong}`,
+    background: "linear-gradient(135deg, rgba(79,174,225,0.16), rgba(139,92,246,0.16))",
+    color: makingCandy.text,
+    fontSize: "12px",
+    fontWeight: 700,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  singleBoardAssistPrimaryBtn: {
+    background: "linear-gradient(135deg, rgba(52,211,153,0.18), rgba(96,165,250,0.18))",
+    borderColor: "rgba(16,185,129,0.26)",
+    color: makingCandy.text,
+  },
+
+  singleBoardAssistMinorBtn: {
+    height: "28px",
+    padding: "0 10px",
+    borderRadius: "999px",
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.92)",
+    color: makingCandy.textSoft,
+    fontSize: "11px",
+    fontWeight: 700,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  singleBoardAssistDoneBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "28px",
+    padding: "0 12px",
+    borderRadius: "999px",
+    background: "rgba(148,163,184,0.14)",
+    border: "1px solid rgba(148,163,184,0.22)",
+    color: makingCandy.textMuted,
+    fontSize: "11px",
+    fontWeight: 700,
+    flexShrink: 0,
   },
 
   actionBtn: {
@@ -2307,4 +4509,5 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default MakingPage;
+
 

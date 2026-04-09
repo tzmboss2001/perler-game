@@ -36,6 +36,7 @@ interface InteractiveCanvasProps {
   showMajorGrid?: boolean; // major grid lines
   showControls?: boolean;
   onScaleChange?: (payload: { scale: number; minScale: number; maxScale: number; fitScale: number }) => void;
+  backgroundModeFillParent?: boolean;
 }
 
 export interface InteractiveCanvasHandle {
@@ -73,6 +74,7 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   showMajorGrid = false,
   showControls = true,
   onScaleChange,
+  backgroundModeFillParent = false,
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -261,16 +263,19 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   // 计算实际渲染的 cellSize（考虑缩放）
   // 不能在这里取整，否则很多相邻缩放百分比会落到同一个整数像素尺寸，用户会感觉滑杆“不灵敏”。
   const scaledCellSize = Math.max(0.5, cellSize * scale);
+  const pixelRatio = typeof window !== 'undefined' ? Math.max(1, window.devicePixelRatio || 1) : 1;
+  const canvasWidth = beadData.width * scaledCellSize;
+  const canvasHeight = beadData.height * scaledCellSize;
 
   useEffect(() => {
     if (!beadData) return;
 
     previousCanvasMetricsRef.current = {
-      width: beadData.width * scaledCellSize,
-      height: beadData.height * scaledCellSize,
+      width: canvasWidth,
+      height: canvasHeight,
       scale,
     };
-  }, [beadData, scaledCellSize, scale]);
+  }, [beadData, canvasHeight, canvasWidth, scale]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -331,7 +336,9 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   useEffect(() => {
     if (canvasRef.current && beadData) {
       // 浣跨敤缂╂斁鍚庣殑 cellSize 娓叉煋锛岀‘淇濇斁澶ф椂鏂囧瓧娓呮櫚
-      renderBeadsToCanvas(beadData, canvasRef.current, scaledCellSize, true, false, showMajorGrid);
+      renderBeadsToCanvas(beadData, canvasRef.current, scaledCellSize, true, false, showMajorGrid, {
+        pixelRatio,
+      });
 
       const ctx = canvasRef.current.getContext('2d');
       if (!ctx) return;
@@ -422,7 +429,7 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
         }
       }
     }
-  }, [beadData, cellSize, scale, scaledCellSize, highlightedColorId, isBackgroundMode, bgModeHighlightedIndices, bgModeExcludedIndices, bgModeRecoverableIndices, bgCandidateOnly]);
+  }, [beadData, cellSize, scale, scaledCellSize, highlightedColorId, isBackgroundMode, bgModeHighlightedIndices, bgModeExcludedIndices, bgModeRecoverableIndices, bgCandidateOnly, pixelRatio, showMajorGrid]);
 
   // 鑾峰彇Canvas鐩稿鍧愭爣锛堣€冭檻缂╂斁锛?
   const getCanvasCoords = useCallback((clientX: number, clientY: number) => {
@@ -706,17 +713,31 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     }
   };
 
-  // Canvas 浣跨敤瀹為檯缂╂斁鍚庣殑灏哄锛堥珮鍒嗚鲸鐜囨覆鏌擄級
-  const canvasWidth = beadData.width * scaledCellSize;
-  const canvasHeight = beadData.height * scaledCellSize;
   const containerViewportStyle: React.CSSProperties = {
-    height: isBackgroundMode ? '58vh' : '60vh',
-    minHeight: isBackgroundMode ? '350px' : '380px',
-    maxHeight: isBackgroundMode ? '66vh' : '70vh',
+    height: isBackgroundMode
+      ? (backgroundModeFillParent ? '100%' : '54vh')
+      : '60vh',
+    minHeight: isBackgroundMode
+      ? (backgroundModeFillParent ? '0' : '320px')
+      : '380px',
+    maxHeight: isBackgroundMode
+      ? (backgroundModeFillParent ? 'none' : '66vh')
+      : '70vh',
   };
 
   return (
-    <div style={styles.wrapper}>
+    <div
+      style={{
+        ...styles.wrapper,
+        ...(isBackgroundMode && backgroundModeFillParent
+          ? {
+            height: '100%',
+            flex: 1,
+            minHeight: 0,
+          }
+          : {}),
+      }}
+    >
       {/* Canvas 瀹瑰櫒 */}
       <div
         ref={containerRef}
@@ -744,8 +765,6 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
         >
           <canvas
             ref={canvasRef}
-            width={canvasWidth}
-            height={canvasHeight}
             style={{
               ...styles.canvas,
               // Canvas 灏哄涓庡疄闄呭儚绱犱竴鑷达紝涓嶄娇鐢?CSS 缂╂斁锛岀‘淇濇竻鏅板害
