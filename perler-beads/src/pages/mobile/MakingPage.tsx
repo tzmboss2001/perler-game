@@ -407,10 +407,6 @@ const MakingPage: React.FC = () => {
   }, [translateX, translateY]);
 
   useEffect(() => {
-    renderScaleRef.current = renderScale;
-  }, [renderScale]);
-
-  useEffect(() => {
     return () => {
       if (viewportSyncFrameRef.current !== null) {
         cancelAnimationFrame(viewportSyncFrameRef.current);
@@ -601,6 +597,10 @@ const MakingPage: React.FC = () => {
   const safeRenderCanvasWidth = renderMetrics?.safeRenderCanvasWidth ?? 0;
   const safeRenderCanvasHeight = renderMetrics?.safeRenderCanvasHeight ?? 0;
   const displayScale = renderMetrics?.displayScale ?? 1;
+
+  useEffect(() => {
+    renderScaleRef.current = renderScale;
+  }, [renderScale]);
 
   const clampTranslate = useCallback(
     (nextScale: number, x: number, y: number) => {
