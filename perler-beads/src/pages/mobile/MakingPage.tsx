@@ -822,7 +822,7 @@ const MakingPage: React.FC = () => {
     [beadData, commitTranslate],
   );
 
-  const locateCurrentBoard = useCallback(() => {
+  const resetCurrentView = useCallback(() => {
     const targetRect = viewMode === "singleBoard" ? activeBoardRect : currentBoardRect;
     if (!targetRect) return;
     centerViewportOnRect(
@@ -1212,7 +1212,7 @@ const MakingPage: React.FC = () => {
   ]);
 
   // 点击选择只改变高亮状态，不再自动移动视图。
-  // 视图移动仅保留给“定位当前板”和显式切板等用户主动操作。
+  // 视图移动仅保留给“复位视图”和显式切板等用户主动操作。
 
   // 计算合适缩放（仅首次加载执行，换色等不重置）
   const initialScaleSetRef = useRef(false);
@@ -2820,7 +2820,7 @@ const MakingPage: React.FC = () => {
                             style={{
                               ...styles.singleBoardMobileNavBtn,
                               width: "auto",
-                              minWidth: "52px",
+                              minWidth: "76px",
                               padding: "0 10px",
                               fontSize: "10px",
                             }}
@@ -2829,7 +2829,7 @@ const MakingPage: React.FC = () => {
                             }
                             title={singleBoardMobileMiniMapExpanded ? "收起总览" : "展开总览"}
                           >
-                            {singleBoardMobileMiniMapExpanded ? "收起" : "总览"}
+                            {singleBoardMobileMiniMapExpanded ? "收起总览" : "看总览图"}
                           </button>
                         )}
                         {totalBoardCount > 1 ? (
@@ -2844,7 +2844,7 @@ const MakingPage: React.FC = () => {
                         ) : (
                           <button
                             style={{ ...styles.singleBoardMobileNavBtn, width: "auto", minWidth: "56px", padding: "0 10px" }}
-                            onClick={locateCurrentBoard}
+                            onClick={resetCurrentView}
                             disabled={!activeBoardRect}
                           >
                             定位
@@ -2869,8 +2869,8 @@ const MakingPage: React.FC = () => {
                       <div style={styles.singleBoardMobileMiniMapPanel}>
                         <button
                           style={styles.singleBoardMobileMiniMapPanelInner}
-                          onClick={locateCurrentBoard}
-                          title="定位当前板"
+                          onClick={resetCurrentView}
+                          title="复位视图"
                         >
                           <div
                             style={{
@@ -3003,10 +3003,10 @@ const MakingPage: React.FC = () => {
                             </button>
                             <button
                               style={styles.singleBoardMinorBtn}
-                              onClick={locateCurrentBoard}
+                              onClick={resetCurrentView}
                               disabled={!activeBoardRect}
                             >
-                              找到当前板
+                              复位视图
                             </button>
                           </div>
                         </div>
@@ -3046,7 +3046,7 @@ const MakingPage: React.FC = () => {
                               })}
                             </div>
                           </div>
-                          <div style={styles.singleBoardMiniMapHint}>整图定位</div>
+                          <div style={styles.singleBoardMiniMapHint}>整图总览</div>
                         </div>
                       </div>
                     )}
@@ -3608,7 +3608,7 @@ const MakingPage: React.FC = () => {
                       return;
                     }
                     if (isSingleBoardMobile && viewMode === "singleBoard") {
-                      locateCurrentBoard();
+                      resetCurrentView();
                       return;
                     }
                     jumpToBoard(-1);
@@ -3631,11 +3631,11 @@ const MakingPage: React.FC = () => {
                         handleShareFinishedWork();
                         return;
                       }
-                      locateCurrentBoard();
+                      resetCurrentView();
                     }}
                     disabled={viewMode === "singleBoard" ? (singleBoardAllDone ? false : !activeBoardRect) : !currentBoardRect}
                   >
-                    {viewMode === "singleBoard" && singleBoardAllDone ? "分享作品" : "定位当前板"}
+                    {viewMode === "singleBoard" && singleBoardAllDone ? "分享作品" : "复位视图"}
                   </button>
                 )}
                 {viewMode === "singleBoard" && singleBoardAllDone && (
