@@ -190,6 +190,7 @@ const MakingPage: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const canvasStageRef = useRef<HTMLDivElement>(null);
 
   // 拖动和缩放相关状态
   const [isDragging, setIsDragging] = useState(false);
@@ -336,6 +337,8 @@ const MakingPage: React.FC = () => {
   const [translateY, setTranslateY] = useState(0);
   const scaleRef = useRef(1);
   const translateRef = useRef({ x: 0, y: 0 });
+  const renderScaleRef = useRef(1);
+  const viewportSyncFrameRef = useRef<number | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ x: number; y: number } | null>(null);
   const [showColorId, setShowColorId] = useState(true);
   const [wakeLockActive, setWakeLockActive] = useState(false);
@@ -402,6 +405,19 @@ const MakingPage: React.FC = () => {
   useEffect(() => {
     translateRef.current = { x: translateX, y: translateY };
   }, [translateX, translateY]);
+
+  useEffect(() => {
+    renderScaleRef.current = renderScale;
+  }, [renderScale]);
+
+  useEffect(() => {
+    return () => {
+      if (viewportSyncFrameRef.current !== null) {
+        cancelAnimationFrame(viewportSyncFrameRef.current);
+        viewportSyncFrameRef.current = null;
+      }
+    };
+  }, []);
 
   // 初始化用户状态 + 登录保护
   useEffect(() => {
@@ -604,18 +620,59 @@ const MakingPage: React.FC = () => {
     [displayBoardRect, displayHeight, displayWidth],
   );
 
-  const commitTranslate = useCallback(
+  const applyStageTransformStyle = useCallback(
     (nextScale: number, x: number, y: number) => {
+      const stage = canvasStageRef.current;
+      if (!stage) return;
+      const currentRenderScale = Math.max(renderScaleRef.current, 0.0001);
+      const nextDisplayScale = Math.max(1, nextScale / currentRenderScale);
+      stage.style.transform = `translate(${x}px, ${y}px) scale(${nextDisplayScale})`;
+    },
+    [],
+  );
+
+  const syncViewportStateNow = useCallback(() => {
+    if (viewportSyncFrameRef.current !== null) {
+      cancelAnimationFrame(viewportSyncFrameRef.current);
+      viewportSyncFrameRef.current = null;
+    }
+    setScale(scaleRef.current);
+    setTranslateX(translateRef.current.x);
+    setTranslateY(translateRef.current.y);
+  }, []);
+
+  const scheduleViewportStateSync = useCallback(() => {
+    if (viewportSyncFrameRef.current !== null) return;
+    viewportSyncFrameRef.current = requestAnimationFrame(() => {
+      viewportSyncFrameRef.current = null;
+      setScale(scaleRef.current);
+      setTranslateX(translateRef.current.x);
+      setTranslateY(translateRef.current.y);
+    });
+  }, []);
+
+  const commitTranslate = useCallback(
+    (nextScale: number, x: number, y: number, options?: { immediate?: boolean }) => {
       const clamped = clampTranslate(nextScale, x, y);
       translateRef.current = clamped;
-      setTranslateX(clamped.x);
-      setTranslateY(clamped.y);
+      scaleRef.current = nextScale;
+      applyStageTransformStyle(nextScale, clamped.x, clamped.y);
+      if (options?.immediate) {
+        syncViewportStateNow();
+      } else {
+        scheduleViewportStateSync();
+      }
     },
-    [clampTranslate],
+    [applyStageTransformStyle, clampTranslate, scheduleViewportStateSync, syncViewportStateNow],
   );
 
   const applyScaleAtPoint = useCallback(
-    (rawScale: number, focalX: number, focalY: number) => {
+    (
+      rawScale: number,
+      focalX: number,
+      focalY: number,
+      options?: { immediate?: boolean },
+    ) => {
       const wrapper = wrapperRef.current;
       if (!wrapper) return;
       const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, rawScale));
@@ -626,9 +683,7 @@ const MakingPage: React.FC = () => {
       const prev = translateRef.current;
       const nextX = ratio * prev.x + (1 - ratio) * (focalX - centerX);
       const nextY = ratio * prev.y + (1 - ratio) * (focalY - centerY);
-      scaleRef.current = nextScale;
-      setScale(nextScale);
-      commitTranslate(nextScale, nextX, nextY);
+      commitTranslate(nextScale, nextX, nextY, options);
     },
     [commitTranslate, renderMaxScale],
   );
@@ -638,8 +693,12 @@ const MakingPage: React.FC = () => {
     const wrapper = wrapperRef.current;
     const focalX = wrapper ? wrapper.clientWidth / 2 : 0;
     const focalY = wrapper ? wrapper.clientHeight / 2 : 0;
-    applyScaleAtPoint(renderMaxScale, focalX, focalY);
+    applyScaleAtPoint(renderMaxScale, focalX, focalY, { immediate: true });
   }, [applyScaleAtPoint, renderMaxScale]);
+
+  useLayoutEffect(() => {
+    applyStageTransformStyle(scale, translateX, translateY);
+  }, [applyStageTransformStyle, renderScale, scale, translateX, translateY]);
 
   const shiftTranslate = useCallback(
     (deltaX: number, deltaY: number) => {
@@ -1170,9 +1229,7 @@ const MakingPage: React.FC = () => {
         const fitHeight = wrapperHeight / (displayHeight * baseCellSize);
         const fitScale = Math.min(fitWidth, fitHeight);
         const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, fitScale));
-        scaleRef.current = nextScale;
-        setScale(nextScale);
-        commitTranslate(nextScale, 0, 0);
+        commitTranslate(nextScale, 0, 0, { immediate: true });
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -1191,9 +1248,7 @@ const MakingPage: React.FC = () => {
       const fitWidth = wrapperWidth / (displayWidth * baseCellSize);
       const fitHeight = wrapperHeight / (displayHeight * baseCellSize);
       const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, Math.min(fitWidth, fitHeight)));
-      scaleRef.current = nextScale;
-      setScale(nextScale);
-      commitTranslate(nextScale, 0, 0);
+      commitTranslate(nextScale, 0, 0, { immediate: true });
     }, 60);
     return () => clearTimeout(timer);
   }, [
@@ -1213,9 +1268,7 @@ const MakingPage: React.FC = () => {
     const wrapperWidth = wrapper?.clientWidth || window.innerWidth;
     const fitWidth = wrapperWidth / (displayWidth * baseCellSize);
     const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, fitWidth));
-    scaleRef.current = nextScale;
-    setScale(nextScale);
-    commitTranslate(nextScale, 0, 0);
+    commitTranslate(nextScale, 0, 0, { immediate: true });
   }, [commitTranslate, displayBoardRect, displayWidth, renderMaxScale]);
 
   const handleOpenTraditionalOverview = useCallback(() => {
@@ -1659,8 +1712,6 @@ const MakingPage: React.FC = () => {
           (1 - ratioFromStart) * (start.focalY - centerY) +
           deltaFocalY;
 
-        scaleRef.current = nextScale;
-        setScale(nextScale);
         commitTranslate(nextScale, nextX, nextY);
       }
     },
@@ -3408,7 +3459,7 @@ const MakingPage: React.FC = () => {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
           >
-            <div style={canvasStageStyle}>
+            <div ref={canvasStageRef} style={canvasStageStyle}>
               <canvas
                 ref={canvasRef}
                 style={styles.canvas}
