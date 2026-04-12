@@ -28,23 +28,30 @@ const CoordinateTooltip: React.FC<CoordinateTooltipProps> = ({
 }) => {
   if (!visible) return null;
 
-  const tooltipWidth = boardNumber ? 132 : 80;
-  const tooltipHeight = boardNumber ? 54 : 36;
+  const compactBoardLabel =
+    boardNumber && localRow && localCol ? `${boardNumber}-${localCol},${localRow}` : null;
+  const tooltipWidth = compactBoardLabel ? 96 : 80;
+  const tooltipHeight = 36;
   const offset = 8;
+  const topSafeOffset = 68;
 
-  let left = cellScreenX - tooltipWidth - offset;
+  let left = cellScreenX + offset + 18;
   let top = cellScreenY - tooltipHeight - offset;
 
-  if (left < 10) {
-    left = cellScreenX + offset + 30;
+  if (left + tooltipWidth > containerWidth - 10) {
+    left = cellScreenX - tooltipWidth - offset - 18;
   }
 
-  if (top < 10) {
+  if (left < 10) {
+    left = 10;
+  }
+
+  if (top < topSafeOffset) {
     top = cellScreenY + offset + 30;
   }
 
   left = Math.max(10, Math.min(left, containerWidth - tooltipWidth - 10));
-  top = Math.max(10, Math.min(top, containerHeight - tooltipHeight - 10));
+  top = Math.max(topSafeOffset, Math.min(top, containerHeight - tooltipHeight - 10));
 
   return (
     <div
@@ -54,11 +61,8 @@ const CoordinateTooltip: React.FC<CoordinateTooltipProps> = ({
         top,
       }}
     >
-      {boardNumber && localRow && localCol ? (
-        <>
-          <div style={styles.tooltipTitle}>板{boardNumber}</div>
-          <div style={styles.tooltipMeta}>列{localCol} 行{localRow}</div>
-        </>
+      {compactBoardLabel ? (
+        <div style={styles.tooltipTitle}>{compactBoardLabel}</div>
       ) : (
         <div>({row}, {col})</div>
       )}
@@ -84,12 +88,6 @@ const styles: Record<string, React.CSSProperties> = {
   tooltipTitle: {
     fontSize: typography.fontSize.md,
     fontWeight: typography.fontWeight.bold,
-    lineHeight: 1.1,
-  },
-  tooltipMeta: {
-    marginTop: 4,
-    fontSize: typography.fontSize.sm,
-    opacity: 0.92,
     lineHeight: 1.1,
   },
 };

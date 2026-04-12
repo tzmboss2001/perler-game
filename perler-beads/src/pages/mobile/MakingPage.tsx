@@ -104,8 +104,8 @@ interface BoardStatusMap {
   [boardNumber: number]: boolean;
 }
 
-// 缩放阈值：大于该值时点击选颜色，否则选区块
-const ZOOM_THRESHOLD = 2.5;
+// 细节模式阈值：超过该值时才显示色号并允许按单元格选色
+const DETAIL_MODE_THRESHOLD = 2.3;
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 6;
 const ZOOM_STEP = 0.1;
@@ -189,6 +189,7 @@ const MakingPage: React.FC = () => {
   const { isLoggedIn, initUser } = useUserStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const textOverlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasStageRef = useRef<HTMLDivElement>(null);
 
@@ -333,29 +334,40 @@ const MakingPage: React.FC = () => {
   const [redoReplaceSnapshot, setRedoReplaceSnapshot] =
     useState<ReplaceHistoryState | null>(null);
   const [scale, setScale] = useState(1);
+  const [renderScaleAnchor, setRenderScaleAnchor] = useState(1);
   const [translateX, setTranslateX] = useState(0);
   const [translateY, setTranslateY] = useState(0);
   const scaleRef = useRef(1);
   const translateRef = useRef({ x: 0, y: 0 });
   const renderScaleRef = useRef(1);
   const viewportSyncFrameRef = useRef<number | null>(null);
-  const [selectedCell, setSelectedCell] = useState<{ x: number; y: number } | null>(null);
+  const [selectedCell, setSelectedCell] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [showColorId, setShowColorId] = useState(true);
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(canSpeak());
   const [assistPackEnabled, setAssistPackEnabled] = useState(true);
   const [focusCurrentBoard, setFocusCurrentBoard] = useState(true);
-  const [autoLocateSelection, setAutoLocateSelection] = useState(true);
   const [viewMode, setViewMode] = useState<MakingViewMode>("traditional");
   const [activeBoardNumber, setActiveBoardNumber] = useState(1);
   const [boardStatusMap, setBoardStatusMap] = useState<BoardStatusMap>({});
-  const [singleBoardOverviewCollapsed, setSingleBoardOverviewCollapsed] = useState(false);
-  const [singleBoardMobileMiniMapExpanded, setSingleBoardMobileMiniMapExpanded] = useState(false);
+  const [singleBoardOverviewCollapsed, setSingleBoardOverviewCollapsed] =
+    useState(false);
+  const [
+    singleBoardMobileMiniMapExpanded,
+    setSingleBoardMobileMiniMapExpanded,
+  ] = useState(false);
   const [autoAdvanceOnBoardDone, setAutoAdvanceOnBoardDone] = useState(true);
   const [singleBoardHydrated, setSingleBoardHydrated] = useState(false);
-  const [shareFeedback, setShareFeedback] = useState<null | "preparing" | "shared" | "copied" | "unsupported">(null);
+  const [shareFeedback, setShareFeedback] = useState<
+    null | "preparing" | "shared" | "copied" | "unsupported"
+  >(null);
   const [inventoryVersion, setInventoryVersion] = useState(0);
-  const [inventoryFeedback, setInventoryFeedback] = useState<string | null>(null);
+  const [inventoryFeedback, setInventoryFeedback] = useState<string | null>(
+    null,
+  );
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const singleBoardResumeAppliedRef = useRef(false);
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
@@ -387,7 +399,11 @@ const MakingPage: React.FC = () => {
 
   const singleBoardStorageKey = useMemo(() => {
     if (!beadData) return null;
-    const scope = projectId ? `project_${projectId}` : localProjectId ? `local_${localProjectId}` : `draft_${beadData.width}x${beadData.height}`;
+    const scope = projectId
+      ? `project_${projectId}`
+      : localProjectId
+        ? `local_${localProjectId}`
+        : `draft_${beadData.width}x${beadData.height}`;
     return `making_single_board_state_${scope}`;
   }, [beadData, localProjectId, projectId]);
 
@@ -473,7 +489,10 @@ const MakingPage: React.FC = () => {
     return Math.max(1, Math.ceil(beadData.height / physicalBoardSize));
   }, [beadData, physicalBoardSize]);
 
-  const totalBoardCount = useMemo(() => physicalBoardCols * physicalBoardRows, [physicalBoardCols, physicalBoardRows]);
+  const totalBoardCount = useMemo(
+    () => physicalBoardCols * physicalBoardRows,
+    [physicalBoardCols, physicalBoardRows],
+  );
 
   const physicalBoardSegments = useMemo(
     () => getPhysicalBoardSegments(physicalBoardSize),
@@ -540,7 +559,15 @@ const MakingPage: React.FC = () => {
 
   const boardRects = useMemo(() => {
     if (!beadData) return [];
-    const rects: Array<{ boardNumber: number; startX: number; startY: number; endX: number; endY: number; boardCol: number; boardRow: number; }> = [];
+    const rects: Array<{
+      boardNumber: number;
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+      boardCol: number;
+      boardRow: number;
+    }> = [];
     for (let boardRow = 0; boardRow < physicalBoardRows; boardRow++) {
       for (let boardCol = 0; boardCol < physicalBoardCols; boardCol++) {
         const startX = boardCol * physicalBoardSize;
@@ -560,7 +587,9 @@ const MakingPage: React.FC = () => {
   }, [beadData, physicalBoardCols, physicalBoardRows, physicalBoardSize]);
 
   const activeBoardRect = useMemo(() => {
-    return boardRects.find((item) => item.boardNumber === activeBoardNumber) || null;
+    return (
+      boardRects.find((item) => item.boardNumber === activeBoardNumber) || null
+    );
   }, [activeBoardNumber, boardRects]);
 
   const displayBoardRect = useMemo(() => {
@@ -588,23 +617,49 @@ const MakingPage: React.FC = () => {
 
   const renderMaxScale = useMemo(() => MAX_SCALE, []);
   const renderMetrics = useMemo(() => {
-    if (!displayBoardRect || displayWidth <= 0 || displayHeight <= 0) return null;
-    return getSafeRenderMetrics(displayWidth, displayHeight, baseCellSize, scale);
-  }, [displayBoardRect, displayHeight, displayWidth, scale]);
+    if (!displayBoardRect || displayWidth <= 0 || displayHeight <= 0)
+      return null;
+    return getSafeRenderMetrics(
+      displayWidth,
+      displayHeight,
+      baseCellSize,
+      renderScaleAnchor,
+    );
+  }, [
+    baseCellSize,
+    displayBoardRect,
+    displayHeight,
+    displayWidth,
+    renderScaleAnchor,
+  ]);
   const renderDpr = renderMetrics?.dpr ?? 1;
   const renderScale = renderMetrics?.renderScale ?? 1;
   const safeRenderCellSize = renderMetrics?.safeRenderCellSize ?? baseCellSize;
   const safeRenderCanvasWidth = renderMetrics?.safeRenderCanvasWidth ?? 0;
   const safeRenderCanvasHeight = renderMetrics?.safeRenderCanvasHeight ?? 0;
-  const displayScale = renderMetrics?.displayScale ?? 1;
+  const displayScale = Math.max(1, scale / Math.max(renderScale, 0.0001));
 
   useEffect(() => {
-    renderScaleRef.current = renderScale;
-  }, [renderScale]);
+    setRenderScaleAnchor(scale);
+  }, [displayBoardRect, displayHeight, displayWidth]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setRenderScaleAnchor((prev) =>
+        Math.abs(prev - scale) < 0.001 ? prev : scale,
+      );
+    }, 140);
+    return () => window.clearTimeout(timer);
+  }, [scale]);
 
   const clampTranslate = useCallback(
     (nextScale: number, x: number, y: number) => {
-      if (!displayBoardRect || !wrapperRef.current || displayWidth <= 0 || displayHeight <= 0) {
+      if (
+        !displayBoardRect ||
+        !wrapperRef.current ||
+        displayWidth <= 0 ||
+        displayHeight <= 0
+      ) {
         return { x, y };
       }
       const wrapperRect = wrapperRef.current.getBoundingClientRect();
@@ -621,12 +676,15 @@ const MakingPage: React.FC = () => {
   );
 
   const applyStageTransformStyle = useCallback(
-    (nextScale: number, x: number, y: number) => {
+    (nextScale: number, x: number, y: number, renderScaleOverride?: number) => {
       const stage = canvasStageRef.current;
       if (!stage) return;
-      const currentRenderScale = Math.max(renderScaleRef.current, 0.0001);
+      const currentRenderScale = Math.max(
+        renderScaleOverride ?? renderScaleRef.current,
+        0.0001,
+      );
       const nextDisplayScale = Math.max(1, nextScale / currentRenderScale);
-      stage.style.transform = `translate(${x}px, ${y}px) scale(${nextDisplayScale})`;
+      stage.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px) scale(${nextDisplayScale})`;
     },
     [],
   );
@@ -652,7 +710,12 @@ const MakingPage: React.FC = () => {
   }, []);
 
   const commitTranslate = useCallback(
-    (nextScale: number, x: number, y: number, options?: { immediate?: boolean }) => {
+    (
+      nextScale: number,
+      x: number,
+      y: number,
+      options?: { immediate?: boolean },
+    ) => {
       const clamped = clampTranslate(nextScale, x, y);
       translateRef.current = clamped;
       scaleRef.current = nextScale;
@@ -663,7 +726,12 @@ const MakingPage: React.FC = () => {
         scheduleViewportStateSync();
       }
     },
-    [applyStageTransformStyle, clampTranslate, scheduleViewportStateSync, syncViewportStateNow],
+    [
+      applyStageTransformStyle,
+      clampTranslate,
+      scheduleViewportStateSync,
+      syncViewportStateNow,
+    ],
   );
 
   const applyScaleAtPoint = useCallback(
@@ -697,7 +765,8 @@ const MakingPage: React.FC = () => {
   }, [applyScaleAtPoint, renderMaxScale]);
 
   useLayoutEffect(() => {
-    applyStageTransformStyle(scale, translateX, translateY);
+    renderScaleRef.current = renderScale;
+    applyStageTransformStyle(scale, translateX, translateY, renderScale);
   }, [applyStageTransformStyle, renderScale, scale, translateX, translateY]);
 
   const shiftTranslate = useCallback(
@@ -750,10 +819,16 @@ const MakingPage: React.FC = () => {
     const boardCol = Math.floor(rect.startX / boardSize);
     const boardRow = Math.floor(rect.startY / boardSize);
     return boardRow * visionBoardRecommendation.cols + boardCol;
-  }, [beadData, getBlockRectBySelection, selection.blockX, selection.blockY, visionBoardRecommendation]);
+  }, [
+    beadData,
+    getBlockRectBySelection,
+    selection.blockX,
+    selection.blockY,
+    visionBoardRecommendation,
+  ]);
 
   const visionInitialColorId =
-    selection.type === "color" ? selection.colorId ?? null : null;
+    selection.type === "color" ? (selection.colorId ?? null) : null;
 
   const selectedBlockAnchor = useMemo(() => {
     if (!beadData || selection.type === null) return null;
@@ -768,7 +843,13 @@ const MakingPage: React.FC = () => {
       beadData.height - 1,
     );
     return { x: anchorX, y: anchorY };
-  }, [beadData, getBlockRectBySelection, selection.blockX, selection.blockY, selection.type]);
+  }, [
+    beadData,
+    getBlockRectBySelection,
+    selection.blockX,
+    selection.blockY,
+    selection.type,
+  ]);
 
   const currentBoardRect = useMemo(() => {
     if (!beadData || selection.type === null) return null;
@@ -809,10 +890,14 @@ const MakingPage: React.FC = () => {
   const centerViewportOnRect = useCallback(
     (startX: number, startY: number, endX: number, endY: number) => {
       if (!beadData || !wrapperRef.current) return;
-      const rectCenterX = ((startX + endX) / 2) * baseCellSize * scaleRef.current;
-      const rectCenterY = ((startY + endY) / 2) * baseCellSize * scaleRef.current;
-      const canvasCenterX = (beadData.width * baseCellSize * scaleRef.current) / 2;
-      const canvasCenterY = (beadData.height * baseCellSize * scaleRef.current) / 2;
+      const rectCenterX =
+        ((startX + endX) / 2) * baseCellSize * scaleRef.current;
+      const rectCenterY =
+        ((startY + endY) / 2) * baseCellSize * scaleRef.current;
+      const canvasCenterX =
+        (beadData.width * baseCellSize * scaleRef.current) / 2;
+      const canvasCenterY =
+        (beadData.height * baseCellSize * scaleRef.current) / 2;
       commitTranslate(
         scaleRef.current,
         canvasCenterX - rectCenterX,
@@ -823,7 +908,34 @@ const MakingPage: React.FC = () => {
   );
 
   const resetCurrentView = useCallback(() => {
-    const targetRect = viewMode === "singleBoard" ? activeBoardRect : currentBoardRect;
+    if (selection.type === "color" && selectedCell) {
+      centerViewportOnRect(
+        selectedCell.x,
+        selectedCell.y,
+        selectedCell.x + 1,
+        selectedCell.y + 1,
+      );
+      return;
+    }
+
+    if (selection.type === "block") {
+      const blockRect = getBlockRectBySelection(
+        selection.blockX,
+        selection.blockY,
+      );
+      if (blockRect) {
+        centerViewportOnRect(
+          blockRect.startX,
+          blockRect.startY,
+          blockRect.endX,
+          blockRect.endY,
+        );
+        return;
+      }
+    }
+
+    const targetRect =
+      viewMode === "singleBoard" ? activeBoardRect : currentBoardRect;
     if (!targetRect) return;
     centerViewportOnRect(
       targetRect.startX,
@@ -831,12 +943,24 @@ const MakingPage: React.FC = () => {
       targetRect.endX,
       targetRect.endY,
     );
-  }, [activeBoardRect, centerViewportOnRect, currentBoardRect, viewMode]);
+  }, [
+    activeBoardRect,
+    centerViewportOnRect,
+    currentBoardRect,
+    getBlockRectBySelection,
+    selectedCell,
+    selection.blockX,
+    selection.blockY,
+    selection.type,
+    viewMode,
+  ]);
 
   const activateBoard = useCallback(
     (boardNumber: number, shouldCenter = true) => {
       if (!beadData) return;
-      const target = boardRects.find((item) => item.boardNumber === boardNumber);
+      const target = boardRects.find(
+        (item) => item.boardNumber === boardNumber,
+      );
       if (!target) return;
       const targetBlock = getPhysicalBoardBlockCoordinate(
         target.startX,
@@ -852,7 +976,12 @@ const MakingPage: React.FC = () => {
       setSelectedCell(null);
       setTooltipState((prev) => ({ ...prev, visible: false }));
       if (shouldCenter) {
-        centerViewportOnRect(target.startX, target.startY, target.endX, target.endY);
+        centerViewportOnRect(
+          target.startX,
+          target.startY,
+          target.endX,
+          target.endY,
+        );
       }
     },
     [beadData, boardRects, centerViewportOnRect, physicalBoardSize],
@@ -867,13 +996,17 @@ const MakingPage: React.FC = () => {
     }));
     if (nextDone) {
       if (autoAdvanceOnBoardDone) {
-        const currentIndex = boardRects.findIndex((item) => item.boardNumber === activeBoardRect.boardNumber);
+        const currentIndex = boardRects.findIndex(
+          (item) => item.boardNumber === activeBoardRect.boardNumber,
+        );
         const nextPending = boardRects
           .slice(currentIndex + 1)
           .find((item) => !boardStatusMap[item.boardNumber]);
         if (nextPending) {
           activateBoard(nextPending.boardNumber, true);
-          toast.info(`已完成板${activeBoardRect.boardNumber}，已切到板${nextPending.boardNumber}`);
+          toast.info(
+            `已完成板${activeBoardRect.boardNumber}，已切到板${nextPending.boardNumber}`,
+          );
           return;
         }
       }
@@ -889,7 +1022,14 @@ const MakingPage: React.FC = () => {
       return;
     }
     toast.info(`已取消板${activeBoardRect.boardNumber}完成`);
-  }, [activateBoard, activeBoardRect, autoAdvanceOnBoardDone, boardRects, boardStatusMap, toast]);
+  }, [
+    activateBoard,
+    activeBoardRect,
+    autoAdvanceOnBoardDone,
+    boardRects,
+    boardStatusMap,
+    toast,
+  ]);
 
   const singleBoardProgress = useMemo(() => {
     const doneCount = Object.values(boardStatusMap).filter(Boolean).length;
@@ -903,12 +1043,16 @@ const MakingPage: React.FC = () => {
   }, [boardStatusMap, totalBoardCount]);
 
   const singleBoardAllDone = useMemo(
-    () => singleBoardProgress.totalCount > 0 && singleBoardProgress.doneCount >= singleBoardProgress.totalCount,
+    () =>
+      singleBoardProgress.totalCount > 0 &&
+      singleBoardProgress.doneCount >= singleBoardProgress.totalCount,
     [singleBoardProgress.doneCount, singleBoardProgress.totalCount],
   );
 
   const nextPendingBoardNumber = useMemo(() => {
-    const nextPending = boardRects.find((item) => !boardStatusMap[item.boardNumber]);
+    const nextPending = boardRects.find(
+      (item) => !boardStatusMap[item.boardNumber],
+    );
     return nextPending?.boardNumber ?? null;
   }, [boardRects, boardStatusMap]);
 
@@ -967,8 +1111,8 @@ const MakingPage: React.FC = () => {
 
   const resumeBoardNumber = useMemo(() => {
     if (
-      activeBoardNumber > 0
-      && pendingBoardNumbers.includes(activeBoardNumber)
+      activeBoardNumber > 0 &&
+      pendingBoardNumbers.includes(activeBoardNumber)
     ) {
       return activeBoardNumber;
     }
@@ -1006,13 +1150,22 @@ const MakingPage: React.FC = () => {
           singleBoardOverviewCollapsed?: boolean;
           autoAdvanceOnBoardDone?: boolean;
         };
-        if (parsed.viewMode === "singleBoard" || parsed.viewMode === "traditional") {
+        if (
+          parsed.viewMode === "singleBoard" ||
+          parsed.viewMode === "traditional"
+        ) {
           setViewMode(parsed.viewMode);
         }
-        if (parsed.activeBoardNumber && Number.isFinite(parsed.activeBoardNumber)) {
+        if (
+          parsed.activeBoardNumber &&
+          Number.isFinite(parsed.activeBoardNumber)
+        ) {
           setActiveBoardNumber(parsed.activeBoardNumber);
         }
-        if (parsed.boardStatusMap && typeof parsed.boardStatusMap === "object") {
+        if (
+          parsed.boardStatusMap &&
+          typeof parsed.boardStatusMap === "object"
+        ) {
           setBoardStatusMap(parsed.boardStatusMap);
         }
         if (typeof parsed.singleBoardOverviewCollapsed === "boolean") {
@@ -1030,7 +1183,10 @@ const MakingPage: React.FC = () => {
         setSingleBoardHydrated(true);
       }
     };
-    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
       window.requestAnimationFrame(() => finishHydrate());
     } else {
       setTimeout(finishHydrate, 0);
@@ -1052,27 +1208,43 @@ const MakingPage: React.FC = () => {
   useEffect(() => {
     if (!singleBoardStorageKey || !singleBoardHydrated) return;
     try {
-      localStorage.setItem(singleBoardStorageKey, JSON.stringify({
-        viewMode,
-        activeBoardNumber,
-        boardStatusMap,
-        singleBoardOverviewCollapsed,
-        autoAdvanceOnBoardDone,
-      }));
+      localStorage.setItem(
+        singleBoardStorageKey,
+        JSON.stringify({
+          viewMode,
+          activeBoardNumber,
+          boardStatusMap,
+          singleBoardOverviewCollapsed,
+          autoAdvanceOnBoardDone,
+        }),
+      );
     } catch (error) {
       console.warn("[MakingPage] 保存单板模式本地状态失败", error);
     }
-  }, [activeBoardNumber, autoAdvanceOnBoardDone, boardStatusMap, singleBoardHydrated, singleBoardOverviewCollapsed, singleBoardStorageKey, viewMode]);
+  }, [
+    activeBoardNumber,
+    autoAdvanceOnBoardDone,
+    boardStatusMap,
+    singleBoardHydrated,
+    singleBoardOverviewCollapsed,
+    singleBoardStorageKey,
+    viewMode,
+  ]);
 
   useEffect(() => {
-    if (!singleBoardHydrated || viewMode !== "singleBoard" || !resumeBoardNumber) {
+    if (
+      !singleBoardHydrated ||
+      viewMode !== "singleBoard" ||
+      !resumeBoardNumber
+    ) {
       return;
     }
     if (singleBoardResumeAppliedRef.current) {
       return;
     }
     const shouldResume =
-      !pendingBoardNumbers.includes(activeBoardNumber) || activeBoardNumber !== resumeBoardNumber;
+      !pendingBoardNumbers.includes(activeBoardNumber) ||
+      activeBoardNumber !== resumeBoardNumber;
     if (shouldResume) {
       activateBoard(resumeBoardNumber, true);
     }
@@ -1136,7 +1308,9 @@ const MakingPage: React.FC = () => {
     );
     if (!confirmed) return;
     beadInventoryService.applyConsumption(
-      Object.fromEntries(usageSummary.usageList.map((item) => [item.color.id, item.count])),
+      Object.fromEntries(
+        usageSummary.usageList.map((item) => [item.color.id, item.count]),
+      ),
     );
     try {
       localStorage.setItem(consumedInventoryKey, "1");
@@ -1145,9 +1319,18 @@ const MakingPage: React.FC = () => {
     }
     setInventoryConsumed(true);
     setInventoryVersion((prev) => prev + 1);
-    setInventoryFeedback(`已从豆仓扣减本作品所需 ${usageSummary.totalBeads} 颗拼豆`);
+    setInventoryFeedback(
+      `已从豆仓扣减本作品所需 ${usageSummary.totalBeads} 颗拼豆`,
+    );
     toast.success("已扣减豆仓库存");
-  }, [consumedInventoryKey, inventoryCheck.canApply, inventoryCheck.shortageTotal, inventoryConsumed, toast, usageSummary]);
+  }, [
+    consumedInventoryKey,
+    inventoryCheck.canApply,
+    inventoryCheck.shortageTotal,
+    inventoryConsumed,
+    toast,
+    usageSummary,
+  ]);
 
   const jumpToBoard = useCallback(
     (direction: -1 | 1) => {
@@ -1180,7 +1363,10 @@ const MakingPage: React.FC = () => {
   const selectedCoordinateSummary = useMemo(() => {
     if (!beadData || selection.type === null || !currentBoardRect) return null;
     if (selection.type === "color" && selectedCell) {
-      const boardCoordinate = getPhysicalBoardCoordinate(selectedCell.x, selectedCell.y);
+      const boardCoordinate = getPhysicalBoardCoordinate(
+        selectedCell.x,
+        selectedCell.y,
+      );
       return {
         boardNumber: boardCoordinate.boardNumber,
         localCol: boardCoordinate.localCol,
@@ -1216,8 +1402,14 @@ const MakingPage: React.FC = () => {
 
   // 计算合适缩放（仅首次加载执行，换色等不重置）
   const initialScaleSetRef = useRef(false);
+  const traditionalViewSanityCheckedRef = useRef(false);
   useEffect(() => {
-    if (displayBoardRect && displayWidth > 0 && displayHeight > 0 && !initialScaleSetRef.current) {
+    if (
+      displayBoardRect &&
+      displayWidth > 0 &&
+      displayHeight > 0 &&
+      !initialScaleSetRef.current
+    ) {
       initialScaleSetRef.current = true;
       const timer = setTimeout(() => {
         const viewportHeight = window.innerHeight;
@@ -1228,15 +1420,75 @@ const MakingPage: React.FC = () => {
         const fitWidth = wrapperWidth / (displayWidth * baseCellSize);
         const fitHeight = wrapperHeight / (displayHeight * baseCellSize);
         const fitScale = Math.min(fitWidth, fitHeight);
-        const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, fitScale));
+        const nextScale = Math.min(
+          renderMaxScale,
+          Math.max(MIN_SCALE, fitScale),
+        );
         commitTranslate(nextScale, 0, 0, { immediate: true });
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [commitTranslate, displayBoardRect, displayHeight, displayWidth, renderMaxScale]);
+  }, [
+    commitTranslate,
+    displayBoardRect,
+    displayHeight,
+    displayWidth,
+    renderMaxScale,
+  ]);
 
   useEffect(() => {
-    if (viewMode !== "singleBoard" || !displayBoardRect || displayWidth <= 0 || displayHeight <= 0) {
+    traditionalViewSanityCheckedRef.current = false;
+  }, [beadData, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "traditional" || traditionalViewSanityCheckedRef.current) {
+      return;
+    }
+    traditionalViewSanityCheckedRef.current = true;
+    if (selection.type !== null) {
+      return;
+    }
+    const wrapper = wrapperRef.current;
+    if (
+      !wrapper ||
+      !displayBoardRect ||
+      displayWidth <= 0 ||
+      displayHeight <= 0
+    ) {
+      return;
+    }
+    const driftX = Math.abs(translateRef.current.x);
+    const driftY = Math.abs(translateRef.current.y);
+    const driftThresholdX = wrapper.clientWidth * 0.35;
+    const driftThresholdY = wrapper.clientHeight * 0.35;
+    if (driftX <= driftThresholdX && driftY <= driftThresholdY) {
+      return;
+    }
+    const fitWidth = wrapper.clientWidth / (displayWidth * baseCellSize);
+    const fitHeight = wrapper.clientHeight / (displayHeight * baseCellSize);
+    const nextScale = Math.min(
+      renderMaxScale,
+      Math.max(MIN_SCALE, Math.min(fitWidth, fitHeight)),
+    );
+    commitTranslate(nextScale, 0, 0, { immediate: true });
+  }, [
+    beadData,
+    commitTranslate,
+    displayBoardRect,
+    displayHeight,
+    displayWidth,
+    renderMaxScale,
+    selection.type,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      viewMode !== "singleBoard" ||
+      !displayBoardRect ||
+      displayWidth <= 0 ||
+      displayHeight <= 0
+    ) {
       return;
     }
     const timer = setTimeout(() => {
@@ -1247,7 +1499,10 @@ const MakingPage: React.FC = () => {
       if (wrapperWidth <= 0 || wrapperHeight <= 0) return;
       const fitWidth = wrapperWidth / (displayWidth * baseCellSize);
       const fitHeight = wrapperHeight / (displayHeight * baseCellSize);
-      const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, Math.min(fitWidth, fitHeight)));
+      const nextScale = Math.min(
+        renderMaxScale,
+        Math.max(MIN_SCALE, Math.min(fitWidth, fitHeight)),
+      );
       commitTranslate(nextScale, 0, 0, { immediate: true });
     }, 60);
     return () => clearTimeout(timer);
@@ -1498,7 +1753,13 @@ const MakingPage: React.FC = () => {
   // ===== 点击处理（交互核心）=====
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!beadData || !canvasRef.current || !wrapperRef.current || !displayBoardRect) return;
+      if (
+        !beadData ||
+        !canvasRef.current ||
+        !wrapperRef.current ||
+        !displayBoardRect
+      )
+        return;
 
       // 防止触摸事件后的 click 二次触发（touchEnd 已处理）
       if (Date.now() - lastTapProcessedRef.current < 500) return;
@@ -1550,7 +1811,7 @@ const MakingPage: React.FC = () => {
       const blockY = blockCoordinate.blockY;
 
       // 根据缩放级别决定行为
-      if (scale < ZOOM_THRESHOLD) {
+      if (scale < DETAIL_MODE_THRESHOLD) {
         // 缩小状态：选中区块
         if (
           selection.type === "block" &&
@@ -1568,12 +1829,11 @@ const MakingPage: React.FC = () => {
           });
           setSelectedCell(null);
           setTooltipState((prev) => ({ ...prev, visible: false }));
-          toast.info(`选中区块 (${blockX + 1}, ${blockY + 1})`);
         }
       } else {
         // 放大状态：选中颜色
-          const index = globalCellY * beadData.width + globalCellX;
-          const bead = beadData.beads[index];
+        const index = globalCellY * beadData.width + globalCellX;
+        const bead = beadData.beads[index];
         if (!bead) {
           setSelection({ type: null, blockX: 0, blockY: 0 });
           setSelectedCell(null);
@@ -1584,21 +1844,24 @@ const MakingPage: React.FC = () => {
         // 显示坐标提示
         const screenX = e.clientX - wrapperRect.left;
         const screenY = e.clientY - wrapperRect.top;
-          const boardCoordinate = getPhysicalBoardCoordinate(globalCellX, globalCellY);
+        const boardCoordinate = getPhysicalBoardCoordinate(
+          globalCellX,
+          globalCellY,
+        );
 
-          setTooltipState({
-            visible: true,
-            row: globalCellY + 1,
-            col: globalCellX + 1,
-            boardNumber: boardCoordinate.boardNumber,
-            localRow: boardCoordinate.localRow,
-            localCol: boardCoordinate.localCol,
+        setTooltipState({
+          visible: true,
+          row: globalCellY + 1,
+          col: globalCellX + 1,
+          boardNumber: boardCoordinate.boardNumber,
+          localRow: boardCoordinate.localRow,
+          localCol: boardCoordinate.localCol,
           screenX,
           screenY,
         });
 
         if (voiceEnabled) {
-                speakCoordinate(
+          speakCoordinate(
             globalCellY + 1,
             globalCellX + 1,
             boardCoordinate.boardNumber,
@@ -1607,16 +1870,14 @@ const MakingPage: React.FC = () => {
           );
         }
 
-        const sameBlock =
-          selection.blockX === blockX && selection.blockY === blockY;
-
-        // 点击当前区块内相同颜色：回到区块高亮，不清空区块
-        if (
+        const sameCell =
           selection.type === "color" &&
-          sameBlock &&
-          selection.colorHex === bead.hex
-        ) {
-          setSelection({ type: "block", blockX, blockY });
+          selectedCell?.x === globalCellX &&
+          selectedCell?.y === globalCellY;
+
+        // 只有重复点击同一个格子时才取消；点击其他格子一律直接切换
+        if (sameCell) {
+          setSelection({ type: null, blockX: 0, blockY: 0 });
           setSelectedCell(null);
           setTooltipState((prev) => ({ ...prev, visible: false }));
         } else {
@@ -1624,14 +1885,26 @@ const MakingPage: React.FC = () => {
             type: "color",
             blockX,
             blockY,
-                colorHex: bead.hex,
-                colorId: bead.id,
-              });
+            colorHex: bead.hex,
+            colorId: bead.id,
+          });
           setSelectedCell({ x: globalCellX, y: globalCellY });
         }
       }
     },
-    [beadData, displayBoardRect, displayHeight, displayWidth, getPhysicalBoardCoordinate, physicalBoardSize, scale, selection, voiceEnabled, toast],
+    [
+      beadData,
+      displayBoardRect,
+      displayHeight,
+      displayWidth,
+      getPhysicalBoardCoordinate,
+      physicalBoardSize,
+      scale,
+      selectedCell,
+      selection,
+      voiceEnabled,
+      toast,
+    ],
   );
 
   // 触摸拖动处理
@@ -1765,7 +2038,7 @@ const MakingPage: React.FC = () => {
             const blockX = blockCoordinate.blockX;
             const blockY = blockCoordinate.blockY;
 
-            if (scale < ZOOM_THRESHOLD) {
+            if (scale < DETAIL_MODE_THRESHOLD) {
               if (
                 selection.type === "block" &&
                 selection.blockX === blockX &&
@@ -1778,7 +2051,6 @@ const MakingPage: React.FC = () => {
                 setSelection({ type: "block", blockX, blockY });
                 setSelectedCell(null);
                 setTooltipState((prev) => ({ ...prev, visible: false }));
-                toast.info(`选中区块 (${blockX + 1}, ${blockY + 1})`);
               }
             } else {
               const index = globalCellY * beadData.width + globalCellX;
@@ -1793,7 +2065,10 @@ const MakingPage: React.FC = () => {
 
               const screenX = touch.clientX - wrapperRect.left;
               const screenY = touch.clientY - wrapperRect.top;
-              const boardCoordinate = getPhysicalBoardCoordinate(globalCellX, globalCellY);
+              const boardCoordinate = getPhysicalBoardCoordinate(
+                globalCellX,
+                globalCellY,
+              );
 
               setTooltipState({
                 visible: true,
@@ -1851,7 +2126,18 @@ const MakingPage: React.FC = () => {
       pinchStartRef.current = null;
       dragStartPosRef.current = null;
     },
-    [beadData, displayBoardRect, displayHeight, displayWidth, getPhysicalBoardCoordinate, physicalBoardSize, scale, selection, voiceEnabled, toast],
+    [
+      beadData,
+      displayBoardRect,
+      displayHeight,
+      displayWidth,
+      getPhysicalBoardCoordinate,
+      physicalBoardSize,
+      scale,
+      selection,
+      voiceEnabled,
+      toast,
+    ],
   );
 
   // 鼠标拖动处理
@@ -1989,7 +2275,15 @@ const MakingPage: React.FC = () => {
 
   // ===== 娓叉煋 Canvas =====
   useLayoutEffect(() => {
-    if (!beadData || !canvasRef.current || !displayBoardRect || displayWidth <= 0 || displayHeight <= 0 || !renderMetrics) return;
+    if (
+      !beadData ||
+      !canvasRef.current ||
+      !displayBoardRect ||
+      displayWidth <= 0 ||
+      displayHeight <= 0 ||
+      !renderMetrics
+    )
+      return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -2029,12 +2323,20 @@ const MakingPage: React.FC = () => {
     );
 
     const focusedBoardRect =
-      assistPackEnabled && focusCurrentBoard && currentBoardRect && selection.type !== null
+      assistPackEnabled &&
+      focusCurrentBoard &&
+      currentBoardRect &&
+      selection.type !== null
         ? {
-            left: (currentBoardRect.startX - displayStartX) * safeRenderCellSize,
+            left:
+              (currentBoardRect.startX - displayStartX) * safeRenderCellSize,
             top: (currentBoardRect.startY - displayStartY) * safeRenderCellSize,
-            width: (currentBoardRect.endX - currentBoardRect.startX) * safeRenderCellSize,
-            height: (currentBoardRect.endY - currentBoardRect.startY) * safeRenderCellSize,
+            width:
+              (currentBoardRect.endX - currentBoardRect.startX) *
+              safeRenderCellSize,
+            height:
+              (currentBoardRect.endY - currentBoardRect.startY) *
+              safeRenderCellSize,
           }
         : null;
 
@@ -2096,7 +2398,12 @@ const MakingPage: React.FC = () => {
         ctx.fillRect(0, 0, safeRenderCanvasWidth, focusedBoardRect.top);
       }
       if (focusedBoardRect.left > 0) {
-        ctx.fillRect(0, focusedBoardRect.top, focusedBoardRect.left, focusedBoardRect.height);
+        ctx.fillRect(
+          0,
+          focusedBoardRect.top,
+          focusedBoardRect.left,
+          focusedBoardRect.height,
+        );
       }
       const rightStart = focusedBoardRect.left + focusedBoardRect.width;
       if (rightStart < safeRenderCanvasWidth) {
@@ -2148,13 +2455,16 @@ const MakingPage: React.FC = () => {
       !renderMetrics ||
       displayWidth <= 0 ||
       displayHeight <= 0
-    ) return;
+    )
+      return;
 
     const canvas = overlayCanvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    // Keep overlay backing store aligned with the same safe DPR budget as the base canvas.
+    // Using raw devicePixelRatio here can blow the overlay past mobile canvas limits and white-screen.
+    const dpr = renderDpr;
     const drawCellWidth = safeRenderCellSize;
     const drawCellHeight = safeRenderCellSize;
     const drawCellSize = safeRenderCellSize;
@@ -2178,12 +2488,18 @@ const MakingPage: React.FC = () => {
         : [],
     );
     const focusedBoardRect =
-      assistPackEnabled && focusCurrentBoard && currentBoardRect && selection.type !== null
+      assistPackEnabled &&
+      focusCurrentBoard &&
+      currentBoardRect &&
+      selection.type !== null
         ? {
             left: (currentBoardRect.startX - displayStartX) * drawCellWidth,
             top: (currentBoardRect.startY - displayStartY) * drawCellHeight,
-            width: (currentBoardRect.endX - currentBoardRect.startX) * drawCellWidth,
-            height: (currentBoardRect.endY - currentBoardRect.startY) * drawCellHeight,
+            width:
+              (currentBoardRect.endX - currentBoardRect.startX) * drawCellWidth,
+            height:
+              (currentBoardRect.endY - currentBoardRect.startY) *
+              drawCellHeight,
           }
         : null;
 
@@ -2258,11 +2574,23 @@ const MakingPage: React.FC = () => {
     if (drawCellSize >= 7) {
       for (let x = visibleStartX; x <= visibleEndX; x++) {
         const screenX = x * drawCellWidth;
-        drawVLine(screenX, 0, safeRenderCanvasHeight, "rgba(17,24,39,0.22)", baseGridWidth);
+        drawVLine(
+          screenX,
+          0,
+          safeRenderCanvasHeight,
+          "rgba(17,24,39,0.22)",
+          baseGridWidth,
+        );
       }
       for (let y = visibleStartY; y <= visibleEndY; y++) {
         const screenY = y * drawCellHeight;
-        drawHLine(screenY, 0, safeRenderCanvasWidth, "rgba(17,24,39,0.22)", baseGridWidth);
+        drawHLine(
+          screenY,
+          0,
+          safeRenderCanvasWidth,
+          "rgba(17,24,39,0.22)",
+          baseGridWidth,
+        );
       }
     }
 
@@ -2279,7 +2607,13 @@ const MakingPage: React.FC = () => {
         const lineX = originX + offset;
         if (lineX < visibleGlobalStartX || lineX > visibleGlobalEndX) continue;
         const screenX = (lineX - displayStartX) * drawCellWidth;
-        drawVLine(screenX, 0, safeRenderCanvasHeight, "rgba(0,0,0,0.72)", guideWidth);
+        drawVLine(
+          screenX,
+          0,
+          safeRenderCanvasHeight,
+          "rgba(0,0,0,0.72)",
+          guideWidth,
+        );
       }
     }
     for (let boardRow = boardRowStart; boardRow <= boardRowEnd; boardRow++) {
@@ -2288,7 +2622,13 @@ const MakingPage: React.FC = () => {
         const lineY = originY + offset;
         if (lineY < visibleGlobalStartY || lineY > visibleGlobalEndY) continue;
         const screenY = (lineY - displayStartY) * drawCellHeight;
-        drawHLine(screenY, 0, safeRenderCanvasWidth, "rgba(0,0,0,0.72)", guideWidth);
+        drawHLine(
+          screenY,
+          0,
+          safeRenderCanvasWidth,
+          "rgba(0,0,0,0.72)",
+          guideWidth,
+        );
       }
     }
 
@@ -2297,13 +2637,25 @@ const MakingPage: React.FC = () => {
       const lineX = boardCol * physicalBoardSize;
       if (lineX < visibleGlobalStartX || lineX > visibleGlobalEndX) continue;
       const screenX = (lineX - displayStartX) * drawCellWidth;
-      drawVLine(screenX, 0, safeRenderCanvasHeight, "rgba(0,0,0,0.92)", boardWidth);
+      drawVLine(
+        screenX,
+        0,
+        safeRenderCanvasHeight,
+        "rgba(0,0,0,0.92)",
+        boardWidth,
+      );
     }
     for (let boardRow = boardRowStart; boardRow <= boardRowEnd; boardRow++) {
       const lineY = boardRow * physicalBoardSize;
       if (lineY < visibleGlobalStartY || lineY > visibleGlobalEndY) continue;
       const screenY = (lineY - displayStartY) * drawCellHeight;
-      drawHLine(screenY, 0, safeRenderCanvasWidth, "rgba(0,0,0,0.92)", boardWidth);
+      drawHLine(
+        screenY,
+        0,
+        safeRenderCanvasWidth,
+        "rgba(0,0,0,0.92)",
+        boardWidth,
+      );
     }
 
     // 4. 每块板中心十字
@@ -2324,8 +2676,20 @@ const MakingPage: React.FC = () => {
           }
           const cx = (centerCellX - displayStartX) * drawCellWidth;
           const cy = (centerCellY - displayStartY) * drawCellHeight;
-          drawVLine(cx, cy - crossArm, cy + crossArm, "#ff3ea5", highlightWidth);
-          drawHLine(cy, cx - crossArm, cx + crossArm, "#ff3ea5", highlightWidth);
+          drawVLine(
+            cx,
+            cy - crossArm,
+            cy + crossArm,
+            "#ff3ea5",
+            highlightWidth,
+          );
+          drawHLine(
+            cy,
+            cx - crossArm,
+            cx + crossArm,
+            "#ff3ea5",
+            highlightWidth,
+          );
         }
       }
     }
@@ -2428,7 +2792,11 @@ const MakingPage: React.FC = () => {
           ctx.fillStyle = highlightFill;
           ctx.fillRect(snappedPx, snappedPy, snappedWidth, snappedHeight);
 
-          if (selectedCell && selectedCell.x === globalX && selectedCell.y === globalY) {
+          if (
+            selectedCell &&
+            selectedCell.x === globalX &&
+            selectedCell.y === globalY
+          ) {
             ctx.strokeStyle = selectedStroke;
             ctx.lineWidth = selectedStrokeWidth;
             ctx.strokeRect(
@@ -2442,37 +2810,6 @@ const MakingPage: React.FC = () => {
       }
       ctx.restore();
     }
-
-    // 7. 色号，按屏幕像素直接绘制，避免随底图模糊
-    if (showColorId && drawCellSize >= 10) {
-      const fontSize = Math.min(15, Math.max(8, drawCellSize * 0.46));
-      ctx.save();
-      ctx.font = `700 ${fontSize}px Consolas, "Courier New", monospace`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.lineWidth = Math.max(0.9, fontSize * 0.14);
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.miterLimit = 2;
-
-      for (let y = visibleStartY; y < visibleEndY; y++) {
-        const globalY = displayStartY + y;
-        for (let x = visibleStartX; x < visibleEndX; x++) {
-          const globalX = displayStartX + x;
-          const bead = beadData.beads[globalY * beadData.width + globalX];
-          if (!bead?.id) continue;
-          const cx = x * drawCellWidth + drawCellWidth / 2;
-          const cy = y * drawCellHeight + drawCellHeight / 2;
-          const fillColor = getContrastColor(bead.hex);
-          const strokeColor = fillColor === "#000000" ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.95)";
-          ctx.strokeStyle = strokeColor;
-          ctx.fillStyle = fillColor;
-          ctx.strokeText(bead.id, cx, cy);
-          ctx.fillText(bead.id, cx, cy);
-        }
-      }
-      ctx.restore();
-    }
   }, [
     beadData,
     displayBoardRect,
@@ -2481,6 +2818,7 @@ const MakingPage: React.FC = () => {
     getBlockRectBySelection,
     getColorIndicesInBlock,
     showColorId,
+    scale,
     safeRenderCellSize,
     safeRenderCanvasHeight,
     safeRenderCanvasWidth,
@@ -2492,6 +2830,126 @@ const MakingPage: React.FC = () => {
     physicalBoardCols,
     physicalBoardRows,
     physicalBoardSize,
+    renderDpr,
+  ]);
+
+  useLayoutEffect(() => {
+    if (
+      !beadData ||
+      !textOverlayCanvasRef.current ||
+      !wrapperRef.current ||
+      !displayBoardRect ||
+      !showColorId ||
+      scale < DETAIL_MODE_THRESHOLD ||
+      safeRenderCellSize <= 0
+    ) {
+      if (textOverlayCanvasRef.current) {
+        const ctx = textOverlayCanvasRef.current.getContext("2d");
+        if (ctx) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(
+            0,
+            0,
+            textOverlayCanvasRef.current.width,
+            textOverlayCanvasRef.current.height,
+          );
+        }
+      }
+      return;
+    }
+
+    const wrapper = wrapperRef.current;
+    const canvas = textOverlayCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const wrapperWidth = wrapper.clientWidth;
+    const wrapperHeight = wrapper.clientHeight;
+    if (wrapperWidth <= 0 || wrapperHeight <= 0) return;
+
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.max(1, Math.floor(wrapperWidth * dpr));
+    canvas.height = Math.max(1, Math.floor(wrapperHeight * dpr));
+    canvas.style.width = `${wrapperWidth}px`;
+    canvas.style.height = `${wrapperHeight}px`;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
+    ctx.imageSmoothingEnabled = true;
+
+    const cellScreenSize = safeRenderCellSize * displayScale;
+    if (cellScreenSize < 11) return;
+
+    const visualCanvasWidth = safeRenderCanvasWidth * displayScale;
+    const visualCanvasHeight = safeRenderCanvasHeight * displayScale;
+    const stageLeft = (wrapperWidth - visualCanvasWidth) / 2 + translateX;
+    const stageTop = (wrapperHeight - visualCanvasHeight) / 2 + translateY;
+
+    const visibleStartX = Math.max(0, Math.floor(-stageLeft / cellScreenSize));
+    const visibleStartY = Math.max(0, Math.floor(-stageTop / cellScreenSize));
+    const visibleEndX = Math.min(
+      displayWidth,
+      Math.ceil((wrapperWidth - stageLeft) / cellScreenSize),
+    );
+    const visibleEndY = Math.min(
+      displayHeight,
+      Math.ceil((wrapperHeight - stageTop) / cellScreenSize),
+    );
+
+    const fontSize = Math.min(14, Math.max(9, cellScreenSize * 0.38));
+    ctx.save();
+    ctx.font = `600 ${fontSize}px "Cascadia Mono", "SFMono-Regular", Consolas, "Courier New", monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = cellScreenSize < 18 ? Math.max(0.45, fontSize * 0.06) : 0;
+
+    for (let y = visibleStartY; y < visibleEndY; y++) {
+      const globalY = displayBoardRect.startY + y;
+      for (let x = visibleStartX; x < visibleEndX; x++) {
+        const globalX = displayBoardRect.startX + x;
+        const bead = beadData.beads[globalY * beadData.width + globalX];
+        if (!bead?.id) continue;
+        const cx = stageLeft + x * cellScreenSize + cellScreenSize / 2;
+        const cy = stageTop + y * cellScreenSize + cellScreenSize / 2;
+        if (
+          cx < -cellScreenSize ||
+          cy < -cellScreenSize ||
+          cx > wrapperWidth + cellScreenSize ||
+          cy > wrapperHeight + cellScreenSize
+        ) {
+          continue;
+        }
+        const fillColor = getContrastColor(bead.hex);
+        const strokeColor =
+          fillColor === "#000000"
+            ? "rgba(255,255,255,0.55)"
+            : "rgba(0,0,0,0.55)";
+        ctx.fillStyle = fillColor;
+        if (ctx.lineWidth > 0) {
+          ctx.strokeStyle = strokeColor;
+          ctx.strokeText(bead.id, cx, cy);
+        }
+        ctx.fillText(bead.id, cx, cy);
+      }
+    }
+    ctx.restore();
+  }, [
+    beadData,
+    displayBoardRect,
+    displayHeight,
+    displayScale,
+    displayWidth,
+    safeRenderCanvasHeight,
+    safeRenderCanvasWidth,
+    safeRenderCellSize,
+    scale,
+    showColorId,
+    translateX,
+    translateY,
   ]);
 
   // 取消选中
@@ -2543,7 +3001,11 @@ const MakingPage: React.FC = () => {
 
   const isNarrowToolbar = viewportWidth <= 420;
   const isCompactToolbar = viewportWidth <= 360;
-  const isSingleBoardMobile = viewMode === "singleBoard" && viewportWidth <= 640;
+  const isSingleBoardMobile =
+    viewMode === "singleBoard" && viewportWidth <= 640;
+  const isTraditionalMobile =
+    viewMode === "traditional" && viewportWidth <= 640;
+  const detailModeEnabled = scale >= DETAIL_MODE_THRESHOLD;
   useEffect(() => {
     if (!isSingleBoardMobile || totalBoardCount <= 1 || singleBoardAllDone) {
       setSingleBoardMobileMiniMapExpanded(false);
@@ -2567,7 +3029,12 @@ const MakingPage: React.FC = () => {
         : isCompactToolbar
           ? "6px 8px"
           : styles.zoomControls.padding,
-    gap: isSingleBoardMobile && !singleBoardAllDone ? "3px" : isCompactToolbar ? "4px" : "6px",
+    gap:
+      isSingleBoardMobile && !singleBoardAllDone
+        ? "3px"
+        : isCompactToolbar
+          ? "4px"
+          : "6px",
   };
   const zoomRangeStyle: React.CSSProperties = {
     ...styles.zoomRange,
@@ -2601,18 +3068,18 @@ const MakingPage: React.FC = () => {
     ...styles.modeSwitchBar,
     ...(viewMode === "singleBoard"
       ? {
-        gap: isSingleBoardMobile ? "4px" : "6px",
-        padding: isSingleBoardMobile ? "4px 6px 0" : "6px 8px 0",
-      }
+          gap: isSingleBoardMobile ? "4px" : "6px",
+          padding: isSingleBoardMobile ? "4px 6px 0" : "6px 8px 0",
+        }
       : {}),
   };
   const modeSwitchBtnStyle = (active: boolean): React.CSSProperties => ({
     ...styles.modeSwitchBtn,
     ...(viewMode === "singleBoard"
       ? {
-        height: isSingleBoardMobile ? "28px" : "30px",
-        fontSize: isSingleBoardMobile ? "11px" : "12px",
-      }
+          height: isSingleBoardMobile ? "28px" : "30px",
+          fontSize: isSingleBoardMobile ? "11px" : "12px",
+        }
       : {}),
     ...(active ? styles.modeSwitchBtnActive : {}),
   });
@@ -2623,13 +3090,15 @@ const MakingPage: React.FC = () => {
       (!singleBoardAllDone && (selection.type !== null || showSettings)));
   const statusHintStyle: React.CSSProperties = {
     ...styles.statusHint,
-    top: isNarrowToolbar ? `${singleBoardChromeOffset + 38}px` : `${singleBoardChromeOffset}px`,
+    top: isNarrowToolbar
+      ? `${singleBoardChromeOffset + 38}px`
+      : `${singleBoardChromeOffset}px`,
     maxWidth: isNarrowToolbar ? "calc(100vw - 32px)" : undefined,
     ...(viewMode === "singleBoard"
       ? {
-        padding: "4px 10px",
-        fontSize: "11px",
-      }
+          padding: "4px 10px",
+          fontSize: "11px",
+        }
       : {}),
   };
   const canvasWrapperStyle: React.CSSProperties = {
@@ -2649,7 +3118,6 @@ const MakingPage: React.FC = () => {
     ...styles.canvasStage,
     width: `${safeRenderCanvasWidth}px`,
     height: `${safeRenderCanvasHeight}px`,
-    transform: `translate(${translateX}px, ${translateY}px) scale(${displayScale})`,
   };
 
   return (
@@ -2699,9 +3167,12 @@ const MakingPage: React.FC = () => {
             {singleBoardAllDone ? (
               <div style={styles.singleBoardCompletionEntry}>
                 <div style={styles.singleBoardResumeEntryMeta}>
-                  <span style={styles.singleBoardResumeEntryTitle}>全部板已完成</span>
+                  <span style={styles.singleBoardResumeEntryTitle}>
+                    全部板已完成
+                  </span>
                   <span style={styles.singleBoardResumeEntryText}>
-                    {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount} · 导出图纸 / 查看整图
+                    {singleBoardProgress.doneCount}/
+                    {singleBoardProgress.totalCount} · 导出图纸 / 查看整图
                   </span>
                   <span style={styles.singleBoardResumeEntryText}>
                     {inventoryConsumed
@@ -2715,14 +3186,16 @@ const MakingPage: React.FC = () => {
                       {shareFeedback === "preparing"
                         ? "正在准备分享..."
                         : shareFeedback === "shared"
-                        ? "已打开系统分享"
-                        : shareFeedback === "copied"
-                          ? "已复制分享文案"
-                          : "当前环境不支持直接分享，可先导出图纸"}
+                          ? "已打开系统分享"
+                          : shareFeedback === "copied"
+                            ? "已复制分享文案"
+                            : "当前环境不支持直接分享，可先导出图纸"}
                     </span>
                   )}
                   {inventoryFeedback && (
-                    <span style={styles.singleBoardShareFeedback}>{inventoryFeedback}</span>
+                    <span style={styles.singleBoardShareFeedback}>
+                      {inventoryFeedback}
+                    </span>
                   )}
                 </div>
                 <div style={styles.singleBoardCompletionActions}>
@@ -2730,7 +3203,10 @@ const MakingPage: React.FC = () => {
                     style={{
                       ...styles.singleBoardResumeEntryBtn,
                       ...styles.singleBoardSecondaryBtn,
-                      opacity: inventoryConsumed || !inventoryCheck.canApply ? 0.72 : 1,
+                      opacity:
+                        inventoryConsumed || !inventoryCheck.canApply
+                          ? 0.72
+                          : 1,
                     }}
                     onClick={handleDeductInventory}
                     disabled={inventoryConsumed || !inventoryCheck.canApply}
@@ -2742,7 +3218,10 @@ const MakingPage: React.FC = () => {
                         : "库存不足"}
                   </button>
                   <button
-                    style={{ ...styles.singleBoardResumeEntryBtn, ...styles.singleBoardSecondaryBtn }}
+                    style={{
+                      ...styles.singleBoardResumeEntryBtn,
+                      ...styles.singleBoardSecondaryBtn,
+                    }}
                     onClick={handleOpenTraditionalOverview}
                   >
                     查看整图
@@ -2755,21 +3234,28 @@ const MakingPage: React.FC = () => {
                   </button>
                 </div>
               </div>
-            ) : resumeBoardNumber && !isSingleBoardMobile && (
-              <div style={styles.singleBoardResumeEntry}>
-                <div style={styles.singleBoardResumeEntryMeta}>
-                  <span style={styles.singleBoardResumeEntryTitle}>继续上次制作</span>
-                  <span style={styles.singleBoardResumeEntryText}>
-                    板{resumeBoardNumber} · 已完成 {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
-                  </span>
+            ) : (
+              resumeBoardNumber &&
+              !isSingleBoardMobile && (
+                <div style={styles.singleBoardResumeEntry}>
+                  <div style={styles.singleBoardResumeEntryMeta}>
+                    <span style={styles.singleBoardResumeEntryTitle}>
+                      继续上次制作
+                    </span>
+                    <span style={styles.singleBoardResumeEntryText}>
+                      板{resumeBoardNumber} · 已完成{" "}
+                      {singleBoardProgress.doneCount}/
+                      {singleBoardProgress.totalCount}
+                    </span>
+                  </div>
+                  <button
+                    style={styles.singleBoardResumeEntryBtn}
+                    onClick={() => activateBoard(resumeBoardNumber, true)}
+                  >
+                    继续
+                  </button>
                 </div>
-                <button
-                  style={styles.singleBoardResumeEntryBtn}
-                  onClick={() => activateBoard(resumeBoardNumber, true)}
-                >
-                  继续
-                </button>
-              </div>
+              )
             )}
             {!singleBoardAllDone && (
               <>
@@ -2778,27 +3264,35 @@ const MakingPage: React.FC = () => {
                     <div style={styles.singleBoardMobileSummaryRow}>
                       <div style={styles.singleBoardMobileSummaryMain}>
                         <span style={styles.singleBoardMobileSummaryText}>
-                          进度 {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
+                          进度 {singleBoardProgress.doneCount}/
+                          {singleBoardProgress.totalCount}
                         </span>
                         <span style={styles.singleBoardMobileSummaryText}>
                           剩余 {singleBoardProgress.remainingCount} 块
                         </span>
-                        {resumeBoardNumber && resumeBoardNumber !== activeBoardNumber && (
-                          <button
-                            style={styles.singleBoardResumeBtn}
-                            onClick={() => activateBoard(resumeBoardNumber, true)}
-                          >
-                            继续未完成
-                          </button>
-                        )}
+                        {resumeBoardNumber &&
+                          resumeBoardNumber !== activeBoardNumber && (
+                            <button
+                              style={styles.singleBoardResumeBtn}
+                              onClick={() =>
+                                activateBoard(resumeBoardNumber, true)
+                              }
+                            >
+                              继续未完成
+                            </button>
+                          )}
                       </div>
                       <button
                         style={{
                           ...styles.singleBoardQuickToggle,
                           ...styles.singleBoardMobileQuickToggle,
-                          ...(autoAdvanceOnBoardDone ? styles.singleBoardQuickToggleActive : {}),
+                          ...(autoAdvanceOnBoardDone
+                            ? styles.singleBoardQuickToggleActive
+                            : {}),
                         }}
-                        onClick={() => setAutoAdvanceOnBoardDone((prev) => !prev)}
+                        onClick={() =>
+                          setAutoAdvanceOnBoardDone((prev) => !prev)
+                        }
                       >
                         {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
                       </button>
@@ -2825,11 +3319,19 @@ const MakingPage: React.FC = () => {
                               fontSize: "10px",
                             }}
                             onClick={() =>
-                              setSingleBoardMobileMiniMapExpanded((prev) => !prev)
+                              setSingleBoardMobileMiniMapExpanded(
+                                (prev) => !prev,
+                              )
                             }
-                            title={singleBoardMobileMiniMapExpanded ? "收起总览" : "展开总览"}
+                            title={
+                              singleBoardMobileMiniMapExpanded
+                                ? "收起总览"
+                                : "展开总览"
+                            }
                           >
-                            {singleBoardMobileMiniMapExpanded ? "收起总览" : "看总览图"}
+                            {singleBoardMobileMiniMapExpanded
+                              ? "收起总览"
+                              : "看总览图"}
                           </button>
                         )}
                         {totalBoardCount > 1 ? (
@@ -2843,11 +3345,20 @@ const MakingPage: React.FC = () => {
                           </button>
                         ) : (
                           <button
-                            style={{ ...styles.singleBoardMobileNavBtn, width: "auto", minWidth: "56px", padding: "0 10px" }}
+                            style={styles.singleBoardMobileSecondaryBtn}
                             onClick={resetCurrentView}
                             disabled={!activeBoardRect}
                           >
-                            定位
+                            复位
+                          </button>
+                        )}
+                        {totalBoardCount > 1 && (
+                          <button
+                            style={styles.singleBoardMobileSecondaryBtn}
+                            onClick={resetCurrentView}
+                            disabled={!activeBoardRect}
+                          >
+                            复位
                           </button>
                         )}
                         <button
@@ -2861,51 +3372,63 @@ const MakingPage: React.FC = () => {
                           }}
                           disabled={!activeBoardRect}
                         >
-                          {activeBoardDone && nextPendingBoardNumber ? "下一块" : "完成"}
+                          {activeBoardDone && nextPendingBoardNumber
+                            ? "下一块"
+                            : "完成"}
                         </button>
                       </div>
                     )}
-                    {totalBoardCount > 1 && singleBoardMobileMiniMapExpanded && (
-                      <div style={styles.singleBoardMobileMiniMapPanel}>
-                        <button
-                          style={styles.singleBoardMobileMiniMapPanelInner}
-                          onClick={resetCurrentView}
-                          title="复位视图"
-                        >
-                          <div
-                            style={{
-                              ...styles.singleBoardMiniMapCanvas,
-                              ...styles.singleBoardMobileMiniMapPanelCanvas,
-                              aspectRatio: beadData ? `${beadData.width} / ${beadData.height}` : "1 / 1",
-                            }}
+                    {totalBoardCount > 1 &&
+                      singleBoardMobileMiniMapExpanded && (
+                        <div style={styles.singleBoardMobileMiniMapPanel}>
+                          <button
+                            style={styles.singleBoardMobileMiniMapPanelInner}
+                            onClick={resetCurrentView}
+                            title="复位视图"
                           >
-                            {boardRects.map((board) => {
-                              const isActive = board.boardNumber === activeBoardNumber;
-                              const isDone = Boolean(boardStatusMap[board.boardNumber]);
-                              const left = `${(board.startX / beadData!.width) * 100}%`;
-                              const top = `${(board.startY / beadData!.height) * 100}%`;
-                              const width = `${((board.endX - board.startX) / beadData!.width) * 100}%`;
-                              const height = `${((board.endY - board.startY) / beadData!.height) * 100}%`;
-                              return (
-                                <span
-                                  key={`mobile-mini-${board.boardNumber}`}
-                                  style={{
-                                    ...styles.singleBoardMiniMapCell,
-                                    ...styles.singleBoardMobileMiniMapCell,
-                                    ...(isDone ? styles.singleBoardMiniMapCellDone : {}),
-                                    ...(isActive ? styles.singleBoardMiniMapCellActive : {}),
-                                    left,
-                                    top,
-                                    width,
-                                    height,
-                                  }}
-                                />
-                              );
-                            })}
-                          </div>
-                        </button>
-                      </div>
-                    )}
+                            <div
+                              style={{
+                                ...styles.singleBoardMiniMapCanvas,
+                                ...styles.singleBoardMobileMiniMapPanelCanvas,
+                                aspectRatio: beadData
+                                  ? `${beadData.width} / ${beadData.height}`
+                                  : "1 / 1",
+                              }}
+                            >
+                              {boardRects.map((board) => {
+                                const isActive =
+                                  board.boardNumber === activeBoardNumber;
+                                const isDone = Boolean(
+                                  boardStatusMap[board.boardNumber],
+                                );
+                                const left = `${(board.startX / beadData!.width) * 100}%`;
+                                const top = `${(board.startY / beadData!.height) * 100}%`;
+                                const width = `${((board.endX - board.startX) / beadData!.width) * 100}%`;
+                                const height = `${((board.endY - board.startY) / beadData!.height) * 100}%`;
+                                return (
+                                  <span
+                                    key={`mobile-mini-${board.boardNumber}`}
+                                    style={{
+                                      ...styles.singleBoardMiniMapCell,
+                                      ...styles.singleBoardMobileMiniMapCell,
+                                      ...(isDone
+                                        ? styles.singleBoardMiniMapCellDone
+                                        : {}),
+                                      ...(isActive
+                                        ? styles.singleBoardMiniMapCellActive
+                                        : {}),
+                                      left,
+                                      top,
+                                      width,
+                                      height,
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </button>
+                        </div>
+                      )}
                   </>
                 ) : (
                   <>
@@ -2913,8 +3436,11 @@ const MakingPage: React.FC = () => {
                       <div style={styles.singleBoardCompactMeta}>
                         <span style={styles.singleBoardSummaryTitle}>单板</span>
                         <span style={styles.singleBoardSummaryText}>
-                          {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
-                          {singleBoardProgress.totalCount > 0 ? ` · ${singleBoardProgress.percent}%` : ""}
+                          {singleBoardProgress.doneCount}/
+                          {singleBoardProgress.totalCount}
+                          {singleBoardProgress.totalCount > 0
+                            ? ` · ${singleBoardProgress.percent}%`
+                            : ""}
                           {` · 剩余${singleBoardProgress.remainingCount}块`}
                         </span>
                         {nextPendingBoardNumber && (
@@ -2930,12 +3456,16 @@ const MakingPage: React.FC = () => {
                               : styles.singleBoardStatePillTodo),
                           }}
                         >
-                          {activeBoardDone ? `板${activeBoardNumber} 已完成` : `板${activeBoardNumber} 进行中`}
+                          {activeBoardDone
+                            ? `板${activeBoardNumber} 已完成`
+                            : `板${activeBoardNumber} 进行中`}
                         </span>
                       </div>
                       <button
                         style={styles.singleBoardCollapseBtn}
-                        onClick={() => setSingleBoardOverviewCollapsed((prev) => !prev)}
+                        onClick={() =>
+                          setSingleBoardOverviewCollapsed((prev) => !prev)
+                        }
                       >
                         {singleBoardOverviewCollapsed ? "展开总览" : "收起总览"}
                       </button>
@@ -2955,40 +3485,56 @@ const MakingPage: React.FC = () => {
                         <button
                           style={{
                             ...styles.singleBoardQuickToggle,
-                            ...(autoAdvanceOnBoardDone ? styles.singleBoardQuickToggleActive : {}),
+                            ...(autoAdvanceOnBoardDone
+                              ? styles.singleBoardQuickToggleActive
+                              : {}),
                           }}
-                          onClick={() => setAutoAdvanceOnBoardDone((prev) => !prev)}
+                          onClick={() =>
+                            setAutoAdvanceOnBoardDone((prev) => !prev)
+                          }
                         >
-                          {autoAdvanceOnBoardDone ? "自动切下一板" : "完成后停留当前板"}
+                          {autoAdvanceOnBoardDone
+                            ? "自动切下一板"
+                            : "完成后停留当前板"}
                         </button>
                       </div>
-                      {pendingBoardNumbers.length > 0 && !singleBoardOverviewCollapsed && (
-                        <div style={styles.singleBoardPendingRow}>
-                          <span style={styles.singleBoardPendingLabel}>未完成：</span>
-                          {pendingBoardNumbers.slice(0, 3).map((boardNumber) => (
-                            <button
-                              key={`pending-${boardNumber}`}
-                              style={styles.singleBoardPendingChip}
-                              onClick={() => activateBoard(boardNumber, true)}
-                            >
-                              ?{boardNumber}
-                            </button>
-                          ))}
-                          {pendingBoardNumbers.length > 3 && (
-                            <span style={styles.singleBoardPendingMore}>
-                              +{pendingBoardNumbers.length - 3}
+                      {pendingBoardNumbers.length > 0 &&
+                        !singleBoardOverviewCollapsed && (
+                          <div style={styles.singleBoardPendingRow}>
+                            <span style={styles.singleBoardPendingLabel}>
+                              未完成：
                             </span>
-                          )}
-                        </div>
-                      )}
+                            {pendingBoardNumbers
+                              .slice(0, 3)
+                              .map((boardNumber) => (
+                                <button
+                                  key={`pending-${boardNumber}`}
+                                  style={styles.singleBoardPendingChip}
+                                  onClick={() =>
+                                    activateBoard(boardNumber, true)
+                                  }
+                                >
+                                  ?{boardNumber}
+                                </button>
+                              ))}
+                            {pendingBoardNumbers.length > 3 && (
+                              <span style={styles.singleBoardPendingMore}>
+                                +{pendingBoardNumbers.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
                     </div>
                     {!singleBoardOverviewCollapsed && (
                       <div style={styles.singleBoardHeroRow}>
                         <div style={styles.singleBoardSummaryCard}>
                           <div style={styles.singleBoardSummary}>
-                            <span style={styles.singleBoardSummaryTitle}>当前板工作流</span>
+                            <span style={styles.singleBoardSummaryTitle}>
+                              当前板工作流
+                            </span>
                             <span style={styles.singleBoardSummaryText}>
-                              板{activeBoardNumber} / 共 {singleBoardProgress.totalCount} 块
+                              板{activeBoardNumber} / 共{" "}
+                              {singleBoardProgress.totalCount} 块
                             </span>
                           </div>
                           <div style={styles.singleBoardActionRow}>
@@ -2997,7 +3543,8 @@ const MakingPage: React.FC = () => {
                               onClick={handleToggleBoardDone}
                               disabled={!activeBoardRect}
                             >
-                              {activeBoardRect && boardStatusMap[activeBoardRect.boardNumber]
+                              {activeBoardRect &&
+                              boardStatusMap[activeBoardRect.boardNumber]
                                 ? "取消完成"
                                 : "标记本板完成"}
                             </button>
@@ -3015,12 +3562,17 @@ const MakingPage: React.FC = () => {
                             <div
                               style={{
                                 ...styles.singleBoardMiniMapCanvas,
-                                aspectRatio: beadData ? `${beadData.width} / ${beadData.height}` : "1 / 1",
+                                aspectRatio: beadData
+                                  ? `${beadData.width} / ${beadData.height}`
+                                  : "1 / 1",
                               }}
                             >
                               {boardRects.map((board) => {
-                                const isActive = board.boardNumber === activeBoardNumber;
-                                const isDone = Boolean(boardStatusMap[board.boardNumber]);
+                                const isActive =
+                                  board.boardNumber === activeBoardNumber;
+                                const isDone = Boolean(
+                                  boardStatusMap[board.boardNumber],
+                                );
                                 const left = `${(board.startX / beadData!.width) * 100}%`;
                                 const top = `${(board.startY / beadData!.height) * 100}%`;
                                 const width = `${((board.endX - board.startX) / beadData!.width) * 100}%`;
@@ -3030,14 +3582,20 @@ const MakingPage: React.FC = () => {
                                     key={`mini-${board.boardNumber}`}
                                     style={{
                                       ...styles.singleBoardMiniMapCell,
-                                      ...(isDone ? styles.singleBoardMiniMapCellDone : {}),
-                                      ...(isActive ? styles.singleBoardMiniMapCellActive : {}),
+                                      ...(isDone
+                                        ? styles.singleBoardMiniMapCellDone
+                                        : {}),
+                                      ...(isActive
+                                        ? styles.singleBoardMiniMapCellActive
+                                        : {}),
                                       left,
                                       top,
                                       width,
                                       height,
                                     }}
-                                    onClick={() => activateBoard(board.boardNumber, true)}
+                                    onClick={() =>
+                                      activateBoard(board.boardNumber, true)
+                                    }
                                     title={`板${board.boardNumber}`}
                                   >
                                     {isActive ? `板${board.boardNumber}` : ""}
@@ -3046,7 +3604,9 @@ const MakingPage: React.FC = () => {
                               })}
                             </div>
                           </div>
-                          <div style={styles.singleBoardMiniMapHint}>整图总览</div>
+                          <div style={styles.singleBoardMiniMapHint}>
+                            整图总览
+                          </div>
                         </div>
                       </div>
                     )}
@@ -3068,7 +3628,9 @@ const MakingPage: React.FC = () => {
                                 key={`compact-board-${boardNumber}`}
                                 style={{
                                   ...styles.singleBoardChip,
-                                  ...(isActive ? styles.singleBoardChipActive : {}),
+                                  ...(isActive
+                                    ? styles.singleBoardChipActive
+                                    : {}),
                                   ...(isDone ? styles.singleBoardChipDone : {}),
                                 }}
                                 onClick={() => activateBoard(boardNumber, true)}
@@ -3089,17 +3651,24 @@ const MakingPage: React.FC = () => {
                     ) : (
                       <div style={styles.singleBoardGrid}>
                         {boardRects.map((board) => {
-                          const isActive = board.boardNumber === activeBoardNumber;
-                          const isDone = Boolean(boardStatusMap[board.boardNumber]);
+                          const isActive =
+                            board.boardNumber === activeBoardNumber;
+                          const isDone = Boolean(
+                            boardStatusMap[board.boardNumber],
+                          );
                           return (
                             <button
                               key={board.boardNumber}
                               style={{
                                 ...styles.singleBoardChip,
-                                ...(isActive ? styles.singleBoardChipActive : {}),
+                                ...(isActive
+                                  ? styles.singleBoardChipActive
+                                  : {}),
                                 ...(isDone ? styles.singleBoardChipDone : {}),
                               }}
-                              onClick={() => activateBoard(board.boardNumber, true)}
+                              onClick={() =>
+                                activateBoard(board.boardNumber, true)
+                              }
                             >
                               板{board.boardNumber}
                             </button>
@@ -3123,10 +3692,10 @@ const MakingPage: React.FC = () => {
                 ...zoomControlsStyle,
                 ...(viewMode === "singleBoard"
                   ? {
-                    padding: singleBoardAllDone ? "3px 6px" : "4px 8px",
-                    gap: singleBoardAllDone ? "3px" : "4px",
-                    borderRadius: "10px",
-                  }
+                      padding: singleBoardAllDone ? "3px 6px" : "4px 8px",
+                      gap: singleBoardAllDone ? "3px" : "4px",
+                      borderRadius: "10px",
+                    }
                   : {}),
               }}
             >
@@ -3170,9 +3739,9 @@ const MakingPage: React.FC = () => {
                   ...zoomLabelStyle,
                   ...(viewMode === "singleBoard"
                     ? {
-                      minWidth: singleBoardAllDone ? 30 : 40,
-                      fontSize: singleBoardAllDone ? "11px" : "12px",
-                    }
+                        minWidth: singleBoardAllDone ? 30 : 40,
+                        fontSize: singleBoardAllDone ? "11px" : "12px",
+                      }
                     : {}),
                 }}
               >
@@ -3197,21 +3766,72 @@ const MakingPage: React.FC = () => {
                 style={{
                   ...fitBtnStyle,
                   ...(viewMode === "singleBoard" && singleBoardAllDone
-                    ? { height: "28px", minWidth: "48px", padding: "0 8px", fontSize: "11px" }
+                    ? {
+                        height: "28px",
+                        minWidth: "48px",
+                        padding: "0 8px",
+                        fontSize: "11px",
+                      }
                     : {}),
                 }}
                 onClick={handleFitScreen}
-                title={viewMode === "singleBoard" ? "适应当前板" : "适应屏幕宽度"}
+                title={
+                  viewMode === "singleBoard" ? "适应当前板" : "适应屏幕宽度"
+                }
               >
                 {viewMode === "singleBoard" ? "适板" : "适宽"}
               </button>
+              {viewMode === "traditional" && (
+                <button
+                  style={{
+                    ...fitBtnStyle,
+                    minWidth: isTraditionalMobile
+                      ? "52px"
+                      : fitBtnStyle.minWidth,
+                  }}
+                  onClick={resetCurrentView}
+                  title="复位当前视图"
+                >
+                  复位
+                </button>
+              )}
+              {viewMode === "traditional" && (
+                <button
+                  style={{
+                    ...fitBtnStyle,
+                    minWidth: isTraditionalMobile
+                      ? "52px"
+                      : fitBtnStyle.minWidth,
+                    opacity:
+                      selection.type === "color" && selectedBeadColor
+                        ? 1
+                        : 0.45,
+                    cursor:
+                      selection.type === "color" && selectedBeadColor
+                        ? "pointer"
+                        : "not-allowed",
+                  }}
+                  onClick={() => {
+                    if (selection.type === "color" && selectedBeadColor) {
+                      setShowReplaceModal(true);
+                    }
+                  }}
+                  disabled={!(selection.type === "color" && selectedBeadColor)}
+                  title="替换当前选中颜色"
+                >
+                  换色
+                </button>
+              )}
             </div>
 
             {/* 右侧：功能按钮 */}
             <div style={controlBtnsStyle}>
               {viewMode === "singleBoard" && !singleBoardAllDone && (
                 <button
-                  style={{ ...singleBoardToolbarBtnStyle, ...styles.singleBoardToolbarPrimaryBtn }}
+                  style={{
+                    ...singleBoardToolbarBtnStyle,
+                    ...styles.singleBoardToolbarPrimaryBtn,
+                  }}
                   onClick={handleSingleBoardToolbarPrimaryAction}
                   title={
                     singleBoardAllDone
@@ -3238,7 +3858,11 @@ const MakingPage: React.FC = () => {
               )}
               {!(viewMode === "singleBoard" && singleBoardAllDone) && (
                 <button
-                  style={viewMode === "singleBoard" ? singleBoardToolbarBtnStyle : styles.miniBtn}
+                  style={
+                    viewMode === "singleBoard"
+                      ? singleBoardToolbarBtnStyle
+                      : styles.miniBtn
+                  }
                   onClick={handleOpenExport}
                   title="下载图纸"
                 >
@@ -3256,9 +3880,11 @@ const MakingPage: React.FC = () => {
                 style={
                   viewMode === "singleBoard"
                     ? {
-                      ...singleBoardToolbarBtnStyle,
-                      ...(singleBoardAllDone ? styles.singleBoardToolbarBtnCompact : {}),
-                    }
+                        ...singleBoardToolbarBtnStyle,
+                        ...(singleBoardAllDone
+                          ? styles.singleBoardToolbarBtnCompact
+                          : {}),
+                      }
                     : styles.miniBtn
                 }
                 onClick={() => setShowSettings(!showSettings)}
@@ -3273,6 +3899,28 @@ const MakingPage: React.FC = () => {
                   <Gear size={14} />
                 )}
               </button>
+              {viewMode === "singleBoard" &&
+                selection.type === "color" &&
+                selectedBeadColor && (
+                  <button
+                    style={
+                      viewMode === "singleBoard"
+                        ? singleBoardToolbarBtnStyle
+                        : styles.miniBtn
+                    }
+                    onClick={() => setShowReplaceModal(true)}
+                    title="替换当前选中颜色"
+                  >
+                    {viewMode === "singleBoard" ? (
+                      <>
+                        <Swap size={13} />
+                        换色
+                      </>
+                    ) : (
+                      <Swap size={14} />
+                    )}
+                  </button>
+                )}
             </div>
           </div>
 
@@ -3310,7 +3958,11 @@ const MakingPage: React.FC = () => {
                     }}
                     onClick={toggleWakeLock}
                   >
-                    {wakeLockActive ? <Lightning size={16} weight="fill" /> : <LightningSlash size={16} />}
+                    {wakeLockActive ? (
+                      <Lightning size={16} weight="fill" />
+                    ) : (
+                      <LightningSlash size={16} />
+                    )}
                   </button>
                 </div>
                 <div style={styles.settingRow}>
@@ -3326,22 +3978,32 @@ const MakingPage: React.FC = () => {
                         return;
                       }
                       setVoiceEnabled(!voiceEnabled);
-                      toast.info(voiceEnabled ? "语音提示已关闭" : "语音提示已开启");
+                      toast.info(
+                        voiceEnabled ? "语音提示已关闭" : "语音提示已开启",
+                      );
                     }}
                   >
-                    {voiceEnabled ? <SpeakerHigh size={16} /> : <SpeakerSlash size={16} />}
+                    {voiceEnabled ? (
+                      <SpeakerHigh size={16} />
+                    ) : (
+                      <SpeakerSlash size={16} />
+                    )}
                   </button>
                 </div>
                 <div style={styles.settingRow}>
-                  <span style={styles.settingLabel}>视觉辅助</span>
+                  <span style={styles.settingLabel}>视觉辅助（试验）</span>
                   <button
-                    style={{ ...styles.actionBtn, padding: "8px 12px", fontSize: "12px" }}
+                    style={{
+                      ...styles.actionBtn,
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                    }}
                     onClick={() => {
                       setShowSettings(false);
                       setShowVisionAssist(true);
                     }}
                   >
-                    打开
+                    试用
                   </button>
                 </div>
                 <div style={styles.settingDivider} />
@@ -3355,7 +4017,11 @@ const MakingPage: React.FC = () => {
                     onClick={() => setAssistPackEnabled(!assistPackEnabled)}
                     title="开启后增强当前板聚焦、定位和固定坐标提示"
                   >
-                    {assistPackEnabled ? <CheckCircle size={16} weight="fill" /> : <CheckCircle size={16} />}
+                    {assistPackEnabled ? (
+                      <CheckCircle size={16} weight="fill" />
+                    ) : (
+                      <CheckCircle size={16} />
+                    )}
                   </button>
                 </div>
                 <div style={styles.settingRow}>
@@ -3363,27 +4029,22 @@ const MakingPage: React.FC = () => {
                   <button
                     style={{
                       ...styles.toggleBtn,
-                      ...(assistPackEnabled && focusCurrentBoard ? styles.toggleBtnActive : {}),
+                      ...(assistPackEnabled && focusCurrentBoard
+                        ? styles.toggleBtnActive
+                        : {}),
                       opacity: assistPackEnabled ? 1 : 0.45,
                     }}
-                    onClick={() => assistPackEnabled && setFocusCurrentBoard(!focusCurrentBoard)}
+                    onClick={() =>
+                      assistPackEnabled &&
+                      setFocusCurrentBoard(!focusCurrentBoard)
+                    }
                     disabled={!assistPackEnabled}
                   >
-                    {focusCurrentBoard ? <Eye size={16} /> : <EyeSlash size={16} />}
-                  </button>
-                </div>
-                <div style={styles.settingRow}>
-                  <span style={styles.settingLabel}>自动定位</span>
-                  <button
-                    style={{
-                      ...styles.toggleBtn,
-                      ...(assistPackEnabled && autoLocateSelection ? styles.toggleBtnActive : {}),
-                      opacity: assistPackEnabled ? 1 : 0.45,
-                    }}
-                    onClick={() => assistPackEnabled && setAutoLocateSelection(!autoLocateSelection)}
-                    disabled={!assistPackEnabled}
-                  >
-                    {autoLocateSelection ? <CheckCircle size={16} weight="fill" /> : <CheckCircle size={16} />}
+                    {focusCurrentBoard ? (
+                      <Eye size={16} />
+                    ) : (
+                      <EyeSlash size={16} />
+                    )}
                   </button>
                 </div>
                 <div style={styles.settingHint}>
@@ -3392,7 +4053,6 @@ const MakingPage: React.FC = () => {
                   </p>
                   <p style={styles.hintText}>- 缩小时点击：选中区块</p>
                   <p style={styles.hintText}>- 放大时点击：高亮同色格子</p>
-                  <p style={styles.hintText}>- 再次点击：取消选中</p>
                 </div>
               </div>
             </div>
@@ -3404,8 +4064,12 @@ const MakingPage: React.FC = () => {
               {selection.type === null && (
                 <span>
                   {viewMode === "singleBoard"
-                    ? (scale < ZOOM_THRESHOLD ? "点格选区块" : "点格选颜色")
-                    : (scale < ZOOM_THRESHOLD ? "点击选择区块" : "点击选择颜色")}
+                    ? !detailModeEnabled
+                      ? "点格选区块"
+                      : "点格选颜色"
+                    : !detailModeEnabled
+                      ? "点击选择区块"
+                      : "点击选择颜色"}
                 </span>
               )}
               {selection.type === "block" && (
@@ -3424,7 +4088,7 @@ const MakingPage: React.FC = () => {
                       border: "1px solid rgba(255,255,255,0.3)",
                     }}
                   />
-                  区块{colorCountInBlock}颗 / 全部{colorCountTotal}颗
+                  区内{colorCountInBlock}颗 / 总计{colorCountTotal}颗
                 </span>
               )}
             </div>
@@ -3432,17 +4096,17 @@ const MakingPage: React.FC = () => {
 
           {/* 坐标提示框 */}
           <CoordinateTooltip
-            visible={tooltipState.visible}
+            visible={tooltipState.visible && !isSingleBoardMobile}
             row={tooltipState.row}
             col={tooltipState.col}
             boardNumber={tooltipState.boardNumber}
             localRow={tooltipState.localRow}
             localCol={tooltipState.localCol}
-          cellScreenX={tooltipState.screenX}
-          cellScreenY={tooltipState.screenY}
-          containerWidth={wrapperRef.current?.clientWidth || 300}
-          containerHeight={wrapperRef.current?.clientHeight || 300}
-        />
+            cellScreenX={tooltipState.screenX}
+            cellScreenY={tooltipState.screenY}
+            containerWidth={wrapperRef.current?.clientWidth || 300}
+            containerHeight={wrapperRef.current?.clientHeight || 300}
+          />
 
           {/* Canvas */}
           <div
@@ -3465,11 +4129,12 @@ const MakingPage: React.FC = () => {
                 style={styles.canvas}
                 onClick={handleCanvasClick}
               />
-              <canvas
-                ref={overlayCanvasRef}
-                style={styles.overlayCanvas}
-              />
+              <canvas ref={overlayCanvasRef} style={styles.overlayCanvas} />
             </div>
+            <canvas
+              ref={textOverlayCanvasRef}
+              style={styles.textOverlayCanvas}
+            />
           </div>
         </div>
       </div>
@@ -3477,224 +4142,286 @@ const MakingPage: React.FC = () => {
       {/* 底部操作栏 */}
       {viewMode !== "singleBoard" && <BannerAd placement="making_bottom" />}
 
-      <div style={styles.bottomBar}>
-        {selection.type === null ? (
-          <div style={styles.bottomHint}>
-            {viewMode === "singleBoard"
-              ? (scale < ZOOM_THRESHOLD ? "点格选区块" : "点格看坐标")
-              : (scale < ZOOM_THRESHOLD ? "点击画布选择区块" : "点击格子查看坐标")}
-          </div>
-        ) : (
-          <div style={styles.bottomActions}>
-            {assistPackEnabled && selectedCoordinateSummary && (
-              <div
-                style={{
-                  ...styles.assistDock,
-                  ...(viewMode === "singleBoard"
-                    ? {
-                      padding: isSingleBoardMobile ? "4px 6px" : "6px 8px",
-                      gap: isSingleBoardMobile ? "6px" : "8px",
-                      borderRadius: isSingleBoardMobile ? "8px" : "10px",
-                      alignItems: isSingleBoardMobile ? "stretch" : "center",
-                    }
-                    : {}),
-                }}
-              >
-                <div
-                  style={{
-                    ...styles.assistMeta,
-                    ...(isSingleBoardMobile && viewMode === "singleBoard"
-                      ? {
-                        gap: "4px",
-                      }
-                      : {}),
-                  }}
-                >
-                  {viewMode === "singleBoard" && singleBoardAllDone ? (
-                    <>
-                      <span style={{ ...styles.assistBoardBadge, ...styles.singleBoardFinishBadge }}>
-                        已完工
-                      </span>
-                      <span style={styles.assistCoordText}>作品已完成</span>
-                    </>
-                  ) : (
-                    <>
-                      {!isSingleBoardMobile && (
-                        <span style={styles.assistBoardBadge}>{selectedCoordinateSummary.boardLabel}</span>
-                      )}
-                      <span
+      {!isSingleBoardMobile &&
+        (!isTraditionalMobile || selection.type === "color") && (
+          <div style={styles.bottomBar}>
+            {selection.type === null ? (
+              <div style={styles.bottomHint}>
+                {viewMode === "singleBoard"
+                  ? !detailModeEnabled
+                    ? "点格选区块"
+                    : "点格看坐标"
+                  : !detailModeEnabled
+                    ? "点击画布选择区块"
+                    : "点击格子查看坐标"}
+              </div>
+            ) : (
+              <div style={styles.bottomActions}>
+                {viewMode === "singleBoard" &&
+                  assistPackEnabled &&
+                  selectedCoordinateSummary && (
+                    <div
+                      style={{
+                        ...styles.assistDock,
+                        ...(viewMode === "singleBoard"
+                          ? {
+                              padding: isSingleBoardMobile
+                                ? "4px 6px"
+                                : "6px 8px",
+                              gap: isSingleBoardMobile ? "6px" : "8px",
+                              borderRadius: isSingleBoardMobile
+                                ? "8px"
+                                : "10px",
+                              alignItems: isSingleBoardMobile
+                                ? "stretch"
+                                : "center",
+                            }
+                          : {}),
+                      }}
+                    >
+                      <div
                         style={{
-                          ...styles.assistCoordText,
+                          ...styles.assistMeta,
                           ...(isSingleBoardMobile && viewMode === "singleBoard"
-                            ? { fontSize: "12px" }
+                            ? {
+                                gap: "4px",
+                              }
                             : {}),
                         }}
                       >
-                        列{selectedCoordinateSummary.localCol} 行{selectedCoordinateSummary.localRow}
-                      </span>
-                    </>
-                  )}
-                  {viewMode === "singleBoard" ? (
-                    <>
-                      {!isSingleBoardMobile && (
-                        <span style={styles.singleBoardTaskPill}>
-                          {singleBoardAllDone
-                            ? "全部完成"
-                            : activeBoardDone
-                              ? `板${activeBoardNumber}已完成`
-                              : `板${activeBoardNumber}任务`}
-                        </span>
-                      )}
-                      {!isSingleBoardMobile && (
-                        <span
+                        {viewMode === "singleBoard" && singleBoardAllDone ? (
+                          <>
+                            <span
+                              style={{
+                                ...styles.assistBoardBadge,
+                                ...styles.singleBoardFinishBadge,
+                              }}
+                            >
+                              已完工
+                            </span>
+                            <span style={styles.assistCoordText}>
+                              作品已完成
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {!isSingleBoardMobile && (
+                              <span style={styles.assistBoardBadge}>
+                                {selectedCoordinateSummary.boardLabel}
+                              </span>
+                            )}
+                            <span
+                              style={{
+                                ...styles.assistCoordText,
+                                ...(isSingleBoardMobile &&
+                                viewMode === "singleBoard"
+                                  ? { fontSize: "12px" }
+                                  : {}),
+                              }}
+                            >
+                              列{selectedCoordinateSummary.localCol} 行
+                              {selectedCoordinateSummary.localRow}
+                            </span>
+                          </>
+                        )}
+                        {viewMode === "singleBoard" ? (
+                          <>
+                            {!isSingleBoardMobile && (
+                              <span style={styles.singleBoardTaskPill}>
+                                {singleBoardAllDone
+                                  ? "全部完成"
+                                  : activeBoardDone
+                                    ? `板${activeBoardNumber}已完成`
+                                    : `板${activeBoardNumber}任务`}
+                              </span>
+                            )}
+                            {!isSingleBoardMobile && (
+                              <span
+                                style={{
+                                  ...styles.assistCoordMuted,
+                                  ...(isSingleBoardMobile &&
+                                  viewMode === "singleBoard"
+                                    ? { fontSize: "11px" }
+                                    : {}),
+                                }}
+                              >
+                                {singleBoardProgress.doneCount}/
+                                {singleBoardProgress.totalCount}
+                              </span>
+                            )}
+                            {!singleBoardAllDone && !isSingleBoardMobile && (
+                              <span style={styles.assistCoordMuted}>
+                                剩余 {singleBoardProgress.remainingCount}
+                              </span>
+                            )}
+                            {nextPendingBoardNumber &&
+                              activeBoardDone &&
+                              !isSingleBoardMobile && (
+                                <span style={styles.assistCoordMuted}>
+                                  下一块 板{nextPendingBoardNumber}
+                                </span>
+                              )}
+                          </>
+                        ) : (
+                          <span style={styles.assistCoordMuted}>
+                            全图 {selectedCoordinateSummary.globalCol},
+                            {selectedCoordinateSummary.globalRow}
+                          </span>
+                        )}
+                      </div>
+                      {viewMode === "singleBoard" && (
+                        <button
                           style={{
-                            ...styles.assistCoordMuted,
-                            ...(isSingleBoardMobile && viewMode === "singleBoard"
-                              ? { fontSize: "11px" }
-                              : {}),
+                            ...styles.assistLocateBtn,
+                            ...styles.singleBoardAssistPrimaryBtn,
                           }}
+                          onClick={() => {
+                            if (singleBoardAllDone) {
+                              setSingleBoardOverviewCollapsed(false);
+                              handleOpenExport();
+                              return;
+                            }
+                            if (activeBoardDone && nextPendingBoardNumber) {
+                              activateBoard(nextPendingBoardNumber, true);
+                              return;
+                            }
+                            handleToggleBoardDone();
+                          }}
+                          disabled={!activeBoardRect}
                         >
-                          {singleBoardProgress.doneCount}/{singleBoardProgress.totalCount}
-                        </span>
+                          {singleBoardAllDone
+                            ? "导出图纸"
+                            : activeBoardDone && nextPendingBoardNumber
+                              ? "下一块"
+                              : activeBoardRect &&
+                                  boardStatusMap[activeBoardRect.boardNumber]
+                                ? "取消完成"
+                                : "完成"}
+                        </button>
                       )}
-                      {!singleBoardAllDone && !isSingleBoardMobile && (
-                        <span style={styles.assistCoordMuted}>
-                          剩余 {singleBoardProgress.remainingCount}
-                        </span>
+                      <button
+                        style={
+                          viewMode === "singleBoard"
+                            ? styles.singleBoardAssistMinorBtn
+                            : styles.assistLocateBtn
+                        }
+                        onClick={() => {
+                          if (
+                            viewMode === "singleBoard" &&
+                            singleBoardAllDone
+                          ) {
+                            handleBackToEditor();
+                            return;
+                          }
+                          if (
+                            isSingleBoardMobile &&
+                            viewMode === "singleBoard"
+                          ) {
+                            resetCurrentView();
+                            return;
+                          }
+                          jumpToBoard(-1);
+                        }}
+                        disabled={
+                          viewMode === "singleBoard"
+                            ? singleBoardAllDone
+                              ? false
+                              : isSingleBoardMobile
+                                ? !activeBoardRect
+                                : activeBoardNumber <= 1
+                            : !currentBoardRect ||
+                              currentBoardRect.boardNumber <= 1
+                        }
+                      >
+                        {viewMode === "singleBoard"
+                          ? singleBoardAllDone
+                            ? "回到编辑"
+                            : isSingleBoardMobile
+                              ? "定位"
+                              : "上一板"
+                          : "上一块"}
+                      </button>
+                      {!isSingleBoardMobile && (
+                        <button
+                          style={
+                            viewMode === "singleBoard"
+                              ? styles.singleBoardAssistMinorBtn
+                              : styles.assistLocateBtn
+                          }
+                          onClick={() => {
+                            if (
+                              viewMode === "singleBoard" &&
+                              singleBoardAllDone
+                            ) {
+                              handleShareFinishedWork();
+                              return;
+                            }
+                            resetCurrentView();
+                          }}
+                          disabled={
+                            viewMode === "singleBoard"
+                              ? singleBoardAllDone
+                                ? false
+                                : !activeBoardRect
+                              : !currentBoardRect
+                          }
+                        >
+                          {viewMode === "singleBoard" && singleBoardAllDone
+                            ? "分享作品"
+                            : "复位视图"}
+                        </button>
                       )}
-                      {nextPendingBoardNumber && activeBoardDone && !isSingleBoardMobile && (
-                        <span style={styles.assistCoordMuted}>
-                          下一块 板{nextPendingBoardNumber}
-                        </span>
+                      {viewMode === "singleBoard" && singleBoardAllDone && (
+                        <button
+                          style={styles.singleBoardAssistMinorBtn}
+                          onClick={handleDeductInventory}
+                          disabled={
+                            inventoryConsumed || !inventoryCheck.canApply
+                          }
+                        >
+                          {inventoryConsumed
+                            ? "已扣减豆仓"
+                            : inventoryCheck.canApply
+                              ? "扣减豆仓"
+                              : "库存不足"}
+                        </button>
                       )}
-                    </>
-                  ) : (
-                    <span style={styles.assistCoordMuted}>
-                      全图 {selectedCoordinateSummary.globalCol},{selectedCoordinateSummary.globalRow}
-                    </span>
+                      {!isSingleBoardMobile &&
+                        !(viewMode === "singleBoard" && singleBoardAllDone) && (
+                          <button
+                            style={
+                              viewMode === "singleBoard"
+                                ? styles.singleBoardAssistMinorBtn
+                                : styles.assistLocateBtn
+                            }
+                            onClick={() => {
+                              jumpToBoard(1);
+                            }}
+                            disabled={
+                              viewMode === "singleBoard"
+                                ? activeBoardNumber >= totalBoardCount
+                                : !currentBoardRect ||
+                                  currentBoardRect.boardNumber >=
+                                    totalBoardCount
+                            }
+                          >
+                            {viewMode === "singleBoard" ? "下一板" : "下一块"}
+                          </button>
+                        )}
+                      {viewMode === "singleBoard" && singleBoardAllDone && (
+                        <button
+                          style={styles.singleBoardAssistMinorBtn}
+                          disabled
+                        >
+                          已完成
+                        </button>
+                      )}
+                    </div>
                   )}
-                </div>
-                {viewMode === "singleBoard" && (
-                  <button
-                    style={{ ...styles.assistLocateBtn, ...styles.singleBoardAssistPrimaryBtn }}
-                    onClick={() => {
-                      if (singleBoardAllDone) {
-                        setSingleBoardOverviewCollapsed(false);
-                        handleOpenExport();
-                        return;
-                      }
-                      if (activeBoardDone && nextPendingBoardNumber) {
-                        activateBoard(nextPendingBoardNumber, true);
-                        return;
-                      }
-                      handleToggleBoardDone();
-                    }}
-                    disabled={!activeBoardRect}
-                  >
-                    {singleBoardAllDone
-                      ? "导出图纸"
-                      : activeBoardDone && nextPendingBoardNumber
-                      ? "下一块"
-                      : activeBoardRect && boardStatusMap[activeBoardRect.boardNumber]
-                        ? "取消完成"
-                        : "完成"}
-                  </button>
-                )}
-                <button
-                  style={viewMode === "singleBoard" ? styles.singleBoardAssistMinorBtn : styles.assistLocateBtn}
-                  onClick={() => {
-                    if (viewMode === "singleBoard" && singleBoardAllDone) {
-                      handleBackToEditor();
-                      return;
-                    }
-                    if (isSingleBoardMobile && viewMode === "singleBoard") {
-                      resetCurrentView();
-                      return;
-                    }
-                    jumpToBoard(-1);
-                  }}
-                  disabled={
-                    viewMode === "singleBoard"
-                      ? (singleBoardAllDone ? false : isSingleBoardMobile ? !activeBoardRect : activeBoardNumber <= 1)
-                      : (!currentBoardRect || currentBoardRect.boardNumber <= 1)
-                  }
-                >
-                  {viewMode === "singleBoard"
-                    ? (singleBoardAllDone ? "回到编辑" : isSingleBoardMobile ? "定位" : "上一板")
-                    : "上一块"}
-                </button>
-                {!isSingleBoardMobile && (
-                  <button
-                    style={viewMode === "singleBoard" ? styles.singleBoardAssistMinorBtn : styles.assistLocateBtn}
-                    onClick={() => {
-                      if (viewMode === "singleBoard" && singleBoardAllDone) {
-                        handleShareFinishedWork();
-                        return;
-                      }
-                      resetCurrentView();
-                    }}
-                    disabled={viewMode === "singleBoard" ? (singleBoardAllDone ? false : !activeBoardRect) : !currentBoardRect}
-                  >
-                    {viewMode === "singleBoard" && singleBoardAllDone ? "分享作品" : "复位视图"}
-                  </button>
-                )}
-                {viewMode === "singleBoard" && singleBoardAllDone && (
-                  <button
-                    style={styles.singleBoardAssistMinorBtn}
-                    onClick={handleDeductInventory}
-                    disabled={inventoryConsumed || !inventoryCheck.canApply}
-                  >
-                    {inventoryConsumed
-                      ? "已扣减豆仓"
-                      : inventoryCheck.canApply
-                        ? "扣减豆仓"
-                        : "库存不足"}
-                  </button>
-                )}
-                {!isSingleBoardMobile && !(viewMode === "singleBoard" && singleBoardAllDone) && (
-                  <button
-                    style={viewMode === "singleBoard" ? styles.singleBoardAssistMinorBtn : styles.assistLocateBtn}
-                    onClick={() => {
-                      jumpToBoard(1);
-                    }}
-                    disabled={
-                      viewMode === "singleBoard"
-                        ? activeBoardNumber >= totalBoardCount
-                        : (!currentBoardRect || currentBoardRect.boardNumber >= totalBoardCount)
-                    }
-                  >
-                    {viewMode === "singleBoard" ? "下一板" : "下一块"}
-                  </button>
-                )}
-                {viewMode === "singleBoard" && singleBoardAllDone && (
-                  <button
-                    style={styles.singleBoardAssistMinorBtn}
-                    disabled
-                  >
-                    已完成
-                  </button>
-                )}
               </div>
-            )}
-            {!(viewMode === "singleBoard" && (singleBoardAllDone || isSingleBoardMobile)) && (
-              <span style={styles.bottomHintSmall}>再次点击可取消选中</span>
-            )}
-            {/* 选中颜色时显示替换按钮 */}
-            {selection.type === "color" && selectedBeadColor && (
-              <>
-                <button
-                  style={{ ...styles.actionBtn, ...styles.actionBtnPrimary }}
-                  onClick={() => setShowReplaceModal(true)}
-                >
-                  <Swap size={18} />
-                  替换颜色
-                </button>
-                
-              </>
             )}
           </div>
         )}
-      </div>
 
       {/* 导出弹窗 */}
       {beadData && (
@@ -3760,18 +4487,18 @@ const MakingPage: React.FC = () => {
 };
 
 const makingCandy = {
-  bg: '#fdf7f1',
-  bgSoft: '#fff1e7',
-  panel: 'rgba(255,255,255,0.92)',
-  panelStrong: '#ffffff',
-  panelDark: '#453f61',
-  border: 'rgba(255, 186, 161, 0.34)',
-  borderStrong: 'rgba(95, 200, 255, 0.4)',
-  text: '#4b3f5f',
-  textSoft: '#7f7293',
-  textMuted: '#a093af',
-  cyan: '#4faee1',
-  shadow: '0 16px 36px rgba(255, 188, 154, 0.14)',
+  bg: "#fdf7f1",
+  bgSoft: "#fff1e7",
+  panel: "rgba(255,255,255,0.92)",
+  panelStrong: "#ffffff",
+  panelDark: "#453f61",
+  border: "rgba(255, 186, 161, 0.34)",
+  borderStrong: "rgba(95, 200, 255, 0.4)",
+  text: "#4b3f5f",
+  textSoft: "#7f7293",
+  textMuted: "#a093af",
+  cyan: "#4faee1",
+  shadow: "0 16px 36px rgba(255, 188, 154, 0.14)",
 };
 
 const styles: Record<string, React.CSSProperties> = {
@@ -3789,7 +4516,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "6px 12px",
-    background: 'rgba(255,255,255,0.86)',
+    background: "rgba(255,255,255,0.86)",
     borderBottom: `1px solid ${makingCandy.border}`,
     flexShrink: 0,
   },
@@ -3814,7 +4541,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     padding: "0",
-    background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,245,236,0.94) 100%)',
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,245,236,0.94) 100%)",
     overflow: "hidden",
     position: "relative" as const,
     minHeight: 0,
@@ -3832,7 +4560,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: "34px",
     borderRadius: radius.full,
     border: `1px solid ${makingCandy.border}`,
-    background: 'rgba(255,255,255,0.88)',
+    background: "rgba(255,255,255,0.88)",
     color: makingCandy.textSoft,
     fontSize: typography.fontSize.sm,
     fontWeight: 700,
@@ -3840,9 +4568,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   modeSwitchBtnActive: {
-    background: 'linear-gradient(145deg, #7fd8ff 0%, #85b7ff 55%, #ff93bf 100%)',
-    color: '#ffffff',
-    borderColor: 'rgba(126,163,255,0.45)',
+    background:
+      "linear-gradient(145deg, #7fd8ff 0%, #85b7ff 55%, #ff93bf 100%)",
+    color: "#ffffff",
+    borderColor: "rgba(126,163,255,0.45)",
     boxShadow: makingCandy.shadow,
   },
 
@@ -3862,7 +4591,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "6px 8px",
     borderRadius: radius.lg,
     border: `1px solid rgba(96,165,250,0.2)`,
-    background: "linear-gradient(145deg, rgba(125,211,252,0.12), rgba(244,114,182,0.1))",
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.12), rgba(244,114,182,0.1))",
     boxShadow: makingCandy.shadowSoft,
   },
 
@@ -3874,7 +4604,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "6px 8px",
     borderRadius: radius.lg,
     border: `1px solid rgba(52,211,153,0.26)`,
-    background: "linear-gradient(145deg, rgba(236,253,245,0.95), rgba(240,249,255,0.96))",
+    background:
+      "linear-gradient(145deg, rgba(236,253,245,0.95), rgba(240,249,255,0.96))",
     boxShadow: "0 10px 20px rgba(52,211,153,0.12)",
   },
 
@@ -3914,7 +4645,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 12px",
     borderRadius: radius.full,
     border: `1px solid rgba(96,165,250,0.28)`,
-    background: "linear-gradient(145deg, rgba(125,211,252,0.2), rgba(244,114,182,0.18))",
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.2), rgba(244,114,182,0.18))",
     color: makingCandy.text,
     fontSize: "11px",
     fontWeight: 800,
@@ -3994,7 +4726,8 @@ const styles: Record<string, React.CSSProperties> = {
   singleBoardProgressFill: {
     height: "100%",
     borderRadius: radius.full,
-    background: "linear-gradient(90deg, rgba(52,211,153,0.95), rgba(96,165,250,0.95))",
+    background:
+      "linear-gradient(90deg, rgba(52,211,153,0.95), rgba(96,165,250,0.95))",
     transition: "width 180ms ease",
   },
 
@@ -4019,7 +4752,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 10px",
     borderRadius: radius.full,
     border: `1px solid rgba(96,165,250,0.28)`,
-    background: "linear-gradient(145deg, rgba(125,211,252,0.14), rgba(244,114,182,0.14))",
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.14), rgba(244,114,182,0.14))",
     color: makingCandy.text,
     fontSize: "10px",
     fontWeight: 800,
@@ -4039,7 +4773,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   singleBoardQuickToggleActive: {
-    background: "linear-gradient(145deg, rgba(125,211,252,0.18), rgba(244,114,182,0.16))",
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.18), rgba(244,114,182,0.16))",
     color: makingCandy.text,
     borderColor: makingCandy.borderStrong,
   },
@@ -4131,7 +4866,8 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     borderRadius: "12px",
     border: `1px solid ${makingCandy.border}`,
-    background: "linear-gradient(145deg, rgba(255,255,255,0.98), rgba(245,251,255,0.95))",
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.98), rgba(245,251,255,0.95))",
     boxShadow: makingCandy.shadowSoft,
     cursor: "pointer",
   },
@@ -4162,7 +4898,8 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     borderRadius: "10px",
     border: `1px solid ${makingCandy.border}`,
-    background: "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(245,251,255,0.94))",
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(245,251,255,0.94))",
     boxShadow: makingCandy.shadowSoft,
     cursor: "pointer",
   },
@@ -4194,12 +4931,31 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     borderRadius: radius.full,
     border: `1px solid ${makingCandy.borderStrong}`,
-    background: "linear-gradient(145deg, rgba(125,211,252,0.26), rgba(244,114,182,0.22))",
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.26), rgba(244,114,182,0.22))",
     color: makingCandy.text,
     fontSize: "10px",
     fontWeight: 800,
     cursor: "pointer",
     flexShrink: 0,
+  },
+
+  singleBoardMobileSecondaryBtn: {
+    minWidth: "48px",
+    height: "26px",
+    padding: "0 8px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.94)",
+    color: makingCandy.text,
+    fontSize: "10px",
+    fontWeight: 800,
+    cursor: "pointer",
+    flexShrink: 0,
+    boxShadow: makingCandy.shadowSoft,
   },
 
   singleBoardHeroRow: {
@@ -4218,7 +4974,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "6px 8px",
     borderRadius: radius.lg,
     border: `1px solid ${makingCandy.border}`,
-    background: "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,247,242,0.92))",
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,247,242,0.92))",
     boxShadow: makingCandy.shadowSoft,
   },
 
@@ -4282,7 +5039,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 8px",
     borderRadius: radius.full,
     border: `1px solid ${makingCandy.border}`,
-    background: 'rgba(255,255,255,0.9)',
+    background: "rgba(255,255,255,0.9)",
     color: makingCandy.textSoft,
     fontSize: "10px",
     fontWeight: 700,
@@ -4291,15 +5048,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   singleBoardChipActive: {
-    background: 'linear-gradient(145deg, rgba(79,174,225,0.22), rgba(139,92,246,0.18))',
+    background:
+      "linear-gradient(145deg, rgba(79,174,225,0.22), rgba(139,92,246,0.18))",
     color: makingCandy.text,
     borderColor: makingCandy.borderStrong,
   },
 
   singleBoardChipDone: {
-    background: 'linear-gradient(145deg, rgba(110,231,183,0.24), rgba(52,211,153,0.16))',
-    borderColor: 'rgba(16,185,129,0.3)',
-    color: '#0f766e',
+    background:
+      "linear-gradient(145deg, rgba(110,231,183,0.24), rgba(52,211,153,0.16))",
+    borderColor: "rgba(16,185,129,0.3)",
+    color: "#0f766e",
   },
 
   singleBoardActionRow: {
@@ -4313,7 +5072,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: "26px",
     borderRadius: radius.full,
     border: `1px solid ${makingCandy.border}`,
-    background: 'rgba(255,255,255,0.92)',
+    background: "rgba(255,255,255,0.92)",
     color: makingCandy.text,
     fontSize: "10px",
     fontWeight: 700,
@@ -4330,7 +5089,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "6px",
     borderRadius: radius.lg,
     border: `1px solid ${makingCandy.border}`,
-    background: "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(245,251,255,0.92))",
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(245,251,255,0.92))",
     boxShadow: makingCandy.shadowSoft,
   },
 
@@ -4348,7 +5108,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 12,
     overflow: "hidden",
     border: `1px solid ${makingCandy.border}`,
-    background: "linear-gradient(180deg, rgba(241,245,249,0.95), rgba(255,255,255,0.96))",
+    background:
+      "linear-gradient(180deg, rgba(241,245,249,0.95), rgba(255,255,255,0.96))",
   },
 
   singleBoardMiniMapCell: {
@@ -4372,7 +5133,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   singleBoardMiniMapCellActive: {
-    background: "linear-gradient(145deg, rgba(125,211,252,0.92), rgba(244,114,182,0.84))",
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.92), rgba(244,114,182,0.84))",
     borderColor: "rgba(79,70,229,0.58)",
     color: "#ffffff",
     boxShadow: "0 0 0 1px rgba(255,255,255,0.65) inset",
@@ -4414,7 +5176,8 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 0,
     overflow: "hidden",
-    background: 'linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,245,236,0.92))',
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,245,236,0.92))",
     backdropFilter: "blur(12px)",
     border: `1px solid ${makingCandy.border}`,
     boxShadow: makingCandy.shadow,
@@ -4471,7 +5234,7 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: "42px",
     padding: "0 6px",
     lineHeight: "20px",
-    background: 'rgba(255, 242, 233, 0.94)',
+    background: "rgba(255, 242, 233, 0.94)",
     borderRadius: "8px",
     textAlign: "center" as const,
   },
@@ -4487,7 +5250,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "6px",
     padding: "6px",
-    background: 'linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,245,236,0.92))',
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,245,236,0.92))",
     backdropFilter: "blur(12px)",
     border: `1px solid ${makingCandy.border}`,
     boxShadow: makingCandy.shadow,
@@ -4523,7 +5287,8 @@ const styles: Record<string, React.CSSProperties> = {
 
   singleBoardToolbarPrimaryBtn: {
     minWidth: "74px",
-    background: "linear-gradient(145deg, rgba(125,211,252,0.22), rgba(244,114,182,0.2))",
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.22), rgba(244,114,182,0.2))",
     borderColor: makingCandy.borderStrong,
     color: makingCandy.text,
   },
@@ -4534,7 +5299,7 @@ const styles: Record<string, React.CSSProperties> = {
     right: "8px",
     width: "min(200px, calc(100vw - 16px))",
     maxWidth: "calc(100vw - 16px)",
-    background: 'rgba(255,255,255,0.96)',
+    background: "rgba(255,255,255,0.96)",
     backdropFilter: "blur(12px)",
     borderRadius: radius.card,
     border: `1px solid ${makingCandy.border}`,
@@ -4600,7 +5365,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: 'linear-gradient(145deg, rgba(255,255,255,0.96), rgba(250,244,255,0.92))',
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(250,244,255,0.92))",
     border: `1px solid ${makingCandy.border}`,
     borderRadius: radius.bead,
     color: colors.text.muted,
@@ -4616,7 +5382,7 @@ const styles: Record<string, React.CSSProperties> = {
   settingHint: {
     marginTop: 8,
     padding: "8px",
-    background: 'rgba(255,255,255,0.9)',
+    background: "rgba(255,255,255,0.9)",
     borderRadius: radius.bead,
   },
 
@@ -4635,7 +5401,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     padding: "6px 14px",
-    background: 'linear-gradient(135deg, rgba(255,255,255,0.92), rgba(255,244,236,0.9))',
+    background:
+      "linear-gradient(135deg, rgba(255,255,255,0.92), rgba(255,244,236,0.9))",
     backdropFilter: "blur(8px)",
     borderRadius: radius.full,
     fontSize: "12px",
@@ -4651,7 +5418,7 @@ const styles: Record<string, React.CSSProperties> = {
     right: 0,
     bottom: 0,
     overflow: "hidden",
-    background: '#fff9f1',
+    background: "#fff9f1",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -4661,7 +5428,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   canvasStage: {
-    position: "relative" as const,
+    position: "absolute" as const,
+    left: "50%",
+    top: "50%",
     flexShrink: 0,
     transformOrigin: "center center",
     willChange: "transform",
@@ -4685,6 +5454,15 @@ const styles: Record<string, React.CSSProperties> = {
     imageRendering: "pixelated",
   },
 
+  textOverlayCanvas: {
+    position: "absolute" as const,
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none" as const,
+    imageRendering: "auto",
+  },
+
   bottomBar: {
     display: "flex",
     alignItems: "center",
@@ -4692,7 +5470,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
     padding: "10px 16px",
     marginBottom: "65px", // 给底部导航栏留出空间
-    background: 'rgba(255,255,255,0.84)',
+    background: "rgba(255,255,255,0.84)",
     borderTop: `1px solid ${makingCandy.border}`,
     flexShrink: 0,
     minHeight: 44,
@@ -4727,7 +5505,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "10px",
     padding: "8px 10px",
-    background: "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(255,244,236,0.96))",
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(255,244,236,0.96))",
     border: `1px solid ${makingCandy.border}`,
     borderRadius: "12px",
     boxShadow: makingCandy.shadow,
@@ -4791,7 +5570,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 12px",
     borderRadius: "999px",
     border: `1px solid ${makingCandy.borderStrong}`,
-    background: "linear-gradient(135deg, rgba(79,174,225,0.16), rgba(139,92,246,0.16))",
+    background:
+      "linear-gradient(135deg, rgba(79,174,225,0.16), rgba(139,92,246,0.16))",
     color: makingCandy.text,
     fontSize: "12px",
     fontWeight: 700,
@@ -4800,7 +5580,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   singleBoardAssistPrimaryBtn: {
-    background: "linear-gradient(135deg, rgba(52,211,153,0.18), rgba(96,165,250,0.18))",
+    background:
+      "linear-gradient(135deg, rgba(52,211,153,0.18), rgba(96,165,250,0.18))",
     borderColor: "rgba(16,185,129,0.26)",
     color: makingCandy.text,
   },
@@ -4838,7 +5619,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "6px",
     padding: "10px 16px",
-    background: 'rgba(255,255,255,0.9)',
+    background: "rgba(255,255,255,0.9)",
     border: `1px solid ${makingCandy.border}`,
     borderRadius: radius.button,
     color: makingCandy.textSoft,
@@ -4848,7 +5629,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   actionBtnPrimary: {
-    background: 'linear-gradient(145deg, #7fd8ff 0%, #85b7ff 55%, #ff93bf 100%)',
+    background:
+      "linear-gradient(145deg, #7fd8ff 0%, #85b7ff 55%, #ff93bf 100%)",
     border: "none",
     color: makingCandy.text,
     boxShadow: shadows.button,
@@ -4875,7 +5657,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "8px",
     padding: "12px 24px",
-    background: 'linear-gradient(145deg, #87dfff, #7ea3ff)',
+    background: "linear-gradient(145deg, #87dfff, #7ea3ff)",
     border: "none",
     borderRadius: radius.button,
     color: makingCandy.text,
@@ -4888,5 +5670,3 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default MakingPage;
-
-

@@ -1,0 +1,10 @@
+{
+  "target": "D:\\work\\web\\perler-beads-creator\\perler-beads",
+  "output_dir": "D:\\work\\web\\perler-beads-creator\\perler-beads\\graphify-out",
+  "detected_files": 110,
+  "detected_words": 158738,
+  "code_files": 110,
+  "nodes": 684,
+  "edges": 1108,
+  "communities": 24
+}
