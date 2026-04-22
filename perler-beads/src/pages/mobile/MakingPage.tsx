@@ -46,6 +46,7 @@ import {
 import {
   buildCompletedSingleBoardOnboardingState,
   clampSingleBoardMobileOverviewOffset,
+  clampSingleBoardMobileOverviewWidth,
   getColorIdTextStyle,
   getRenderScaleAnchorDelayMs,
   getSafeRenderMetricsBudget,
@@ -82,6 +83,8 @@ import beadInventoryService from "../../services/beadInventoryService";
 const COMMUNITY_MAKING_DRAFT_KEY = "community_making_bead_data";
 const SINGLE_BOARD_ONBOARDING_STORAGE_KEY =
   "making_single_board_onboarding_v1";
+const SINGLE_BOARD_MOBILE_OVERVIEW_WIDTH_STORAGE_KEY =
+  "making_single_board_mobile_overview_width_v1";
 type CommunityMakingDraftPayload =
   | BeadPixelData
   | {
@@ -341,6 +344,8 @@ const MakingPage: React.FC = () => {
   ] = useState(false);
   const [singleBoardMobileOverviewOffset, setSingleBoardMobileOverviewOffset] =
     useState({ x: 0, y: 0 });
+  const [singleBoardMobileOverviewWidth, setSingleBoardMobileOverviewWidth] =
+    useState(220);
   const [autoAdvanceOnBoardDone, setAutoAdvanceOnBoardDone] = useState(true);
   const [singleBoardHydrated, setSingleBoardHydrated] = useState(false);
   const [showSingleBoardOnboarding, setShowSingleBoardOnboarding] =
@@ -369,6 +374,15 @@ const MakingPage: React.FC = () => {
   });
   const singleBoardMobileOverviewInteractionRef = useRef({
     dragMoved: false,
+  });
+  const singleBoardMobileOverviewResizeRef = useRef<{
+    startX: number;
+    startWidth: number;
+    resizing: boolean;
+  }>({
+    startX: 0,
+    startWidth: 220,
+    resizing: false,
   });
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
@@ -634,11 +648,13 @@ const MakingPage: React.FC = () => {
       viewportHeight,
       offsetX: singleBoardMobileOverviewOffset.x,
       offsetY: singleBoardMobileOverviewOffset.y,
+      widthOverride: singleBoardMobileOverviewWidth,
     });
   }, [
     showSingleBoardMobileOverviewButton,
     singleBoardMobileOverviewOffset.x,
     singleBoardMobileOverviewOffset.y,
+    singleBoardMobileOverviewWidth,
     viewportHeight,
     viewportWidth,
   ]);
@@ -1594,6 +1610,7 @@ const MakingPage: React.FC = () => {
   const handleSingleBoardMobileOverviewDragStart = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!singleBoardMobileOverviewLayout) return;
+      if (singleBoardMobileOverviewResizeRef.current.resizing) return;
       singleBoardMobileOverviewInteractionRef.current.dragMoved = false;
       singleBoardMobileOverviewDragRef.current = {
         startX: e.clientX,
@@ -1612,14 +1629,45 @@ const MakingPage: React.FC = () => {
     ],
   );
 
+  const handleSingleBoardMobileOverviewResizeStart = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!singleBoardMobileOverviewLayout) return;
+      singleBoardMobileOverviewInteractionRef.current.dragMoved = false;
+      singleBoardMobileOverviewDragRef.current.dragging = false;
+      singleBoardMobileOverviewResizeRef.current = {
+        startX: e.clientX,
+        startWidth: singleBoardMobileOverviewLayout.width,
+        resizing: true,
+      };
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    [singleBoardMobileOverviewLayout],
+  );
+
   useEffect(() => {
     if (!singleBoardMobileMiniMapExpanded || !singleBoardMobileOverviewLayout) {
       singleBoardMobileOverviewDragRef.current.dragging = false;
+      singleBoardMobileOverviewResizeRef.current.resizing = false;
       return;
     }
 
     const handlePointerMove = (event: PointerEvent) => {
       const dragState = singleBoardMobileOverviewDragRef.current;
+      const resizeState = singleBoardMobileOverviewResizeRef.current;
+      if (resizeState.resizing) {
+        const nextWidth = clampSingleBoardMobileOverviewWidth({
+          requestedWidth:
+            resizeState.startWidth + (event.clientX - resizeState.startX),
+          minWidth: singleBoardMobileOverviewLayout.minWidth,
+          maxWidth: singleBoardMobileOverviewLayout.maxWidth,
+        });
+        if (nextWidth !== singleBoardMobileOverviewWidth) {
+          setSingleBoardMobileOverviewWidth(nextWidth);
+        }
+        return;
+      }
       if (!dragState.dragging) return;
       const deltaX = event.clientX - dragState.startX;
       const deltaY = event.clientY - dragState.startY;
@@ -1652,6 +1700,7 @@ const MakingPage: React.FC = () => {
 
     const handlePointerUp = () => {
       singleBoardMobileOverviewDragRef.current.dragging = false;
+      singleBoardMobileOverviewResizeRef.current.resizing = false;
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -1667,13 +1716,76 @@ const MakingPage: React.FC = () => {
     singleBoardMobileOverviewLayout,
     singleBoardMobileOverviewOffset.x,
     singleBoardMobileOverviewOffset.y,
+    singleBoardMobileOverviewWidth,
   ]);
 
   useEffect(() => {
     if (!singleBoardMobileMiniMapExpanded) {
       setSingleBoardMobileOverviewOffset({ x: 0, y: 0 });
+      singleBoardMobileOverviewResizeRef.current.resizing = false;
     }
   }, [singleBoardMobileMiniMapExpanded]);
+
+  useEffect(() => {
+    if (!singleBoardMobileMiniMapExpanded || !singleBoardMobileOverviewLayout) {
+      return;
+    }
+    const baseLeft =
+      singleBoardMobileOverviewLayout.left - singleBoardMobileOverviewOffset.x;
+    const baseTop =
+      singleBoardMobileOverviewLayout.top - singleBoardMobileOverviewOffset.y;
+    const clamped = clampSingleBoardMobileOverviewOffset({
+      nextOffsetX: singleBoardMobileOverviewOffset.x,
+      nextOffsetY: singleBoardMobileOverviewOffset.y,
+      baseLeft,
+      baseTop,
+      minLeft: singleBoardMobileOverviewLayout.minLeft,
+      maxLeft: singleBoardMobileOverviewLayout.maxLeft,
+      minTop: singleBoardMobileOverviewLayout.minTop,
+      maxTop: singleBoardMobileOverviewLayout.maxTop,
+    });
+    if (
+      clamped.offsetX !== singleBoardMobileOverviewOffset.x ||
+      clamped.offsetY !== singleBoardMobileOverviewOffset.y
+    ) {
+      setSingleBoardMobileOverviewOffset({
+        x: clamped.offsetX,
+        y: clamped.offsetY,
+      });
+    }
+  }, [
+    singleBoardMobileMiniMapExpanded,
+    singleBoardMobileOverviewLayout,
+    singleBoardMobileOverviewOffset.x,
+    singleBoardMobileOverviewOffset.y,
+  ]);
+
+  useEffect(() => {
+    if (!isSingleBoardMobile) return;
+    try {
+      const raw = localStorage.getItem(
+        SINGLE_BOARD_MOBILE_OVERVIEW_WIDTH_STORAGE_KEY,
+      );
+      if (!raw) return;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) return;
+      setSingleBoardMobileOverviewWidth(parsed);
+    } catch {
+      // ignore storage read failure
+    }
+  }, [isSingleBoardMobile]);
+
+  useEffect(() => {
+    if (!isSingleBoardMobile) return;
+    try {
+      localStorage.setItem(
+        SINGLE_BOARD_MOBILE_OVERVIEW_WIDTH_STORAGE_KEY,
+        String(singleBoardMobileOverviewWidth),
+      );
+    } catch {
+      // ignore storage write failure
+    }
+  }, [isSingleBoardMobile, singleBoardMobileOverviewWidth]);
 
   const handleToggleBoardDone = useCallback(() => {
     if (!activeBoardRect) return;
@@ -4154,6 +4266,21 @@ const MakingPage: React.FC = () => {
                                 ? "拖动总览可挪动卡片，点击总览中的板块可直接跳转"
                                 : "拖动总览可挪动卡片，点击总览可查看整块板位置"}
                             </div>
+                            <div
+                              style={styles.singleBoardMobileOverviewResizeHandle}
+                              onPointerDown={
+                                handleSingleBoardMobileOverviewResizeStart
+                              }
+                              aria-label="缩放总览"
+                              role="button"
+                              title="拖动缩放总览"
+                            >
+                              <span
+                                style={
+                                  styles.singleBoardMobileOverviewResizeHandleIcon
+                                }
+                              />
+                            </div>
                           </div>
                         </div>
                       )}
@@ -5868,6 +5995,32 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center" as const,
     fontWeight: 700,
     lineHeight: 1.45,
+    paddingRight: "28px",
+  },
+
+  singleBoardMobileOverviewResizeHandle: {
+    position: "absolute" as const,
+    right: "10px",
+    bottom: "10px",
+    width: "28px",
+    height: "28px",
+    borderRadius: radius.full,
+    background: "rgba(255,255,255,0.8)",
+    border: `1px solid ${makingCandy.borderStrong}`,
+    boxShadow: makingCandy.shadowSoft,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "nwse-resize",
+    touchAction: "none" as const,
+  },
+
+  singleBoardMobileOverviewResizeHandleIcon: {
+    width: "12px",
+    height: "12px",
+    borderRight: `2px solid ${makingCandy.textSoft}`,
+    borderBottom: `2px solid ${makingCandy.textSoft}`,
+    transform: "translate(-1px, -1px) rotate(0deg)",
   },
 
   singleBoardOnboardingOverlay: {

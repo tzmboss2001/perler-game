@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildCompletedSingleBoardOnboardingState,
   clampSingleBoardMobileOverviewOffset,
+  clampSingleBoardMobileOverviewWidth,
   getTextOverlayTransitionTransform,
   getTextOverlayVisualState,
   getSafeRenderMetricsBudget,
@@ -402,6 +403,8 @@ test("mobile single-board overview layout stays centered inside the viewport", (
       maxLeft: 154,
       minTop: 108,
       maxTop: 456,
+      minWidth: 176,
+      maxWidth: 280,
     },
   );
 });
@@ -429,6 +432,49 @@ test("mobile single-board overview drag offset is clamped to visible bounds", ()
       offsetX: 69,
       offsetY: 174,
     },
+  );
+});
+
+test("mobile overview resize layout widens within viewport bounds", () => {
+  assert.deepEqual(
+    getSingleBoardMobileOverviewLayout({
+      viewportWidth: 390,
+      viewportHeight: 844,
+      offsetX: 0,
+      offsetY: 0,
+      widthOverride: 260,
+    }),
+    {
+      width: 260,
+      maxHeight: 331,
+      left: 65,
+      top: 257,
+      minLeft: 16,
+      maxLeft: 114,
+      minTop: 108,
+      maxTop: 405,
+      minWidth: 176,
+      maxWidth: 280,
+    },
+  );
+});
+
+test("mobile overview width is clamped into legal bounds", () => {
+  assert.equal(
+    clampSingleBoardMobileOverviewWidth({
+      requestedWidth: 120,
+      minWidth: 176,
+      maxWidth: 280,
+    }),
+    176,
+  );
+  assert.equal(
+    clampSingleBoardMobileOverviewWidth({
+      requestedWidth: 420,
+      minWidth: 176,
+      maxWidth: 280,
+    }),
+    280,
   );
 });
 

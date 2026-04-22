@@ -335,10 +335,26 @@ export function shouldShowSingleBoardMobileOverviewButton({
 
 /**
  * @param {{
+ *   requestedWidth: number;
+ *   minWidth: number;
+ *   maxWidth: number;
+ * }} input
+ */
+export function clampSingleBoardMobileOverviewWidth({
+  requestedWidth,
+  minWidth,
+  maxWidth,
+}) {
+  return Math.min(maxWidth, Math.max(minWidth, Math.round(requestedWidth)));
+}
+
+/**
+ * @param {{
  *   viewportWidth: number;
  *   viewportHeight: number;
  *   offsetX?: number;
  *   offsetY?: number;
+ *   widthOverride?: number;
  * }} input
  */
 export function getSingleBoardMobileOverviewLayout({
@@ -346,17 +362,28 @@ export function getSingleBoardMobileOverviewLayout({
   viewportHeight,
   offsetX = 0,
   offsetY = 0,
+  widthOverride,
 }) {
   const sideMargin = 16;
   const topReserved = 108;
   const bottomReserved = 108;
-  const width = Math.max(
-    176,
-    Math.min(220, Math.round(viewportWidth - sideMargin * 2)),
+  const minWidth = 176;
+  const maxWidth = Math.max(
+    minWidth,
+    Math.min(280, Math.round(viewportWidth - 24 * 2)),
   );
+  const width = clampSingleBoardMobileOverviewWidth({
+    requestedWidth: widthOverride ?? 220,
+    minWidth,
+    maxWidth,
+  });
+  const aspectRatio = 220 / 280;
   const maxHeight = Math.max(
     180,
-    Math.min(280, Math.round(viewportHeight - topReserved - bottomReserved)),
+    Math.min(
+      Math.round(width / aspectRatio),
+      Math.round(viewportHeight - topReserved - bottomReserved),
+    ),
   );
   const minLeft = sideMargin;
   const maxLeft = Math.max(minLeft, viewportWidth - width - sideMargin);
@@ -376,6 +403,8 @@ export function getSingleBoardMobileOverviewLayout({
     maxLeft,
     minTop,
     maxTop,
+    minWidth,
+    maxWidth,
   };
 }
 
