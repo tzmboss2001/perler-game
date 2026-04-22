@@ -43,6 +43,25 @@ import {
   speakCoordinate,
   canSpeak,
 } from "../../utils/colorUtils";
+import {
+  buildCompletedSingleBoardOnboardingState,
+  clampSingleBoardMobileOverviewOffset,
+  getColorIdTextStyle,
+  getRenderScaleAnchorDelayMs,
+  getSafeRenderMetricsBudget,
+  getSingleBoardMobileOverviewLayout,
+  getSingleBoardOverviewTitle,
+  getTextOverlayTransitionTransform,
+  getTextOverlayVisualState,
+  getSingleBoardAutoFocusScaleDecision,
+  getNeighborBoardNumber,
+  getSingleBoardMinScale,
+  getSingleBoardSwipeStatus,
+  getTextOverlayStabilizationFrames,
+  parseSingleBoardOnboardingState,
+  resolveSingleBoardSwipeDirection,
+  shouldShowSingleBoardMobileOverviewButton,
+} from "../../utils/singleBoardInteraction.js";
 import BottomNav from "../../components/BottomNav";
 import {
   recommendBoard,
@@ -61,6 +80,8 @@ import countBeadUsage from "../../services/beadUsageService";
 import beadInventoryService from "../../services/beadInventoryService";
 
 const COMMUNITY_MAKING_DRAFT_KEY = "community_making_bead_data";
+const SINGLE_BOARD_ONBOARDING_STORAGE_KEY =
+  "making_single_board_onboarding_v1";
 type CommunityMakingDraftPayload =
   | BeadPixelData
   | {
@@ -109,74 +130,6 @@ const DETAIL_MODE_THRESHOLD = 2.3;
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 6;
 const ZOOM_STEP = 0.1;
-const SAFE_MAX_CANVAS_DIMENSION = 12288;
-const SAFE_MAX_CANVAS_AREA = 48000000;
-const MAX_INTERNAL_RENDER_SCALE = 2.4;
-const MIN_INTERNAL_DPR = 0.5;
-
-const getSafeRenderMetrics = (
-  width: number,
-  height: number,
-  baseCellSize: number,
-  scale: number,
-) => {
-  const requestedRenderScale = Math.min(scale, MAX_INTERNAL_RENDER_SCALE);
-  let renderScale = requestedRenderScale;
-  const visualCellSize = baseCellSize * scale;
-  const visualCanvasWidth = width * visualCellSize;
-  const visualCanvasHeight = height * visualCellSize;
-  const renderCanvasWidth = width * baseCellSize * renderScale;
-  const renderCanvasHeight = height * baseCellSize * renderScale;
-
-  let dpr = Math.max(1, window.devicePixelRatio || 1);
-  const maxDimension = Math.max(renderCanvasWidth, renderCanvasHeight);
-  if (maxDimension * dpr > SAFE_MAX_CANVAS_DIMENSION) {
-    dpr = Math.min(dpr, SAFE_MAX_CANVAS_DIMENSION / maxDimension);
-  }
-  const estimatedArea = renderCanvasWidth * renderCanvasHeight * dpr * dpr;
-  if (estimatedArea > SAFE_MAX_CANVAS_AREA) {
-    dpr = Math.min(
-      dpr,
-      Math.sqrt(
-        SAFE_MAX_CANVAS_AREA /
-          Math.max(1, renderCanvasWidth * renderCanvasHeight),
-      ),
-    );
-  }
-  dpr = Math.max(MIN_INTERNAL_DPR, dpr);
-
-  const maxSafeRenderScaleByDimension =
-    SAFE_MAX_CANVAS_DIMENSION /
-    Math.max(1, Math.max(width, height) * baseCellSize * dpr);
-  const maxSafeRenderScaleByArea = Math.sqrt(
-    SAFE_MAX_CANVAS_AREA /
-      Math.max(1, width * height * baseCellSize * baseCellSize * dpr * dpr),
-  );
-  renderScale = Math.max(
-    MIN_SCALE,
-    Math.min(
-      renderScale,
-      maxSafeRenderScaleByDimension,
-      maxSafeRenderScaleByArea,
-    ),
-  );
-
-  const safeRenderCellSize = baseCellSize * renderScale;
-  const safeRenderCanvasWidth = width * safeRenderCellSize;
-  const safeRenderCanvasHeight = height * safeRenderCellSize;
-
-  return {
-    dpr,
-    renderScale,
-    visualCellSize,
-    safeRenderCellSize,
-    safeRenderCanvasWidth,
-    safeRenderCanvasHeight,
-    displayScale: Math.max(1, scale / Math.max(renderScale, 0.0001)),
-    visualCanvasWidth,
-    visualCanvasHeight,
-  };
-};
 
 /**
  * 制作辅助页面
@@ -190,6 +143,8 @@ const MakingPage: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const textOverlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const singleBoardMiniMapCanvasRef = useRef<HTMLCanvasElement>(null);
+  const singleBoardMobileOverviewCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasStageRef = useRef<HTMLDivElement>(null);
 
@@ -207,6 +162,18 @@ const MakingPage: React.FC = () => {
   const dragStartTimeRef = useRef<number>(0);
   const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const lastTapProcessedRef = useRef<number>(0); // 防止 touch + click 重复触发
+  const singleBoardAutoFitPendingRef = useRef(true);
+  const singleBoardSwipeGestureRef = useRef<{
+    startX: number;
+    startY: number;
+    startAt: number;
+    triggered: boolean;
+  }>({
+    startX: 0,
+    startY: 0,
+    startAt: 0,
+    triggered: false,
+  });
 
   // 从编辑器或方案列表传入的数据
   interface LocationState {
@@ -341,6 +308,19 @@ const MakingPage: React.FC = () => {
   const translateRef = useRef({ x: 0, y: 0 });
   const renderScaleRef = useRef(1);
   const viewportSyncFrameRef = useRef<number | null>(null);
+  const textOverlayFrameRef = useRef<number | null>(null);
+  const textOverlayDrawTokenRef = useRef(0);
+  const textOverlayMetricsRef = useRef({
+    renderScale: 1,
+    canvasWidth: 0,
+    canvasHeight: 0,
+    dpr: 1,
+  });
+  const textOverlayVisualStateRef = useRef<{
+    stageLeft: number;
+    stageTop: number;
+    cellScreenSize: number;
+  } | null>(null);
   const [selectedCell, setSelectedCell] = useState<{
     x: number;
     y: number;
@@ -359,8 +339,12 @@ const MakingPage: React.FC = () => {
     singleBoardMobileMiniMapExpanded,
     setSingleBoardMobileMiniMapExpanded,
   ] = useState(false);
+  const [singleBoardMobileOverviewOffset, setSingleBoardMobileOverviewOffset] =
+    useState({ x: 0, y: 0 });
   const [autoAdvanceOnBoardDone, setAutoAdvanceOnBoardDone] = useState(true);
   const [singleBoardHydrated, setSingleBoardHydrated] = useState(false);
+  const [showSingleBoardOnboarding, setShowSingleBoardOnboarding] =
+    useState(false);
   const [shareFeedback, setShareFeedback] = useState<
     null | "preparing" | "shared" | "copied" | "unsupported"
   >(null);
@@ -370,8 +354,46 @@ const MakingPage: React.FC = () => {
   );
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const singleBoardResumeAppliedRef = useRef(false);
+  const singleBoardMobileOverviewDragRef = useRef<{
+    startX: number;
+    startY: number;
+    initialOffsetX: number;
+    initialOffsetY: number;
+    dragging: boolean;
+  }>({
+    startX: 0,
+    startY: 0,
+    initialOffsetX: 0,
+    initialOffsetY: 0,
+    dragging: false,
+  });
+  const singleBoardMobileOverviewInteractionRef = useRef({
+    dragMoved: false,
+  });
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+  const isSingleBoardMobile =
+    viewMode === "singleBoard" && viewportWidth <= 640;
+  const isIOSWebKit = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    const isiOS = /iPhone|iPad|iPod/i.test(ua);
+    const isWebKit = /AppleWebKit/i.test(ua);
+    const isCriOS = /CriOS|FxiOS|EdgiOS/i.test(ua);
+    return isiOS && isWebKit && !isCriOS;
+  }, []);
+  const hasFinePointer = useMemo(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(pointer: fine)").matches;
+  }, []);
+  const renderScaleAnchorDelayMs = useMemo(
+    () =>
+      getRenderScaleAnchorDelayMs({
+        hasFinePointer,
+        isIOSWebKit,
+      }),
+    [hasFinePointer, isIOSWebKit],
+  );
 
   // 坐标提示框状态
   const [tooltipState, setTooltipState] = useState<{
@@ -427,6 +449,10 @@ const MakingPage: React.FC = () => {
       if (viewportSyncFrameRef.current !== null) {
         cancelAnimationFrame(viewportSyncFrameRef.current);
         viewportSyncFrameRef.current = null;
+      }
+      if (textOverlayFrameRef.current !== null) {
+        cancelAnimationFrame(textOverlayFrameRef.current);
+        textOverlayFrameRef.current = null;
       }
     };
   }, []);
@@ -592,6 +618,157 @@ const MakingPage: React.FC = () => {
     );
   }, [activeBoardNumber, boardRects]);
 
+  const showSingleBoardMobileOverviewButton = useMemo(
+    () =>
+      shouldShowSingleBoardMobileOverviewButton({
+        isSingleBoardMobile,
+        hasActiveBoardRect: !!activeBoardRect,
+      }),
+    [activeBoardRect, isSingleBoardMobile],
+  );
+
+  const singleBoardMobileOverviewLayout = useMemo(() => {
+    if (!showSingleBoardMobileOverviewButton) return null;
+    return getSingleBoardMobileOverviewLayout({
+      viewportWidth,
+      viewportHeight,
+      offsetX: singleBoardMobileOverviewOffset.x,
+      offsetY: singleBoardMobileOverviewOffset.y,
+    });
+  }, [
+    showSingleBoardMobileOverviewButton,
+    singleBoardMobileOverviewOffset.x,
+    singleBoardMobileOverviewOffset.y,
+    viewportHeight,
+    viewportWidth,
+  ]);
+
+  const getOverviewCanvasLayout = useCallback(
+    (canvasWidth: number, canvasHeight: number) => {
+      if (!beadData || canvasWidth <= 0 || canvasHeight <= 0) return null;
+      const padding = Math.max(6, Math.min(canvasWidth, canvasHeight) * 0.04);
+      const availableWidth = Math.max(1, canvasWidth - padding * 2);
+      const availableHeight = Math.max(1, canvasHeight - padding * 2);
+      const overviewScale = Math.min(
+        availableWidth / beadData.width,
+        availableHeight / beadData.height,
+      );
+      const drawWidth = beadData.width * overviewScale;
+      const drawHeight = beadData.height * overviewScale;
+      const offsetX = (canvasWidth - drawWidth) / 2;
+      const offsetY = (canvasHeight - drawHeight) / 2;
+      return { padding, overviewScale, drawWidth, drawHeight, offsetX, offsetY };
+    },
+    [beadData],
+  );
+
+  const drawSingleBoardOverviewCanvas = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      if (!canvas || !beadData) return;
+      const parent = canvas.parentElement;
+      const cssWidth = parent?.clientWidth || canvas.clientWidth;
+      const cssHeight = parent?.clientHeight || canvas.clientHeight;
+      if (cssWidth <= 0 || cssHeight <= 0) return;
+
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      canvas.width = Math.max(1, Math.floor(cssWidth * dpr));
+      canvas.height = Math.max(1, Math.floor(cssHeight * dpr));
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(dpr, dpr);
+      ctx.imageSmoothingEnabled = false;
+
+      const layout = getOverviewCanvasLayout(cssWidth, cssHeight);
+      if (!layout) return;
+
+      const { overviewScale, offsetX, offsetY } = layout;
+
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillRect(offsetX, offsetY, beadData.width * overviewScale, beadData.height * overviewScale);
+
+      for (let y = 0; y < beadData.height; y++) {
+        for (let x = 0; x < beadData.width; x++) {
+          const bead = beadData.beads[y * beadData.width + x];
+          if (!bead) continue;
+          ctx.fillStyle = bead.hex;
+          ctx.fillRect(
+            offsetX + x * overviewScale,
+            offsetY + y * overviewScale,
+            Math.max(overviewScale, 1),
+            Math.max(overviewScale, 1),
+          );
+        }
+      }
+
+      const lineWidth = Math.max(1, Math.min(2.4, overviewScale * 0.6));
+      boardRects.forEach((board) => {
+        const left = offsetX + board.startX * overviewScale;
+        const top = offsetY + board.startY * overviewScale;
+        const width = (board.endX - board.startX) * overviewScale;
+        const height = (board.endY - board.startY) * overviewScale;
+        const isActive = board.boardNumber === activeBoardNumber;
+        const isDone = Boolean(boardStatusMap[board.boardNumber]);
+
+        if (!isActive) {
+          ctx.fillStyle = "rgba(255,255,255,0.4)";
+          ctx.fillRect(left, top, width, height);
+        }
+
+        if (isDone) {
+          ctx.fillStyle = isActive
+            ? "rgba(16,185,129,0.24)"
+            : "rgba(15,118,110,0.12)";
+          ctx.fillRect(left, top, width, height);
+        }
+        if (isActive) {
+          ctx.fillStyle = "rgba(125,211,252,0.08)";
+          ctx.fillRect(left, top, width, height);
+        }
+
+        ctx.strokeStyle = isActive
+          ? "rgba(244,114,182,0.96)"
+          : isDone
+            ? "rgba(13,148,136,0.7)"
+            : "rgba(71,85,105,0.42)";
+        ctx.lineWidth = isActive ? lineWidth * 1.8 : lineWidth;
+        ctx.strokeRect(left, top, width, height);
+        if (isActive) {
+          ctx.strokeStyle = "rgba(255,255,255,0.92)";
+          ctx.lineWidth = Math.max(1, lineWidth * 0.8);
+          ctx.strokeRect(
+            left + lineWidth,
+            top + lineWidth,
+            Math.max(0, width - lineWidth * 2),
+            Math.max(0, height - lineWidth * 2),
+          );
+        }
+      });
+      ctx.restore();
+    },
+    [activeBoardNumber, beadData, boardRects, boardStatusMap, getOverviewCanvasLayout],
+  );
+
+  useEffect(() => {
+    drawSingleBoardOverviewCanvas(singleBoardMiniMapCanvasRef.current);
+    drawSingleBoardOverviewCanvas(singleBoardMobileOverviewCanvasRef.current);
+  }, [
+    activeBoardNumber,
+    beadData,
+    boardRects,
+    boardStatusMap,
+    drawSingleBoardOverviewCanvas,
+    singleBoardMobileMiniMapExpanded,
+    viewportHeight,
+    viewportWidth,
+  ]);
+
   const displayBoardRect = useMemo(() => {
     if (!beadData) return null;
     if (viewMode === "singleBoard" && activeBoardRect) {
@@ -614,22 +791,50 @@ const MakingPage: React.FC = () => {
   const displayHeight = displayBoardRect
     ? displayBoardRect.endY - displayBoardRect.startY
     : 0;
-
   const renderMaxScale = useMemo(() => MAX_SCALE, []);
+
+  const getDisplayFitScale = useCallback(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper || !displayBoardRect || displayWidth <= 0 || displayHeight <= 0) {
+      return null;
+    }
+    const fitWidth = wrapper.clientWidth / (displayWidth * baseCellSize);
+    const fitHeight = wrapper.clientHeight / (displayHeight * baseCellSize);
+    return Math.min(renderMaxScale, Math.max(MIN_SCALE, Math.min(fitWidth, fitHeight)));
+  }, [displayBoardRect, displayHeight, displayWidth, renderMaxScale]);
+
+  const singleBoardFitScale = useMemo(() => {
+    if (viewMode !== "singleBoard") return null;
+    return getDisplayFitScale();
+  }, [getDisplayFitScale, viewMode, viewportHeight, viewportWidth, activeBoardNumber]);
+
+  const activeMinScale = useMemo(() => {
+    if (viewMode !== "singleBoard" || !singleBoardFitScale) {
+      return MIN_SCALE;
+    }
+    return getSingleBoardMinScale({
+      fitScale: singleBoardFitScale,
+      baseMinScale: MIN_SCALE,
+    });
+  }, [singleBoardFitScale, viewMode]);
   const renderMetrics = useMemo(() => {
     if (!displayBoardRect || displayWidth <= 0 || displayHeight <= 0)
       return null;
-    return getSafeRenderMetrics(
-      displayWidth,
-      displayHeight,
+    return getSafeRenderMetricsBudget({
+      width: displayWidth,
+      height: displayHeight,
       baseCellSize,
-      renderScaleAnchor,
-    );
+      scale: renderScaleAnchor,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      isIOSWebKit,
+      layerCount: 2,
+    });
   }, [
     baseCellSize,
     displayBoardRect,
     displayHeight,
     displayWidth,
+    isIOSWebKit,
     renderScaleAnchor,
   ]);
   const renderDpr = renderMetrics?.dpr ?? 1;
@@ -644,13 +849,20 @@ const MakingPage: React.FC = () => {
   }, [displayBoardRect, displayHeight, displayWidth]);
 
   useEffect(() => {
+    if (renderScaleAnchorDelayMs <= 0) {
+      setRenderScaleAnchor((prev) =>
+        Math.abs(prev - scale) < 0.001 ? prev : scale,
+      );
+      return;
+    }
+
     const timer = window.setTimeout(() => {
       setRenderScaleAnchor((prev) =>
         Math.abs(prev - scale) < 0.001 ? prev : scale,
       );
-    }, 140);
+    }, renderScaleAnchorDelayMs);
     return () => window.clearTimeout(timer);
-  }, [scale]);
+  }, [renderScaleAnchorDelayMs, scale]);
 
   const clampTranslate = useCallback(
     (nextScale: number, x: number, y: number) => {
@@ -709,6 +921,179 @@ const MakingPage: React.FC = () => {
     });
   }, []);
 
+  const drawTextOverlay = useCallback(() => {
+    if (
+      !beadData ||
+      !textOverlayCanvasRef.current ||
+      !wrapperRef.current ||
+      !displayBoardRect ||
+      !showColorId ||
+      scaleRef.current < DETAIL_MODE_THRESHOLD ||
+      safeRenderCellSize <= 0
+    ) {
+      if (textOverlayCanvasRef.current) {
+        const ctx = textOverlayCanvasRef.current.getContext("2d");
+        if (ctx) {
+          textOverlayCanvasRef.current.style.transform = "none";
+          textOverlayCanvasRef.current.style.transformOrigin = "0 0";
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(
+            0,
+            0,
+            textOverlayCanvasRef.current.width,
+            textOverlayCanvasRef.current.height,
+          );
+        }
+      }
+      return;
+    }
+
+    const wrapper = wrapperRef.current;
+    const canvas = textOverlayCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const wrapperWidth = wrapper.clientWidth;
+    const wrapperHeight = wrapper.clientHeight;
+    if (wrapperWidth <= 0 || wrapperHeight <= 0) return;
+
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.max(1, Math.floor(wrapperWidth * dpr));
+    canvas.height = Math.max(1, Math.floor(wrapperHeight * dpr));
+    canvas.style.width = `${wrapperWidth}px`;
+    canvas.style.height = `${wrapperHeight}px`;
+    canvas.style.transform = "none";
+    canvas.style.transformOrigin = "0 0";
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
+    ctx.imageSmoothingEnabled = true;
+
+    const currentVisualState = getTextOverlayVisualState({
+      wrapperWidth,
+      wrapperHeight,
+      safeRenderCanvasWidth,
+      safeRenderCanvasHeight,
+      safeRenderCellSize,
+      renderScale: renderScaleRef.current,
+      scale: scaleRef.current,
+      translateX: translateRef.current.x,
+      translateY: translateRef.current.y,
+    });
+    const cellScreenSize = currentVisualState.cellScreenSize;
+    if (cellScreenSize < 11) return;
+
+    const stageLeft = currentVisualState.stageLeft;
+    const stageTop = currentVisualState.stageTop;
+
+    const visibleStartX = Math.max(0, Math.floor(-stageLeft / cellScreenSize));
+    const visibleStartY = Math.max(0, Math.floor(-stageTop / cellScreenSize));
+    const visibleEndX = Math.min(
+      displayWidth,
+      Math.ceil((wrapperWidth - stageLeft) / cellScreenSize),
+    );
+    const visibleEndY = Math.min(
+      displayHeight,
+      Math.ceil((wrapperHeight - stageTop) / cellScreenSize),
+    );
+
+    const textStyle = getColorIdTextStyle({
+      cellScreenSize,
+      labelText: "CE12",
+    });
+    const fontSize = textStyle.fontSize;
+    ctx.save();
+    ctx.font = `700 ${fontSize}px "Cascadia Mono", "SFMono-Regular", Consolas, "Courier New", monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = textStyle.lineWidth;
+
+    for (let y = visibleStartY; y < visibleEndY; y++) {
+      const globalY = displayBoardRect.startY + y;
+      for (let x = visibleStartX; x < visibleEndX; x++) {
+        const globalX = displayBoardRect.startX + x;
+        const bead = beadData.beads[globalY * beadData.width + globalX];
+        if (!bead?.id) continue;
+        const cx = stageLeft + x * cellScreenSize + cellScreenSize / 2;
+        const cy = stageTop + y * cellScreenSize + cellScreenSize / 2;
+        if (
+          cx < -cellScreenSize ||
+          cy < -cellScreenSize ||
+          cx > wrapperWidth + cellScreenSize ||
+          cy > wrapperHeight + cellScreenSize
+        ) {
+          continue;
+        }
+        const fillColor = getContrastColor(bead.hex);
+        const strokeColor =
+          fillColor === "#000000"
+            ? "rgba(255,255,255,0.55)"
+            : "rgba(0,0,0,0.55)";
+        const beadTextStyle = getColorIdTextStyle({
+          cellScreenSize,
+          labelText: bead.id,
+        });
+        if (Math.abs(beadTextStyle.fontSize - fontSize) > 0.01) {
+          ctx.font = `700 ${beadTextStyle.fontSize}px "Cascadia Mono", "SFMono-Regular", Consolas, "Courier New", monospace`;
+        }
+        ctx.fillStyle = fillColor;
+        ctx.lineWidth = beadTextStyle.lineWidth;
+        if (beadTextStyle.lineWidth > 0) {
+          ctx.strokeStyle = strokeColor;
+          ctx.strokeText(bead.id, cx, cy);
+        }
+        ctx.fillText(bead.id, cx, cy);
+      }
+    }
+    ctx.restore();
+    textOverlayVisualStateRef.current = currentVisualState;
+  }, [
+    beadData,
+    displayBoardRect,
+    displayHeight,
+    displayWidth,
+    safeRenderCanvasHeight,
+    safeRenderCanvasWidth,
+    safeRenderCellSize,
+    showColorId,
+  ]);
+
+  const scheduleTextOverlayRedraw = useCallback(
+    (stabilizationFrames = 1) => {
+      if (textOverlayFrameRef.current !== null) {
+        cancelAnimationFrame(textOverlayFrameRef.current);
+      }
+
+      const token = ++textOverlayDrawTokenRef.current;
+      const totalFrames = Math.max(1, Math.floor(stabilizationFrames));
+
+      const runFrame = (remainingFrames: number) => {
+        textOverlayFrameRef.current = requestAnimationFrame(() => {
+          if (token !== textOverlayDrawTokenRef.current) {
+            textOverlayFrameRef.current = null;
+            return;
+          }
+
+          drawTextOverlay();
+
+          if (remainingFrames > 1) {
+            runFrame(remainingFrames - 1);
+            return;
+          }
+
+          textOverlayFrameRef.current = null;
+        });
+      };
+
+      runFrame(totalFrames);
+    },
+    [drawTextOverlay],
+  );
+
   const commitTranslate = useCallback(
     (
       nextScale: number,
@@ -719,7 +1104,51 @@ const MakingPage: React.FC = () => {
       const clamped = clampTranslate(nextScale, x, y);
       translateRef.current = clamped;
       scaleRef.current = nextScale;
-      applyStageTransformStyle(nextScale, clamped.x, clamped.y);
+      const predictedRenderMetrics =
+        displayBoardRect && displayWidth > 0 && displayHeight > 0
+          ? getSafeRenderMetricsBudget({
+              width: displayWidth,
+              height: displayHeight,
+              baseCellSize,
+              scale: nextScale,
+              devicePixelRatio: window.devicePixelRatio || 1,
+              isIOSWebKit,
+              layerCount: 2,
+            })
+          : null;
+      const predictedRenderScale =
+        predictedRenderMetrics?.renderScale ?? renderScaleRef.current;
+      applyStageTransformStyle(
+        nextScale,
+        clamped.x,
+        clamped.y,
+        predictedRenderScale,
+      );
+      if (
+        textOverlayCanvasRef.current &&
+        wrapperRef.current &&
+        predictedRenderMetrics
+      ) {
+        const nextVisualState = getTextOverlayVisualState({
+          wrapperWidth: wrapperRef.current.clientWidth,
+          wrapperHeight: wrapperRef.current.clientHeight,
+          safeRenderCanvasWidth: predictedRenderMetrics.safeRenderCanvasWidth,
+          safeRenderCanvasHeight: predictedRenderMetrics.safeRenderCanvasHeight,
+          safeRenderCellSize: predictedRenderMetrics.safeRenderCellSize,
+          renderScale: predictedRenderScale,
+          scale: nextScale,
+          translateX: clamped.x,
+          translateY: clamped.y,
+        });
+        const transitionTransform = getTextOverlayTransitionTransform({
+          prevVisualState: textOverlayVisualStateRef.current,
+          nextVisualState,
+        });
+        if (transitionTransform) {
+          textOverlayCanvasRef.current.style.transformOrigin = "0 0";
+          textOverlayCanvasRef.current.style.transform = `matrix(${transitionTransform.scale}, 0, 0, ${transitionTransform.scale}, ${transitionTransform.translateX}, ${transitionTransform.translateY})`;
+        }
+      }
       if (options?.immediate) {
         syncViewportStateNow();
       } else {
@@ -728,7 +1157,12 @@ const MakingPage: React.FC = () => {
     },
     [
       applyStageTransformStyle,
+      baseCellSize,
       clampTranslate,
+      displayBoardRect,
+      displayHeight,
+      displayWidth,
+      isIOSWebKit,
       scheduleViewportStateSync,
       syncViewportStateNow,
     ],
@@ -743,7 +1177,10 @@ const MakingPage: React.FC = () => {
     ) => {
       const wrapper = wrapperRef.current;
       if (!wrapper) return;
-      const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, rawScale));
+      const nextScale = Math.min(
+        renderMaxScale,
+        Math.max(activeMinScale, rawScale),
+      );
       const prevScale = scaleRef.current;
       const ratio = nextScale / prevScale;
       const centerX = wrapper.clientWidth / 2;
@@ -753,7 +1190,7 @@ const MakingPage: React.FC = () => {
       const nextY = ratio * prev.y + (1 - ratio) * (focalY - centerY);
       commitTranslate(nextScale, nextX, nextY, options);
     },
-    [commitTranslate, renderMaxScale],
+    [activeMinScale, commitTranslate, renderMaxScale],
   );
 
   useEffect(() => {
@@ -768,6 +1205,41 @@ const MakingPage: React.FC = () => {
     renderScaleRef.current = renderScale;
     applyStageTransformStyle(scale, translateX, translateY, renderScale);
   }, [applyStageTransformStyle, renderScale, scale, translateX, translateY]);
+
+  useEffect(() => {
+    const prev = textOverlayMetricsRef.current;
+    const renderScaleChanged = Math.abs(prev.renderScale - renderScale) > 0.001;
+    const canvasMetricsChanged =
+      prev.canvasWidth !== safeRenderCanvasWidth ||
+      prev.canvasHeight !== safeRenderCanvasHeight ||
+      Math.abs(prev.dpr - renderDpr) > 0.001;
+
+    textOverlayMetricsRef.current = {
+      renderScale,
+      canvasWidth: safeRenderCanvasWidth,
+      canvasHeight: safeRenderCanvasHeight,
+      dpr: renderDpr,
+    };
+
+    const stabilizationFrames = getTextOverlayStabilizationFrames({
+      scale,
+      renderMaxScale,
+      renderScaleChanged,
+      canvasMetricsChanged,
+    });
+
+    if (stabilizationFrames > 1) {
+      scheduleTextOverlayRedraw(stabilizationFrames);
+    }
+  }, [
+    renderDpr,
+    renderMaxScale,
+    renderScale,
+    safeRenderCanvasHeight,
+    safeRenderCanvasWidth,
+    scale,
+    scheduleTextOverlayRedraw,
+  ]);
 
   const shiftTranslate = useCallback(
     (deltaX: number, deltaY: number) => {
@@ -880,6 +1352,82 @@ const MakingPage: React.FC = () => {
     selection.type,
   ]);
 
+  const singleBoardHasNeighborBoard = useMemo(() => {
+    if (viewMode !== "singleBoard" || totalBoardCount <= 1) {
+      return false;
+    }
+
+    return (
+      !!getNeighborBoardNumber({
+        activeBoardNumber,
+        boardCols: physicalBoardCols,
+        boardRows: physicalBoardRows,
+        direction: "left",
+      }) ||
+      !!getNeighborBoardNumber({
+        activeBoardNumber,
+        boardCols: physicalBoardCols,
+        boardRows: physicalBoardRows,
+        direction: "right",
+      }) ||
+      !!getNeighborBoardNumber({
+        activeBoardNumber,
+        boardCols: physicalBoardCols,
+        boardRows: physicalBoardRows,
+        direction: "up",
+      }) ||
+      !!getNeighborBoardNumber({
+        activeBoardNumber,
+        boardCols: physicalBoardCols,
+        boardRows: physicalBoardRows,
+        direction: "down",
+      })
+    );
+  }, [activeBoardNumber, physicalBoardCols, physicalBoardRows, totalBoardCount, viewMode]);
+
+  const singleBoardSwipeUi = useMemo(() => {
+    const status = getSingleBoardSwipeStatus({
+      isSingleBoardMobile,
+      scale,
+      fitScale: singleBoardFitScale,
+      hasNeighborBoard: singleBoardHasNeighborBoard,
+    });
+    const thresholdPercent = Math.max(
+      1,
+      Math.round(status.swipeThresholdScale * 100),
+    );
+
+    if (status.state === "swipe_edge_ready") {
+      return {
+        ...status,
+        title: "可切板",
+        text: "已进入切板手势区，拖到边缘后继续滑动即可切换",
+        style: styles.singleBoardSwipeStatusReady,
+      };
+    }
+
+    if (status.state === "swipe_ready") {
+      return {
+        ...status,
+        title: "接近可切板",
+        text: "已进入切板手势区，拖到边缘后滑动可切板",
+        style: styles.singleBoardSwipeStatusReady,
+      };
+    }
+
+    return {
+      ...status,
+      title: "当前为移动画面",
+      text: `缩小到约 ${thresholdPercent}% 内后，可滑动切换板面`,
+      style: styles.singleBoardSwipeStatusLocked,
+    };
+  }, [
+    isSingleBoardMobile,
+    scale,
+    singleBoardFitScale,
+    singleBoardHasNeighborBoard,
+  ]);
+
   useEffect(() => {
     if (viewMode !== "traditional") return;
     if (currentBoardRect) {
@@ -887,24 +1435,35 @@ const MakingPage: React.FC = () => {
     }
   }, [currentBoardRect, viewMode]);
 
-  const centerViewportOnRect = useCallback(
-    (startX: number, startY: number, endX: number, endY: number) => {
+  const centerViewportOnRectAtScale = useCallback(
+    (
+      scaleValue: number,
+      startX: number,
+      startY: number,
+      endX: number,
+      endY: number,
+      options?: { immediate?: boolean },
+    ) => {
       if (!beadData || !wrapperRef.current) return;
-      const rectCenterX =
-        ((startX + endX) / 2) * baseCellSize * scaleRef.current;
-      const rectCenterY =
-        ((startY + endY) / 2) * baseCellSize * scaleRef.current;
-      const canvasCenterX =
-        (beadData.width * baseCellSize * scaleRef.current) / 2;
-      const canvasCenterY =
-        (beadData.height * baseCellSize * scaleRef.current) / 2;
+      const rectCenterX = ((startX + endX) / 2) * baseCellSize * scaleValue;
+      const rectCenterY = ((startY + endY) / 2) * baseCellSize * scaleValue;
+      const canvasCenterX = (beadData.width * baseCellSize * scaleValue) / 2;
+      const canvasCenterY = (beadData.height * baseCellSize * scaleValue) / 2;
       commitTranslate(
-        scaleRef.current,
+        scaleValue,
         canvasCenterX - rectCenterX,
         canvasCenterY - rectCenterY,
+        options,
       );
     },
     [beadData, commitTranslate],
+  );
+
+  const centerViewportOnRect = useCallback(
+    (startX: number, startY: number, endX: number, endY: number) => {
+      centerViewportOnRectAtScale(scaleRef.current, startX, startY, endX, endY);
+    },
+    [centerViewportOnRectAtScale],
   );
 
   const resetCurrentView = useCallback(() => {
@@ -976,16 +1535,145 @@ const MakingPage: React.FC = () => {
       setSelectedCell(null);
       setTooltipState((prev) => ({ ...prev, visible: false }));
       if (shouldCenter) {
-        centerViewportOnRect(
-          target.startX,
-          target.startY,
-          target.endX,
-          target.endY,
-        );
+        if (viewMode === "singleBoard") {
+          singleBoardAutoFitPendingRef.current = true;
+        } else {
+          centerViewportOnRect(
+            target.startX,
+            target.startY,
+            target.endX,
+            target.endY,
+          );
+        }
       }
     },
-    [beadData, boardRects, centerViewportOnRect, physicalBoardSize],
+    [beadData, boardRects, centerViewportOnRect, physicalBoardSize, viewMode],
   );
+
+  const handleOverviewCanvasClick = useCallback(
+    (
+      e: React.MouseEvent<HTMLCanvasElement>,
+      options?: { closeMobileOverlay?: boolean },
+    ) => {
+      if (singleBoardMobileOverviewInteractionRef.current.dragMoved) {
+        singleBoardMobileOverviewInteractionRef.current.dragMoved = false;
+        return;
+      }
+      if (!beadData) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const layout = getOverviewCanvasLayout(rect.width, rect.height);
+      if (!layout) return;
+      const pointerX = e.clientX - rect.left;
+      const pointerY = e.clientY - rect.top;
+      const artworkX = (pointerX - layout.offsetX) / layout.overviewScale;
+      const artworkY = (pointerY - layout.offsetY) / layout.overviewScale;
+      if (
+        artworkX < 0 ||
+        artworkY < 0 ||
+        artworkX >= beadData.width ||
+        artworkY >= beadData.height
+      ) {
+        return;
+      }
+
+      const target = boardRects.find((board) =>
+        artworkX >= board.startX &&
+        artworkX < board.endX &&
+        artworkY >= board.startY &&
+        artworkY < board.endY,
+      );
+      if (!target) return;
+      activateBoard(target.boardNumber, true);
+      if (options?.closeMobileOverlay) {
+        setSingleBoardMobileMiniMapExpanded(false);
+      }
+    },
+    [activateBoard, beadData, boardRects, getOverviewCanvasLayout],
+  );
+
+  const handleSingleBoardMobileOverviewDragStart = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!singleBoardMobileOverviewLayout) return;
+      singleBoardMobileOverviewInteractionRef.current.dragMoved = false;
+      singleBoardMobileOverviewDragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        initialOffsetX: singleBoardMobileOverviewOffset.x,
+        initialOffsetY: singleBoardMobileOverviewOffset.y,
+        dragging: true,
+      };
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      e.preventDefault();
+    },
+    [
+      singleBoardMobileOverviewLayout,
+      singleBoardMobileOverviewOffset.x,
+      singleBoardMobileOverviewOffset.y,
+    ],
+  );
+
+  useEffect(() => {
+    if (!singleBoardMobileMiniMapExpanded || !singleBoardMobileOverviewLayout) {
+      singleBoardMobileOverviewDragRef.current.dragging = false;
+      return;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const dragState = singleBoardMobileOverviewDragRef.current;
+      if (!dragState.dragging) return;
+      const deltaX = event.clientX - dragState.startX;
+      const deltaY = event.clientY - dragState.startY;
+      if (
+        !singleBoardMobileOverviewInteractionRef.current.dragMoved &&
+        Math.hypot(deltaX, deltaY) > 6
+      ) {
+        singleBoardMobileOverviewInteractionRef.current.dragMoved = true;
+      }
+
+      const nextOffset = clampSingleBoardMobileOverviewOffset({
+        nextOffsetX: dragState.initialOffsetX + deltaX,
+        nextOffsetY: dragState.initialOffsetY + deltaY,
+        baseLeft:
+          singleBoardMobileOverviewLayout.left -
+          singleBoardMobileOverviewOffset.x,
+        baseTop:
+          singleBoardMobileOverviewLayout.top -
+          singleBoardMobileOverviewOffset.y,
+        minLeft: singleBoardMobileOverviewLayout.minLeft,
+        maxLeft: singleBoardMobileOverviewLayout.maxLeft,
+        minTop: singleBoardMobileOverviewLayout.minTop,
+        maxTop: singleBoardMobileOverviewLayout.maxTop,
+      });
+      setSingleBoardMobileOverviewOffset({
+        x: nextOffset.offsetX,
+        y: nextOffset.offsetY,
+      });
+    };
+
+    const handlePointerUp = () => {
+      singleBoardMobileOverviewDragRef.current.dragging = false;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [
+    singleBoardMobileMiniMapExpanded,
+    singleBoardMobileOverviewLayout,
+    singleBoardMobileOverviewOffset.x,
+    singleBoardMobileOverviewOffset.y,
+  ]);
+
+  useEffect(() => {
+    if (!singleBoardMobileMiniMapExpanded) {
+      setSingleBoardMobileOverviewOffset({ x: 0, y: 0 });
+    }
+  }, [singleBoardMobileMiniMapExpanded]);
 
   const handleToggleBoardDone = useCallback(() => {
     if (!activeBoardRect) return;
@@ -1259,12 +1947,6 @@ const MakingPage: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (viewMode === "singleBoard" && activeBoardRect) {
-      activateBoard(activeBoardRect.boardNumber, true);
-    }
-  }, [activeBoardRect, activateBoard, viewMode]);
-
-  useEffect(() => {
     if (viewMode !== "singleBoard") {
       singleBoardResumeAppliedRef.current = false;
     }
@@ -1441,6 +2123,42 @@ const MakingPage: React.FC = () => {
   }, [beadData, viewMode]);
 
   useEffect(() => {
+    if (viewMode !== "singleBoard") {
+      singleBoardAutoFitPendingRef.current = true;
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "singleBoard" || singleBoardAllDone) {
+      return;
+    }
+
+    try {
+      const onboardingState = parseSingleBoardOnboardingState(
+        localStorage.getItem(SINGLE_BOARD_ONBOARDING_STORAGE_KEY),
+      );
+      if (onboardingState.completed) {
+        return;
+      }
+      if (!showSingleBoardOnboarding) {
+        setShowSingleBoardOnboarding(true);
+      }
+      if (!onboardingState.seen) {
+        localStorage.setItem(
+          SINGLE_BOARD_ONBOARDING_STORAGE_KEY,
+          JSON.stringify({
+            seen: true,
+            completed: false,
+          }),
+        );
+      }
+    } catch (e) {
+      console.warn("[MakingPage] 读取单板模式引导状态失败:", e);
+      setShowSingleBoardOnboarding(true);
+    }
+  }, [showSingleBoardOnboarding, singleBoardAllDone, viewMode]);
+
+  useEffect(() => {
     if (viewMode !== "traditional" || traditionalViewSanityCheckedRef.current) {
       return;
     }
@@ -1487,28 +2205,32 @@ const MakingPage: React.FC = () => {
       viewMode !== "singleBoard" ||
       !displayBoardRect ||
       displayWidth <= 0 ||
-      displayHeight <= 0
+      displayHeight <= 0 ||
+      !singleBoardAutoFitPendingRef.current
     ) {
       return;
     }
     const timer = setTimeout(() => {
-      const wrapper = wrapperRef.current;
-      if (!wrapper) return;
-      const wrapperWidth = wrapper.clientWidth;
-      const wrapperHeight = wrapper.clientHeight;
-      if (wrapperWidth <= 0 || wrapperHeight <= 0) return;
-      const fitWidth = wrapperWidth / (displayWidth * baseCellSize);
-      const fitHeight = wrapperHeight / (displayHeight * baseCellSize);
-      const nextScale = Math.min(
-        renderMaxScale,
-        Math.max(MIN_SCALE, Math.min(fitWidth, fitHeight)),
+      const scaleDecision = getSingleBoardAutoFocusScaleDecision({
+        currentScale: scaleRef.current,
+        minScale: activeMinScale,
+        maxScale: renderMaxScale,
+      });
+      singleBoardAutoFitPendingRef.current = false;
+      centerViewportOnRectAtScale(
+        scaleDecision.nextScale,
+        displayBoardRect.startX,
+        displayBoardRect.startY,
+        displayBoardRect.endX,
+        displayBoardRect.endY,
+        { immediate: true },
       );
-      commitTranslate(nextScale, 0, 0, { immediate: true });
     }, 60);
     return () => clearTimeout(timer);
   }, [
+    activeMinScale,
     activeBoardNumber,
-    commitTranslate,
+    centerViewportOnRectAtScale,
     displayBoardRect,
     displayHeight,
     displayWidth,
@@ -1522,9 +2244,20 @@ const MakingPage: React.FC = () => {
     const wrapper = wrapperRef.current;
     const wrapperWidth = wrapper?.clientWidth || window.innerWidth;
     const fitWidth = wrapperWidth / (displayWidth * baseCellSize);
-    const nextScale = Math.min(renderMaxScale, Math.max(MIN_SCALE, fitWidth));
+    const nextScale =
+      viewMode === "singleBoard"
+        ? getDisplayFitScale()
+        : Math.min(renderMaxScale, Math.max(MIN_SCALE, fitWidth));
+    if (!nextScale) return;
     commitTranslate(nextScale, 0, 0, { immediate: true });
-  }, [commitTranslate, displayBoardRect, displayWidth, renderMaxScale]);
+  }, [
+    commitTranslate,
+    displayBoardRect,
+    displayWidth,
+    getDisplayFitScale,
+    renderMaxScale,
+    viewMode,
+  ]);
 
   const handleOpenTraditionalOverview = useCallback(() => {
     setViewMode("traditional");
@@ -1915,8 +2648,15 @@ const MakingPage: React.FC = () => {
       lastTouchRef.current = { x: touch.clientX, y: touch.clientY };
       dragStartTimeRef.current = Date.now();
       dragStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+      singleBoardSwipeGestureRef.current = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        startAt: Date.now(),
+        triggered: false,
+      };
     } else if (e.touches.length === 2) {
       setIsDragging(false);
+      singleBoardSwipeGestureRef.current.triggered = true;
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1941,14 +2681,71 @@ const MakingPage: React.FC = () => {
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
       if (e.touches.length === 1 && isDragging && lastTouchRef.current) {
-        const deltaX = e.touches[0].clientX - lastTouchRef.current.x;
-        const deltaY = e.touches[0].clientY - lastTouchRef.current.y;
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - lastTouchRef.current.x;
+        const deltaY = touch.clientY - lastTouchRef.current.y;
+        const prev = translateRef.current;
+        const nextX = prev.x + deltaX;
+        const nextY = prev.y + deltaY;
+        const clamped = clampTranslate(scaleRef.current, nextX, nextY);
+        commitTranslate(scaleRef.current, clamped.x, clamped.y);
 
-        shiftTranslate(deltaX, deltaY);
+        if (
+          viewMode === "singleBoard" &&
+          isSingleBoardMobile &&
+          activeBoardRect &&
+          singleBoardFitScale &&
+          !singleBoardSwipeGestureRef.current.triggered
+        ) {
+          const swipeResult = resolveSingleBoardSwipeDirection({
+            scale: scaleRef.current,
+            fitScale: singleBoardFitScale,
+            translationAtEdge: true,
+            deltaX: touch.clientX - singleBoardSwipeGestureRef.current.startX,
+            deltaY: touch.clientY - singleBoardSwipeGestureRef.current.startY,
+            elapsedMs:
+              Date.now() - singleBoardSwipeGestureRef.current.startAt,
+          });
+
+          if (swipeResult) {
+            const directionEdgeMatched =
+              (swipeResult.direction === "right" &&
+                nextX < prev.x &&
+                clamped.x === prev.x) ||
+              (swipeResult.direction === "left" &&
+                nextX > prev.x &&
+                clamped.x === prev.x) ||
+              (swipeResult.direction === "down" &&
+                nextY < prev.y &&
+                clamped.y === prev.y) ||
+              (swipeResult.direction === "up" &&
+                nextY > prev.y &&
+                clamped.y === prev.y);
+
+            if (directionEdgeMatched) {
+              const targetBoardNumber = getNeighborBoardNumber({
+                activeBoardNumber,
+                boardCols: physicalBoardCols,
+                boardRows: physicalBoardRows,
+                direction: swipeResult.direction,
+              });
+
+              if (targetBoardNumber) {
+                singleBoardSwipeGestureRef.current.triggered = true;
+                activateBoard(targetBoardNumber, true);
+                toast.info(`已切到板${targetBoardNumber}`);
+                setIsDragging(false);
+                lastTouchRef.current = null;
+                dragStartPosRef.current = null;
+                return;
+              }
+            }
+          }
+        }
 
         lastTouchRef.current = {
-          x: e.touches[0].clientX,
-          y: e.touches[0].clientY,
+          x: touch.clientX,
+          y: touch.clientY,
         };
       } else if (e.touches.length === 2 && pinchStartRef.current) {
         e.preventDefault();
@@ -1968,7 +2765,7 @@ const MakingPage: React.FC = () => {
         const scaleRatio = dist / start.distance;
         const nextScale = Math.min(
           renderMaxScale,
-          Math.max(MIN_SCALE, start.scale * scaleRatio),
+          Math.max(activeMinScale, start.scale * scaleRatio),
         );
 
         const centerX = wrapperRect.width / 2;
@@ -1988,7 +2785,22 @@ const MakingPage: React.FC = () => {
         commitTranslate(nextScale, nextX, nextY);
       }
     },
-    [isDragging, commitTranslate, renderMaxScale, shiftTranslate],
+    [
+      activeBoardNumber,
+      activeBoardRect,
+      activateBoard,
+      activeMinScale,
+      clampTranslate,
+      commitTranslate,
+      isDragging,
+      isSingleBoardMobile,
+      physicalBoardCols,
+      physicalBoardRows,
+      renderMaxScale,
+      singleBoardFitScale,
+      toast,
+      viewMode,
+    ],
   );
 
   const handleTouchEnd = useCallback(
@@ -2125,6 +2937,7 @@ const MakingPage: React.FC = () => {
       lastTouchRef.current = null;
       pinchStartRef.current = null;
       dragStartPosRef.current = null;
+      singleBoardSwipeGestureRef.current.triggered = false;
     },
     [
       beadData,
@@ -2834,123 +3647,8 @@ const MakingPage: React.FC = () => {
   ]);
 
   useLayoutEffect(() => {
-    if (
-      !beadData ||
-      !textOverlayCanvasRef.current ||
-      !wrapperRef.current ||
-      !displayBoardRect ||
-      !showColorId ||
-      scale < DETAIL_MODE_THRESHOLD ||
-      safeRenderCellSize <= 0
-    ) {
-      if (textOverlayCanvasRef.current) {
-        const ctx = textOverlayCanvasRef.current.getContext("2d");
-        if (ctx) {
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.clearRect(
-            0,
-            0,
-            textOverlayCanvasRef.current.width,
-            textOverlayCanvasRef.current.height,
-          );
-        }
-      }
-      return;
-    }
-
-    const wrapper = wrapperRef.current;
-    const canvas = textOverlayCanvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const wrapperWidth = wrapper.clientWidth;
-    const wrapperHeight = wrapper.clientHeight;
-    if (wrapperWidth <= 0 || wrapperHeight <= 0) return;
-
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    canvas.width = Math.max(1, Math.floor(wrapperWidth * dpr));
-    canvas.height = Math.max(1, Math.floor(wrapperHeight * dpr));
-    canvas.style.width = `${wrapperWidth}px`;
-    canvas.style.height = `${wrapperHeight}px`;
-
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(dpr, dpr);
-    ctx.imageSmoothingEnabled = true;
-
-    const cellScreenSize = safeRenderCellSize * displayScale;
-    if (cellScreenSize < 11) return;
-
-    const visualCanvasWidth = safeRenderCanvasWidth * displayScale;
-    const visualCanvasHeight = safeRenderCanvasHeight * displayScale;
-    const stageLeft = (wrapperWidth - visualCanvasWidth) / 2 + translateX;
-    const stageTop = (wrapperHeight - visualCanvasHeight) / 2 + translateY;
-
-    const visibleStartX = Math.max(0, Math.floor(-stageLeft / cellScreenSize));
-    const visibleStartY = Math.max(0, Math.floor(-stageTop / cellScreenSize));
-    const visibleEndX = Math.min(
-      displayWidth,
-      Math.ceil((wrapperWidth - stageLeft) / cellScreenSize),
-    );
-    const visibleEndY = Math.min(
-      displayHeight,
-      Math.ceil((wrapperHeight - stageTop) / cellScreenSize),
-    );
-
-    const fontSize = Math.min(14, Math.max(9, cellScreenSize * 0.38));
-    ctx.save();
-    ctx.font = `600 ${fontSize}px "Cascadia Mono", "SFMono-Regular", Consolas, "Courier New", monospace`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.miterLimit = 2;
-    ctx.lineWidth = cellScreenSize < 18 ? Math.max(0.45, fontSize * 0.06) : 0;
-
-    for (let y = visibleStartY; y < visibleEndY; y++) {
-      const globalY = displayBoardRect.startY + y;
-      for (let x = visibleStartX; x < visibleEndX; x++) {
-        const globalX = displayBoardRect.startX + x;
-        const bead = beadData.beads[globalY * beadData.width + globalX];
-        if (!bead?.id) continue;
-        const cx = stageLeft + x * cellScreenSize + cellScreenSize / 2;
-        const cy = stageTop + y * cellScreenSize + cellScreenSize / 2;
-        if (
-          cx < -cellScreenSize ||
-          cy < -cellScreenSize ||
-          cx > wrapperWidth + cellScreenSize ||
-          cy > wrapperHeight + cellScreenSize
-        ) {
-          continue;
-        }
-        const fillColor = getContrastColor(bead.hex);
-        const strokeColor =
-          fillColor === "#000000"
-            ? "rgba(255,255,255,0.55)"
-            : "rgba(0,0,0,0.55)";
-        ctx.fillStyle = fillColor;
-        if (ctx.lineWidth > 0) {
-          ctx.strokeStyle = strokeColor;
-          ctx.strokeText(bead.id, cx, cy);
-        }
-        ctx.fillText(bead.id, cx, cy);
-      }
-    }
-    ctx.restore();
-  }, [
-    beadData,
-    displayBoardRect,
-    displayHeight,
-    displayScale,
-    displayWidth,
-    safeRenderCanvasHeight,
-    safeRenderCanvasWidth,
-    safeRenderCellSize,
-    scale,
-    showColorId,
-    translateX,
-    translateY,
-  ]);
+    drawTextOverlay();
+  }, [drawTextOverlay, displayScale, scale, translateX, translateY]);
 
   // 取消选中
   const handleClearSelection = () => {
@@ -2982,6 +3680,18 @@ const MakingPage: React.FC = () => {
     singleBoardAllDone,
   ]);
 
+  const handleDismissSingleBoardOnboarding = useCallback(() => {
+    setShowSingleBoardOnboarding(false);
+    try {
+      localStorage.setItem(
+        SINGLE_BOARD_ONBOARDING_STORAGE_KEY,
+        JSON.stringify(buildCompletedSingleBoardOnboardingState()),
+      );
+    } catch (e) {
+      console.warn("[MakingPage] 保存单板模式引导状态失败:", e);
+    }
+  }, []);
+
   // 如果没有数据
   if (!beadData) {
     return (
@@ -3001,8 +3711,6 @@ const MakingPage: React.FC = () => {
 
   const isNarrowToolbar = viewportWidth <= 420;
   const isCompactToolbar = viewportWidth <= 360;
-  const isSingleBoardMobile =
-    viewMode === "singleBoard" && viewportWidth <= 640;
   const isTraditionalMobile =
     viewMode === "traditional" && viewportWidth <= 640;
   const detailModeEnabled = scale >= DETAIL_MODE_THRESHOLD;
@@ -3297,26 +4005,31 @@ const MakingPage: React.FC = () => {
                         {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
                       </button>
                     </div>
-                    {(totalBoardCount > 1 || activeBoardRect) && (
+                    {totalBoardCount > 1 && (
+                      <div
+                        style={{
+                          ...styles.singleBoardSwipeStatus,
+                          ...singleBoardSwipeUi.style,
+                        }}
+                      >
+                        <span style={styles.singleBoardSwipeStatusTitle}>
+                          {singleBoardSwipeUi.title}
+                        </span>
+                        <span style={styles.singleBoardSwipeStatusText}>
+                          {singleBoardSwipeUi.text}
+                        </span>
+                      </div>
+                    )}
+                    {(showSingleBoardMobileOverviewButton || activeBoardRect) && (
                       <div style={styles.singleBoardMobileNavRow}>
-                        {totalBoardCount > 1 && (
-                          <button
-                            style={styles.singleBoardMobileNavBtn}
-                            onClick={() => jumpToBoard(-1)}
-                            disabled={activeBoardNumber <= 1}
-                            aria-label="上一块板"
-                          >
-                            ‹
-                          </button>
-                        )}
-                        {totalBoardCount > 1 && (
+                        {showSingleBoardMobileOverviewButton && (
                           <button
                             style={{
-                              ...styles.singleBoardMobileNavBtn,
+                              ...styles.singleBoardMobileOverviewBtn,
                               width: "auto",
-                              minWidth: "76px",
-                              padding: "0 10px",
-                              fontSize: "10px",
+                              minWidth: "64px",
+                              padding: "0 12px",
+                              fontSize: "11px",
                             }}
                             onClick={() =>
                               setSingleBoardMobileMiniMapExpanded(
@@ -3329,38 +4042,16 @@ const MakingPage: React.FC = () => {
                                 : "展开总览"
                             }
                           >
-                            {singleBoardMobileMiniMapExpanded
-                              ? "收起总览"
-                              : "看总览图"}
+                            {singleBoardMobileMiniMapExpanded ? "收起总览" : "总览"}
                           </button>
                         )}
-                        {totalBoardCount > 1 ? (
-                          <button
-                            style={styles.singleBoardMobileNavBtn}
-                            onClick={() => jumpToBoard(1)}
-                            disabled={activeBoardNumber >= totalBoardCount}
-                            aria-label="下一块板"
-                          >
-                            ›
-                          </button>
-                        ) : (
-                          <button
-                            style={styles.singleBoardMobileSecondaryBtn}
-                            onClick={resetCurrentView}
-                            disabled={!activeBoardRect}
-                          >
-                            复位
-                          </button>
-                        )}
-                        {totalBoardCount > 1 && (
-                          <button
-                            style={styles.singleBoardMobileSecondaryBtn}
-                            onClick={resetCurrentView}
-                            disabled={!activeBoardRect}
-                          >
-                            复位
-                          </button>
-                        )}
+                        <button
+                          style={styles.singleBoardMobileSecondaryBtn}
+                          onClick={resetCurrentView}
+                          disabled={!activeBoardRect}
+                        >
+                          复位
+                        </button>
                         <button
                           style={styles.singleBoardMobilePrimaryBtn}
                           onClick={() => {
@@ -3378,55 +4069,92 @@ const MakingPage: React.FC = () => {
                         </button>
                       </div>
                     )}
-                    {totalBoardCount > 1 &&
+                    {showSingleBoardMobileOverviewButton &&
                       singleBoardMobileMiniMapExpanded && (
-                        <div style={styles.singleBoardMobileMiniMapPanel}>
-                          <button
-                            style={styles.singleBoardMobileMiniMapPanelInner}
-                            onClick={resetCurrentView}
-                            title="复位视图"
+                        <div style={styles.singleBoardMobileOverviewOverlay}>
+                          <div
+                            style={{
+                              ...styles.singleBoardMobileOverviewCard,
+                              ...(singleBoardMobileOverviewLayout
+                                ? {
+                                    width: `${singleBoardMobileOverviewLayout.width}px`,
+                                    maxHeight: `${singleBoardMobileOverviewLayout.maxHeight}px`,
+                                    left: `${singleBoardMobileOverviewLayout.left}px`,
+                                    top: `${singleBoardMobileOverviewLayout.top}px`,
+                                  }
+                                : {}),
+                            }}
+                            onPointerDown={
+                              handleSingleBoardMobileOverviewDragStart
+                            }
                           >
-                            <div
-                              style={{
-                                ...styles.singleBoardMiniMapCanvas,
-                                ...styles.singleBoardMobileMiniMapPanelCanvas,
-                                aspectRatio: beadData
-                                  ? `${beadData.width} / ${beadData.height}`
-                                  : "1 / 1",
-                              }}
-                            >
-                              {boardRects.map((board) => {
-                                const isActive =
-                                  board.boardNumber === activeBoardNumber;
-                                const isDone = Boolean(
-                                  boardStatusMap[board.boardNumber],
-                                );
-                                const left = `${(board.startX / beadData!.width) * 100}%`;
-                                const top = `${(board.startY / beadData!.height) * 100}%`;
-                                const width = `${((board.endX - board.startX) / beadData!.width) * 100}%`;
-                                const height = `${((board.endY - board.startY) / beadData!.height) * 100}%`;
-                                return (
-                                  <span
-                                    key={`mobile-mini-${board.boardNumber}`}
-                                    style={{
-                                      ...styles.singleBoardMiniMapCell,
-                                      ...styles.singleBoardMobileMiniMapCell,
-                                      ...(isDone
-                                        ? styles.singleBoardMiniMapCellDone
-                                        : {}),
-                                      ...(isActive
-                                        ? styles.singleBoardMiniMapCellActive
-                                        : {}),
-                                      left,
-                                      top,
-                                      width,
-                                      height,
-                                    }}
-                                  />
-                                );
-                              })}
+                            <div style={styles.singleBoardMobileOverviewHeader}>
+                              <span style={styles.singleBoardMobileOverviewTitle}>
+                                {getSingleBoardOverviewTitle({
+                                  activeBoardNumber,
+                                  totalBoardCount,
+                                })}
+                              </span>
+                              <button
+                                style={styles.singleBoardMobileOverviewCloseBtn}
+                                onClick={() =>
+                                  setSingleBoardMobileMiniMapExpanded(false)
+                                }
+                                aria-label="关闭总览"
+                              >
+                                ×
+                              </button>
                             </div>
-                          </button>
+                            <div style={styles.singleBoardMobileOverviewBody}>
+                              {totalBoardCount > 1 && (
+                                <button
+                                  style={{
+                                    ...styles.singleBoardMobileOverviewArrow,
+                                    ...styles.singleBoardMobileOverviewArrowLeft,
+                                  }}
+                                  onClick={() => jumpToBoard(-1)}
+                                  disabled={activeBoardNumber <= 1}
+                                  aria-label="上一块板"
+                                >
+                                  ‹
+                                </button>
+                              )}
+                              <div style={styles.singleBoardMobileOverviewCanvasWrap}>
+                                <canvas
+                                  ref={singleBoardMobileOverviewCanvasRef}
+                                  style={{
+                                    ...styles.singleBoardMobileOverviewCanvas,
+                                    aspectRatio: beadData
+                                      ? `${beadData.width} / ${beadData.height}`
+                                      : "1 / 1",
+                                  }}
+                                  onClick={(e) =>
+                                    handleOverviewCanvasClick(e, {
+                                      closeMobileOverlay: true,
+                                    })
+                                  }
+                                />
+                              </div>
+                              {totalBoardCount > 1 && (
+                                <button
+                                  style={{
+                                    ...styles.singleBoardMobileOverviewArrow,
+                                    ...styles.singleBoardMobileOverviewArrowRight,
+                                  }}
+                                  onClick={() => jumpToBoard(1)}
+                                  disabled={activeBoardNumber >= totalBoardCount}
+                                  aria-label="下一块板"
+                                >
+                                  ›
+                                </button>
+                              )}
+                            </div>
+                            <div style={styles.singleBoardMobileOverviewHint}>
+                              {totalBoardCount > 1
+                                ? "拖动总览可挪动卡片，点击总览中的板块可直接跳转"
+                                : "拖动总览可挪动卡片，点击总览可查看整块板位置"}
+                            </div>
+                          </div>
                         </div>
                       )}
                   </>
@@ -3460,6 +4188,16 @@ const MakingPage: React.FC = () => {
                             ? `板${activeBoardNumber} 已完成`
                             : `板${activeBoardNumber} 进行中`}
                         </span>
+                        {totalBoardCount > 1 && (
+                          <span
+                            style={{
+                              ...styles.singleBoardSwipeStatusInline,
+                              ...singleBoardSwipeUi.style,
+                            }}
+                          >
+                            {singleBoardSwipeUi.title} · {singleBoardSwipeUi.text}
+                          </span>
+                        )}
                       </div>
                       <button
                         style={styles.singleBoardCollapseBtn}
@@ -3559,50 +4297,16 @@ const MakingPage: React.FC = () => {
                         </div>
                         <div style={styles.singleBoardMiniMapCard}>
                           <div style={styles.singleBoardMiniMapFrame}>
-                            <div
+                            <canvas
+                              ref={singleBoardMiniMapCanvasRef}
+                              onClick={(e) => handleOverviewCanvasClick(e)}
                               style={{
                                 ...styles.singleBoardMiniMapCanvas,
                                 aspectRatio: beadData
                                   ? `${beadData.width} / ${beadData.height}`
                                   : "1 / 1",
                               }}
-                            >
-                              {boardRects.map((board) => {
-                                const isActive =
-                                  board.boardNumber === activeBoardNumber;
-                                const isDone = Boolean(
-                                  boardStatusMap[board.boardNumber],
-                                );
-                                const left = `${(board.startX / beadData!.width) * 100}%`;
-                                const top = `${(board.startY / beadData!.height) * 100}%`;
-                                const width = `${((board.endX - board.startX) / beadData!.width) * 100}%`;
-                                const height = `${((board.endY - board.startY) / beadData!.height) * 100}%`;
-                                return (
-                                  <button
-                                    key={`mini-${board.boardNumber}`}
-                                    style={{
-                                      ...styles.singleBoardMiniMapCell,
-                                      ...(isDone
-                                        ? styles.singleBoardMiniMapCellDone
-                                        : {}),
-                                      ...(isActive
-                                        ? styles.singleBoardMiniMapCellActive
-                                        : {}),
-                                      left,
-                                      top,
-                                      width,
-                                      height,
-                                    }}
-                                    onClick={() =>
-                                      activateBoard(board.boardNumber, true)
-                                    }
-                                    title={`板${board.boardNumber}`}
-                                  >
-                                    {isActive ? `板${board.boardNumber}` : ""}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                            />
                           </div>
                           <div style={styles.singleBoardMiniMapHint}>
                             整图总览
@@ -3716,7 +4420,7 @@ const MakingPage: React.FC = () => {
               </button>
               <input
                 type="range"
-                min={MIN_SCALE}
+                min={activeMinScale}
                 max={renderMaxScale}
                 step={0.05}
                 value={scale}
@@ -4423,6 +5127,63 @@ const MakingPage: React.FC = () => {
           </div>
         )}
 
+      {showSingleBoardOnboarding && viewMode === "singleBoard" && (
+        <div style={styles.singleBoardOnboardingOverlay}>
+          <div style={styles.singleBoardOnboardingCard}>
+            <button
+              style={styles.singleBoardOnboardingClose}
+              onClick={handleDismissSingleBoardOnboarding}
+              aria-label="关闭单板模式引导"
+            >
+              ×
+            </button>
+            <span style={styles.singleBoardOnboardingEyebrow}>单板模式引导</span>
+            <h3 style={styles.singleBoardOnboardingTitle}>先熟悉这 3 个关键动作</h3>
+            <div style={styles.singleBoardOnboardingSteps}>
+              <div style={styles.singleBoardOnboardingStep}>
+                <span style={styles.singleBoardOnboardingStepIndex}>1</span>
+                <div style={styles.singleBoardOnboardingStepBody}>
+                  <span style={styles.singleBoardOnboardingStepTitle}>
+                    一次只专注一块板
+                  </span>
+                  <span style={styles.singleBoardOnboardingStepText}>
+                    单板模式会聚焦当前板，减少整图干扰，更适合跟着实体板制作。
+                  </span>
+                </div>
+              </div>
+              <div style={styles.singleBoardOnboardingStep}>
+                <span style={styles.singleBoardOnboardingStepIndex}>2</span>
+                <div style={styles.singleBoardOnboardingStepBody}>
+                  <span style={styles.singleBoardOnboardingStepTitle}>
+                    看总览图快速跳板
+                  </span>
+                  <span style={styles.singleBoardOnboardingStepText}>
+                    点击“看总览图”可以查看整幅作品，并直接跳到其它板面。
+                  </span>
+                </div>
+              </div>
+              <div style={styles.singleBoardOnboardingStep}>
+                <span style={styles.singleBoardOnboardingStepIndex}>3</span>
+                <div style={styles.singleBoardOnboardingStepBody}>
+                  <span style={styles.singleBoardOnboardingStepTitle}>
+                    缩小后才能手势切板
+                  </span>
+                  <span style={styles.singleBoardOnboardingStepText}>
+                    放大时手势只会移动画面；缩小到适板附近后，拖到边缘再继续滑动就能切板。
+                  </span>
+                </div>
+              </div>
+            </div>
+            <button
+              style={styles.singleBoardOnboardingPrimaryBtn}
+              onClick={handleDismissSingleBoardOnboarding}
+            >
+              知道了
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 导出弹窗 */}
       {beadData && (
         <ExportModal
@@ -4845,11 +5606,76 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
+  singleBoardSwipeStatus: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "7px 10px",
+    borderRadius: "12px",
+    border: `1px solid ${makingCandy.border}`,
+    marginTop: "6px",
+    flexWrap: "wrap" as const,
+  },
+
+  singleBoardSwipeStatusInline: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "4px 9px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    fontSize: "11px",
+    fontWeight: 700,
+    lineHeight: 1.25,
+  },
+
+  singleBoardSwipeStatusLocked: {
+    background: "rgba(148,163,184,0.12)",
+    borderColor: "rgba(148,163,184,0.22)",
+    color: makingCandy.textSoft,
+  },
+
+  singleBoardSwipeStatusReady: {
+    background: "rgba(79,174,225,0.12)",
+    borderColor: "rgba(79,174,225,0.24)",
+    color: makingCandy.text,
+  },
+
+  singleBoardSwipeStatusTitle: {
+    fontSize: "10px",
+    fontWeight: 900,
+    flexShrink: 0,
+  },
+
+  singleBoardSwipeStatusText: {
+    fontSize: "10px",
+    fontWeight: 700,
+    lineHeight: 1.35,
+  },
+
   singleBoardMobileNavRow: {
     display: "flex",
     alignItems: "center",
     gap: "4px",
     minWidth: 0,
+  },
+
+  singleBoardMobileOverviewBtn: {
+    minWidth: "58px",
+    height: "28px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.borderStrong}`,
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.24), rgba(244,114,182,0.18))",
+    color: makingCandy.text,
+    fontSize: "11px",
+    fontWeight: 800,
+    cursor: "pointer",
+    flexShrink: 0,
+    boxShadow: makingCandy.shadowSoft,
   },
 
   singleBoardMobileMiniMapPanel: {
@@ -4920,6 +5746,245 @@ const styles: Record<string, React.CSSProperties> = {
   singleBoardMobileMiniMapCell: {
     fontSize: 0,
     lineHeight: 0,
+  },
+
+  singleBoardMobileOverviewOverlay: {
+    position: "fixed" as const,
+    inset: 0,
+    zIndex: 60,
+    pointerEvents: "none" as const,
+  },
+
+  singleBoardMobileOverviewCard: {
+    position: "absolute" as const,
+    width: "220px",
+    maxHeight: "280px",
+    padding: "8px",
+    borderRadius: "18px",
+    border: `1px solid ${makingCandy.borderStrong}`,
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.93), rgba(255,247,242,0.9))",
+    backdropFilter: "blur(12px)",
+    boxShadow: makingCandy.shadow,
+    pointerEvents: "auto" as const,
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column" as const,
+    touchAction: "none" as const,
+  },
+
+  singleBoardMobileOverviewHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    marginBottom: "6px",
+    cursor: "grab",
+    touchAction: "none" as const,
+  },
+
+  singleBoardMobileOverviewTitle: {
+    fontSize: "10px",
+    fontWeight: 800,
+    color: makingCandy.text,
+    lineHeight: 1.35,
+  },
+
+  singleBoardMobileOverviewCloseBtn: {
+    width: "22px",
+    height: "22px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.88)",
+    color: makingCandy.textSoft,
+    fontSize: "14px",
+    fontWeight: 800,
+    cursor: "pointer",
+    lineHeight: 1,
+  },
+
+  singleBoardMobileOverviewBody: {
+    position: "relative" as const,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+    minHeight: 0,
+  },
+
+  singleBoardMobileOverviewCanvasWrap: {
+    width: "100%",
+    padding: "4px",
+    borderRadius: "14px",
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.86)",
+    overflow: "auto",
+    maxHeight: "100%",
+  },
+
+  singleBoardMobileOverviewCanvas: {
+    display: "block",
+    width: "100%",
+    height: "auto",
+    minHeight: "72px",
+    maxHeight: "100%",
+    borderRadius: "10px",
+    cursor: "pointer",
+    background:
+      "linear-gradient(180deg, rgba(241,245,249,0.9), rgba(255,255,255,0.95))",
+  },
+
+  singleBoardMobileOverviewArrow: {
+    position: "absolute" as const,
+    top: "50%",
+    width: "28px",
+    height: "28px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transform: "translateY(-50%)",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.borderStrong}`,
+    background: "rgba(255,255,255,0.96)",
+    color: makingCandy.text,
+    fontSize: "18px",
+    fontWeight: 800,
+    cursor: "pointer",
+    boxShadow: makingCandy.shadowSoft,
+  },
+
+  singleBoardMobileOverviewArrowLeft: {
+    left: "-10px",
+  },
+
+  singleBoardMobileOverviewArrowRight: {
+    right: "-10px",
+  },
+
+  singleBoardMobileOverviewHint: {
+    marginTop: "6px",
+    fontSize: "10px",
+    color: makingCandy.textSoft,
+    textAlign: "center" as const,
+    fontWeight: 700,
+    lineHeight: 1.45,
+  },
+
+  singleBoardOnboardingOverlay: {
+    position: "fixed" as const,
+    inset: 0,
+    zIndex: 2500,
+    background: "rgba(37, 30, 58, 0.42)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "20px",
+  },
+
+  singleBoardOnboardingCard: {
+    width: "min(100%, 360px)",
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,247,241,0.98))",
+    borderRadius: "24px",
+    border: `1px solid ${makingCandy.borderStrong}`,
+    boxShadow: "0 24px 48px rgba(56, 42, 86, 0.22)",
+    padding: "18px 18px 16px",
+    position: "relative" as const,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "12px",
+  },
+
+  singleBoardOnboardingClose: {
+    position: "absolute" as const,
+    top: "12px",
+    right: "12px",
+    width: "28px",
+    height: "28px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.86)",
+    color: makingCandy.textSoft,
+    fontSize: "16px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  singleBoardOnboardingEyebrow: {
+    fontSize: "11px",
+    fontWeight: 900,
+    letterSpacing: "0.08em",
+    color: makingCandy.cyan,
+    textTransform: "uppercase" as const,
+  },
+
+  singleBoardOnboardingTitle: {
+    margin: 0,
+    fontSize: "20px",
+    lineHeight: 1.25,
+    color: makingCandy.text,
+    fontWeight: 900,
+  },
+
+  singleBoardOnboardingSteps: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "10px",
+  },
+
+  singleBoardOnboardingStep: {
+    display: "flex",
+    gap: "10px",
+    padding: "10px 12px",
+    borderRadius: "16px",
+    background: "rgba(255,255,255,0.84)",
+    border: `1px solid ${makingCandy.border}`,
+  },
+
+  singleBoardOnboardingStepIndex: {
+    width: "24px",
+    height: "24px",
+    borderRadius: radius.full,
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.26), rgba(244,114,182,0.2))",
+    color: makingCandy.text,
+    fontSize: "12px",
+    fontWeight: 900,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+
+  singleBoardOnboardingStepBody: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "3px",
+  },
+
+  singleBoardOnboardingStepTitle: {
+    fontSize: "13px",
+    fontWeight: 900,
+    color: makingCandy.text,
+  },
+
+  singleBoardOnboardingStepText: {
+    fontSize: "12px",
+    lineHeight: 1.45,
+    color: makingCandy.textSoft,
+  },
+
+  singleBoardOnboardingPrimaryBtn: {
+    height: "42px",
+    borderRadius: radius.full,
+    border: "none",
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.92), rgba(244,114,182,0.78))",
+    color: makingCandy.text,
+    fontSize: "14px",
+    fontWeight: 900,
+    cursor: "pointer",
+    boxShadow: shadows.button,
   },
 
   singleBoardMobilePrimaryBtn: {
@@ -5110,6 +6175,8 @@ const styles: Record<string, React.CSSProperties> = {
     border: `1px solid ${makingCandy.border}`,
     background:
       "linear-gradient(180deg, rgba(241,245,249,0.95), rgba(255,255,255,0.96))",
+    display: "block",
+    cursor: "pointer",
   },
 
   singleBoardMiniMapCell: {
