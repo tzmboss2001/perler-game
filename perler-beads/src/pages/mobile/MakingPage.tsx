@@ -50,6 +50,8 @@ import {
   getColorIdTextStyle,
   getRenderScaleAnchorDelayMs,
   getSafeRenderMetricsBudget,
+  getSingleBoardCanvasMinHeight,
+  getSingleBoardLayoutFlags,
   getSingleBoardMobileOverviewLayout,
   getSingleBoardOverviewTitle,
   getTextOverlayTransitionTransform,
@@ -386,8 +388,14 @@ const MakingPage: React.FC = () => {
   });
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
-  const isSingleBoardMobile =
-    viewMode === "singleBoard" && viewportWidth <= 640;
+  const { isSingleBoardMobile, isSingleBoardDesktop } = useMemo(
+    () =>
+      getSingleBoardLayoutFlags({
+        viewMode,
+        viewportWidth,
+      }),
+    [viewMode, viewportWidth],
+  );
   const isIOSWebKit = useMemo(() => {
     if (typeof navigator === "undefined") return false;
     const ua = navigator.userAgent || "";
@@ -3927,12 +3935,12 @@ const MakingPage: React.FC = () => {
   };
   const canvasContainerStyle: React.CSSProperties = {
     ...styles.canvasContainer,
-    minHeight:
-      viewMode === "singleBoard"
-        ? isSingleBoardMobile && !singleBoardAllDone
-          ? "clamp(500px, 76vh, 920px)"
-          : "clamp(420px, 68vh, 760px)"
-        : undefined,
+    minHeight: getSingleBoardCanvasMinHeight({
+      viewMode,
+      isSingleBoardMobile,
+      isSingleBoardDesktop,
+      singleBoardAllDone,
+    }),
   };
   const canvasStageStyle: React.CSSProperties = {
     ...styles.canvasStage,
@@ -4056,7 +4064,8 @@ const MakingPage: React.FC = () => {
               </div>
             ) : (
               resumeBoardNumber &&
-              !isSingleBoardMobile && (
+              !isSingleBoardMobile &&
+              !isSingleBoardDesktop && (
                 <div style={styles.singleBoardResumeEntry}>
                   <div style={styles.singleBoardResumeEntryMeta}>
                     <span style={styles.singleBoardResumeEntryTitle}>
@@ -4303,6 +4312,11 @@ const MakingPage: React.FC = () => {
                             下一块：板{nextPendingBoardNumber}
                           </span>
                         )}
+                        {isSingleBoardDesktop && (
+                          <span style={styles.singleBoardSummaryHint}>
+                            未完成{singleBoardProgress.remainingCount}块
+                          </span>
+                        )}
                         <span
                           style={{
                             ...styles.singleBoardStatePill,
@@ -4322,20 +4336,62 @@ const MakingPage: React.FC = () => {
                               ...singleBoardSwipeUi.style,
                             }}
                           >
-                            {singleBoardSwipeUi.title} · {singleBoardSwipeUi.text}
+                            {isSingleBoardDesktop
+                              ? singleBoardSwipeUi.title
+                              : `${singleBoardSwipeUi.title} · ${singleBoardSwipeUi.text}`}
                           </span>
                         )}
                       </div>
-                      <button
-                        style={styles.singleBoardCollapseBtn}
-                        onClick={() =>
-                          setSingleBoardOverviewCollapsed((prev) => !prev)
-                        }
-                      >
-                        {singleBoardOverviewCollapsed ? "展开总览" : "收起总览"}
-                      </button>
+                      {isSingleBoardDesktop ? (
+                        <div style={styles.singleBoardDesktopHeaderActions}>
+                          {resumeBoardNumber &&
+                            resumeBoardNumber !== activeBoardNumber && (
+                              <button
+                                style={styles.singleBoardDesktopHeaderBtn}
+                                onClick={() =>
+                                  activateBoard(resumeBoardNumber, true)
+                                }
+                              >
+                                继续板{resumeBoardNumber}
+                              </button>
+                            )}
+                          <button
+                            style={{
+                              ...styles.singleBoardQuickToggle,
+                              ...styles.singleBoardDesktopQuickToggle,
+                              ...(autoAdvanceOnBoardDone
+                                ? styles.singleBoardQuickToggleActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setAutoAdvanceOnBoardDone((prev) => !prev)
+                            }
+                          >
+                            自动切下一板
+                          </button>
+                          <button
+                            style={styles.singleBoardCollapseBtn}
+                            onClick={() =>
+                              setSingleBoardOverviewCollapsed((prev) => !prev)
+                            }
+                          >
+                            {singleBoardOverviewCollapsed
+                              ? "展开总览"
+                              : "收起总览"}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          style={styles.singleBoardCollapseBtn}
+                          onClick={() =>
+                            setSingleBoardOverviewCollapsed((prev) => !prev)
+                          }
+                        >
+                          {singleBoardOverviewCollapsed ? "展开总览" : "收起总览"}
+                        </button>
+                      )}
                     </div>
-                    {!singleBoardOverviewCollapsed && (
+                    {!singleBoardOverviewCollapsed && !isSingleBoardDesktop && (
                       <div style={styles.singleBoardProgressTrack}>
                         <div
                           style={{
@@ -4345,112 +4401,231 @@ const MakingPage: React.FC = () => {
                         />
                       </div>
                     )}
-                    <div style={styles.singleBoardQuickRow}>
-                      <div style={styles.singleBoardQuickControls}>
-                        <button
+                    {!isSingleBoardDesktop && (
+                      <div
+                        style={{
+                          ...styles.singleBoardQuickRow,
+                          ...(isSingleBoardDesktop
+                            ? styles.singleBoardDesktopQuickRow
+                            : {}),
+                        }}
+                      >
+                        <div
                           style={{
-                            ...styles.singleBoardQuickToggle,
-                            ...(autoAdvanceOnBoardDone
-                              ? styles.singleBoardQuickToggleActive
+                            ...styles.singleBoardQuickControls,
+                            ...(isSingleBoardDesktop
+                              ? styles.singleBoardDesktopQuickControls
                               : {}),
                           }}
-                          onClick={() =>
-                            setAutoAdvanceOnBoardDone((prev) => !prev)
-                          }
                         >
-                          {autoAdvanceOnBoardDone
-                            ? "自动切下一板"
-                            : "完成后停留当前板"}
-                        </button>
-                      </div>
-                      {pendingBoardNumbers.length > 0 &&
-                        !singleBoardOverviewCollapsed && (
-                          <div style={styles.singleBoardPendingRow}>
-                            <span style={styles.singleBoardPendingLabel}>
-                              未完成：
-                            </span>
-                            {pendingBoardNumbers
-                              .slice(0, 3)
-                              .map((boardNumber) => (
-                                <button
-                                  key={`pending-${boardNumber}`}
-                                  style={styles.singleBoardPendingChip}
-                                  onClick={() =>
-                                    activateBoard(boardNumber, true)
-                                  }
-                                >
-                                  ?{boardNumber}
-                                </button>
-                              ))}
-                            {pendingBoardNumbers.length > 3 && (
-                              <span style={styles.singleBoardPendingMore}>
-                                +{pendingBoardNumbers.length - 3}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                    </div>
-                    {!singleBoardOverviewCollapsed && (
-                      <div style={styles.singleBoardHeroRow}>
-                        <div style={styles.singleBoardSummaryCard}>
-                          <div style={styles.singleBoardSummary}>
-                            <span style={styles.singleBoardSummaryTitle}>
-                              当前板工作流
-                            </span>
-                            <span style={styles.singleBoardSummaryText}>
-                              板{activeBoardNumber} / 共{" "}
-                              {singleBoardProgress.totalCount} 块
-                            </span>
-                          </div>
-                          <div style={styles.singleBoardActionRow}>
-                            <button
-                              style={styles.singleBoardMinorBtn}
-                              onClick={handleToggleBoardDone}
-                              disabled={!activeBoardRect}
-                            >
-                              {activeBoardRect &&
-                              boardStatusMap[activeBoardRect.boardNumber]
-                                ? "取消完成"
-                                : "标记本板完成"}
-                            </button>
-                            <button
-                              style={styles.singleBoardMinorBtn}
-                              onClick={resetCurrentView}
-                              disabled={!activeBoardRect}
-                            >
-                              复位视图
-                            </button>
-                          </div>
+                          <button
+                            style={{
+                              ...styles.singleBoardQuickToggle,
+                              ...(isSingleBoardDesktop
+                                ? styles.singleBoardDesktopQuickToggle
+                                : {}),
+                              ...(autoAdvanceOnBoardDone
+                                ? styles.singleBoardQuickToggleActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setAutoAdvanceOnBoardDone((prev) => !prev)
+                            }
+                          >
+                            {autoAdvanceOnBoardDone
+                              ? "自动切下一板"
+                              : "完成后停留当前板"}
+                          </button>
                         </div>
-                        <div style={styles.singleBoardMiniMapCard}>
-                          <div style={styles.singleBoardMiniMapFrame}>
-                            <canvas
-                              ref={singleBoardMiniMapCanvasRef}
-                              onClick={(e) => handleOverviewCanvasClick(e)}
+                        {pendingBoardNumbers.length > 0 &&
+                          !singleBoardOverviewCollapsed && (
+                            <div
                               style={{
-                                ...styles.singleBoardMiniMapCanvas,
-                                aspectRatio: beadData
-                                  ? `${beadData.width} / ${beadData.height}`
-                                  : "1 / 1",
+                                ...styles.singleBoardPendingRow,
+                                ...(isSingleBoardDesktop
+                                  ? styles.singleBoardDesktopPendingRow
+                                  : {}),
                               }}
-                            />
-                          </div>
-                          <div style={styles.singleBoardMiniMapHint}>
-                            整图总览
-                          </div>
-                        </div>
+                            >
+                              <span
+                                style={{
+                                  ...styles.singleBoardPendingLabel,
+                                  ...(isSingleBoardDesktop
+                                    ? styles.singleBoardDesktopPendingLabel
+                                    : {}),
+                                }}
+                              >
+                                未完成：
+                              </span>
+                              {pendingBoardNumbers
+                                .slice(0, 3)
+                                .map((boardNumber) => (
+                                  <button
+                                    key={`pending-${boardNumber}`}
+                                    style={{
+                                      ...styles.singleBoardPendingChip,
+                                      ...(isSingleBoardDesktop
+                                        ? styles.singleBoardDesktopPendingChip
+                                        : {}),
+                                    }}
+                                    onClick={() =>
+                                      activateBoard(boardNumber, true)
+                                    }
+                                  >
+                                    ?{boardNumber}
+                                  </button>
+                                ))}
+                              {pendingBoardNumbers.length > 3 && (
+                                <span style={styles.singleBoardPendingMore}>
+                                  +{pendingBoardNumbers.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          )}
                       </div>
                     )}
+                    {!singleBoardOverviewCollapsed && (
+                      isSingleBoardDesktop ? (
+                        <div style={styles.singleBoardDesktopDenseRow}>
+                          <div style={styles.singleBoardDesktopWorkflowCard}>
+                            <div style={styles.singleBoardDesktopMetaRow}>
+                              <div style={styles.singleBoardDesktopWorkflowMeta}>
+                                <span style={styles.singleBoardSummaryText}>
+                                  当前板 板{activeBoardNumber} / 共{" "}
+                                  {singleBoardProgress.totalCount} 块 · 进度{" "}
+                                  {singleBoardProgress.percent}%
+                                </span>
+                              </div>
+                              <div style={styles.singleBoardDesktopActionRow}>
+                                <button
+                                  style={{
+                                    ...styles.singleBoardMinorBtn,
+                                    ...styles.singleBoardDesktopMinorBtn,
+                                  }}
+                                  onClick={handleToggleBoardDone}
+                                  disabled={!activeBoardRect}
+                                >
+                                  {activeBoardRect &&
+                                  boardStatusMap[activeBoardRect.boardNumber]
+                                    ? "取消完成"
+                                    : "标记本板完成"}
+                                </button>
+                                <button
+                                  style={{
+                                    ...styles.singleBoardMinorBtn,
+                                    ...styles.singleBoardDesktopMinorBtn,
+                                  }}
+                                  onClick={resetCurrentView}
+                                  disabled={!activeBoardRect}
+                                >
+                                  复位视图
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              ...styles.singleBoardMiniMapCard,
+                              ...styles.singleBoardDesktopMiniMapCard,
+                            }}
+                            title="整图总览"
+                          >
+                            <div style={styles.singleBoardMiniMapFrame}>
+                              <canvas
+                                ref={singleBoardMiniMapCanvasRef}
+                                onClick={(e) => handleOverviewCanvasClick(e)}
+                                style={{
+                                  ...styles.singleBoardMiniMapCanvas,
+                                  ...styles.singleBoardDesktopMiniMapCanvas,
+                                  aspectRatio: beadData
+                                    ? `${beadData.width} / ${beadData.height}`
+                                  : "1 / 1",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={styles.singleBoardHeroRow}>
+                          <div style={styles.singleBoardSummaryCard}>
+                            <div style={styles.singleBoardSummary}>
+                              <span style={styles.singleBoardSummaryTitle}>
+                                当前板工作流
+                              </span>
+                              <span style={styles.singleBoardSummaryText}>
+                                板{activeBoardNumber} / 共{" "}
+                                {singleBoardProgress.totalCount} 块
+                              </span>
+                            </div>
+                            <div style={styles.singleBoardActionRow}>
+                              <button
+                                style={styles.singleBoardMinorBtn}
+                                onClick={handleToggleBoardDone}
+                                disabled={!activeBoardRect}
+                              >
+                                {activeBoardRect &&
+                                boardStatusMap[activeBoardRect.boardNumber]
+                                  ? "取消完成"
+                                  : "标记本板完成"}
+                              </button>
+                              <button
+                                style={styles.singleBoardMinorBtn}
+                                onClick={resetCurrentView}
+                                disabled={!activeBoardRect}
+                              >
+                                复位视图
+                              </button>
+                            </div>
+                          </div>
+                          <div style={styles.singleBoardMiniMapCard}>
+                            <div style={styles.singleBoardMiniMapFrame}>
+                              <canvas
+                                ref={singleBoardMiniMapCanvasRef}
+                                onClick={(e) => handleOverviewCanvasClick(e)}
+                                style={{
+                                  ...styles.singleBoardMiniMapCanvas,
+                                  aspectRatio: beadData
+                                    ? `${beadData.width} / ${beadData.height}`
+                                    : "1 / 1",
+                                }}
+                              />
+                            </div>
+                            <div style={styles.singleBoardMiniMapHint}>
+                              整图总览
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    )}
                     {singleBoardOverviewCollapsed ? (
-                      <div style={styles.singleBoardCompactNav}>
+                      <div
+                        style={{
+                          ...styles.singleBoardCompactNav,
+                          ...(isSingleBoardDesktop
+                            ? styles.singleBoardDesktopCompactNav
+                            : {}),
+                        }}
+                      >
                         <button
-                          style={styles.singleBoardCompactNavBtn}
+                          style={{
+                            ...styles.singleBoardCompactNavBtn,
+                            ...(isSingleBoardDesktop
+                              ? styles.singleBoardDesktopCompactNavBtn
+                              : {}),
+                          }}
                           onClick={() => jumpToBoard(-1)}
                           disabled={activeBoardNumber <= 1}
                         >
                           上一块板
                         </button>
-                        <div style={styles.singleBoardCompactNavChips}>
+                        <div
+                          style={{
+                            ...styles.singleBoardCompactNavChips,
+                            ...(isSingleBoardDesktop
+                              ? styles.singleBoardDesktopCompactNavChips
+                              : {}),
+                          }}
+                        >
                           {compactBoardNav.map((boardNumber) => {
                             const isActive = boardNumber === activeBoardNumber;
                             const isDone = Boolean(boardStatusMap[boardNumber]);
@@ -4459,6 +4634,9 @@ const MakingPage: React.FC = () => {
                                 key={`compact-board-${boardNumber}`}
                                 style={{
                                   ...styles.singleBoardChip,
+                                  ...(isSingleBoardDesktop
+                                    ? styles.singleBoardDesktopChip
+                                    : {}),
                                   ...(isActive
                                     ? styles.singleBoardChipActive
                                     : {}),
@@ -4472,7 +4650,12 @@ const MakingPage: React.FC = () => {
                           })}
                         </div>
                         <button
-                          style={styles.singleBoardCompactNavBtn}
+                          style={{
+                            ...styles.singleBoardCompactNavBtn,
+                            ...(isSingleBoardDesktop
+                              ? styles.singleBoardDesktopCompactNavBtn
+                              : {}),
+                          }}
                           onClick={() => jumpToBoard(1)}
                           disabled={activeBoardNumber >= totalBoardCount}
                         >
@@ -4480,7 +4663,14 @@ const MakingPage: React.FC = () => {
                         </button>
                       </div>
                     ) : (
-                      <div style={styles.singleBoardGrid}>
+                      <div
+                        style={{
+                          ...styles.singleBoardGrid,
+                          ...(isSingleBoardDesktop
+                            ? styles.singleBoardDesktopGrid
+                            : {}),
+                        }}
+                      >
                         {boardRects.map((board) => {
                           const isActive =
                             board.boardNumber === activeBoardNumber;
@@ -4492,6 +4682,9 @@ const MakingPage: React.FC = () => {
                               key={board.boardNumber}
                               style={{
                                 ...styles.singleBoardChip,
+                                ...(isSingleBoardDesktop
+                                  ? styles.singleBoardDesktopChip
+                                  : {}),
                                 ...(isActive
                                   ? styles.singleBoardChipActive
                                   : {}),
@@ -4998,8 +5191,14 @@ const MakingPage: React.FC = () => {
                           ? {
                               padding: isSingleBoardMobile
                                 ? "4px 6px"
-                                : "6px 8px",
-                              gap: isSingleBoardMobile ? "6px" : "8px",
+                                : isSingleBoardDesktop
+                                  ? "4px 6px"
+                                  : "6px 8px",
+                              gap: isSingleBoardMobile
+                                ? "6px"
+                                : isSingleBoardDesktop
+                                  ? "6px"
+                                  : "8px",
                               borderRadius: isSingleBoardMobile
                                 ? "8px"
                                 : "10px",
@@ -5017,6 +5216,11 @@ const MakingPage: React.FC = () => {
                             ? {
                                 gap: "4px",
                               }
+                            : isSingleBoardDesktop &&
+                                viewMode === "singleBoard"
+                              ? {
+                                  gap: "6px",
+                                }
                             : {}),
                         }}
                       >
@@ -5047,6 +5251,9 @@ const MakingPage: React.FC = () => {
                                 ...(isSingleBoardMobile &&
                                 viewMode === "singleBoard"
                                   ? { fontSize: "12px" }
+                                  : isSingleBoardDesktop &&
+                                      viewMode === "singleBoard"
+                                    ? { fontSize: "11px" }
                                   : {}),
                               }}
                             >
@@ -5073,6 +5280,9 @@ const MakingPage: React.FC = () => {
                                   ...(isSingleBoardMobile &&
                                   viewMode === "singleBoard"
                                     ? { fontSize: "11px" }
+                                    : isSingleBoardDesktop &&
+                                        viewMode === "singleBoard"
+                                      ? { fontSize: "10px" }
                                     : {}),
                                 }}
                               >
@@ -5105,6 +5315,14 @@ const MakingPage: React.FC = () => {
                           style={{
                             ...styles.assistLocateBtn,
                             ...styles.singleBoardAssistPrimaryBtn,
+                            ...(isSingleBoardDesktop
+                              ? {
+                                  height: "30px",
+                                  minWidth: "62px",
+                                  padding: "0 12px",
+                                  fontSize: "11px",
+                                }
+                              : {}),
                           }}
                           onClick={() => {
                             if (singleBoardAllDone) {
@@ -5133,7 +5351,17 @@ const MakingPage: React.FC = () => {
                       <button
                         style={
                           viewMode === "singleBoard"
-                            ? styles.singleBoardAssistMinorBtn
+                            ? {
+                                ...styles.singleBoardAssistMinorBtn,
+                                ...(isSingleBoardDesktop
+                                  ? {
+                                      height: "30px",
+                                      minWidth: "58px",
+                                      padding: "0 10px",
+                                      fontSize: "10px",
+                                    }
+                                  : {}),
+                              }
                             : styles.assistLocateBtn
                         }
                         onClick={() => {
@@ -5176,7 +5404,17 @@ const MakingPage: React.FC = () => {
                         <button
                           style={
                             viewMode === "singleBoard"
-                              ? styles.singleBoardAssistMinorBtn
+                              ? {
+                                  ...styles.singleBoardAssistMinorBtn,
+                                  ...(isSingleBoardDesktop
+                                    ? {
+                                        height: "30px",
+                                        minWidth: "58px",
+                                        padding: "0 10px",
+                                        fontSize: "10px",
+                                      }
+                                    : {}),
+                                }
                               : styles.assistLocateBtn
                           }
                           onClick={() => {
@@ -5204,7 +5442,17 @@ const MakingPage: React.FC = () => {
                       )}
                       {viewMode === "singleBoard" && singleBoardAllDone && (
                         <button
-                          style={styles.singleBoardAssistMinorBtn}
+                          style={{
+                            ...styles.singleBoardAssistMinorBtn,
+                            ...(isSingleBoardDesktop
+                              ? {
+                                  height: "30px",
+                                  minWidth: "58px",
+                                  padding: "0 10px",
+                                  fontSize: "10px",
+                                }
+                              : {}),
+                          }}
                           onClick={handleDeductInventory}
                           disabled={
                             inventoryConsumed || !inventoryCheck.canApply
@@ -5222,7 +5470,17 @@ const MakingPage: React.FC = () => {
                           <button
                             style={
                               viewMode === "singleBoard"
-                                ? styles.singleBoardAssistMinorBtn
+                                ? {
+                                    ...styles.singleBoardAssistMinorBtn,
+                                    ...(isSingleBoardDesktop
+                                      ? {
+                                          height: "30px",
+                                          minWidth: "58px",
+                                          padding: "0 10px",
+                                          fontSize: "10px",
+                                        }
+                                      : {}),
+                                  }
                                 : styles.assistLocateBtn
                             }
                             onClick={() => {
@@ -5241,7 +5499,17 @@ const MakingPage: React.FC = () => {
                         )}
                       {viewMode === "singleBoard" && singleBoardAllDone && (
                         <button
-                          style={styles.singleBoardAssistMinorBtn}
+                          style={{
+                            ...styles.singleBoardAssistMinorBtn,
+                            ...(isSingleBoardDesktop
+                              ? {
+                                  height: "30px",
+                                  minWidth: "58px",
+                                  padding: "0 10px",
+                                  fontSize: "10px",
+                                }
+                              : {}),
+                          }}
                           disabled
                         >
                           已完成
@@ -5553,19 +5821,40 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: "8px",
-    padding: "1px 0",
+    padding: "0",
   },
 
   singleBoardCompactMeta: {
     display: "flex",
     alignItems: "baseline",
-    gap: "8px",
+    gap: "6px",
     minWidth: 0,
     flexWrap: "wrap" as const,
   },
 
+  singleBoardDesktopHeaderActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    flexShrink: 0,
+  },
+
+  singleBoardDesktopHeaderBtn: {
+    height: "22px",
+    padding: "0 8px",
+    borderRadius: radius.full,
+    border: `1px solid rgba(96,165,250,0.28)`,
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.16), rgba(244,114,182,0.14))",
+    color: makingCandy.text,
+    fontSize: "9px",
+    fontWeight: 800,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
   singleBoardSummaryHint: {
-    fontSize: "10px",
+    fontSize: "9px",
     color: makingCandy.textSoft,
     fontWeight: 700,
   },
@@ -5573,10 +5862,10 @@ const styles: Record<string, React.CSSProperties> = {
   singleBoardStatePill: {
     display: "inline-flex",
     alignItems: "center",
-    height: "20px",
-    padding: "0 8px",
+    height: "18px",
+    padding: "0 7px",
     borderRadius: radius.full,
-    fontSize: "10px",
+    fontSize: "9px",
     fontWeight: 800,
   },
 
@@ -5591,13 +5880,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   singleBoardCollapseBtn: {
-    height: "24px",
-    padding: "0 10px",
+    height: "22px",
+    padding: "0 8px",
     borderRadius: radius.full,
     border: `1px solid ${makingCandy.border}`,
     background: "rgba(255,255,255,0.92)",
     color: makingCandy.textSoft,
-    fontSize: "10px",
+    fontSize: "9px",
     fontWeight: 700,
     cursor: "pointer",
     flexShrink: 0,
@@ -5628,11 +5917,20 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: "-1px",
   },
 
+  singleBoardDesktopQuickRow: {
+    gap: "6px",
+    alignItems: "center",
+  },
+
   singleBoardQuickControls: {
     display: "flex",
     alignItems: "center",
     gap: "6px",
     flexWrap: "wrap" as const,
+  },
+
+  singleBoardDesktopQuickControls: {
+    gap: "4px",
   },
 
   singleBoardResumeBtn: {
@@ -5660,6 +5958,12 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
 
+  singleBoardDesktopQuickToggle: {
+    height: "22px",
+    padding: "0 8px",
+    fontSize: "9px",
+  },
+
   singleBoardQuickToggleActive: {
     background:
       "linear-gradient(145deg, rgba(125,211,252,0.18), rgba(244,114,182,0.16))",
@@ -5674,10 +5978,18 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap" as const,
   },
 
+  singleBoardDesktopPendingRow: {
+    gap: "3px",
+  },
+
   singleBoardPendingLabel: {
     fontSize: "10px",
     color: makingCandy.textSoft,
     fontWeight: 700,
+  },
+
+  singleBoardDesktopPendingLabel: {
+    fontSize: "9px",
   },
 
   singleBoardPendingChip: {
@@ -5690,6 +6002,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "10px",
     fontWeight: 700,
     cursor: "pointer",
+  },
+
+  singleBoardDesktopPendingChip: {
+    height: "20px",
+    padding: "0 7px",
+    fontSize: "9px",
   },
 
   singleBoardPendingMore: {
@@ -6183,6 +6501,54 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 60,
   },
 
+  singleBoardDesktopDenseRow: {
+    display: "flex",
+    alignItems: "stretch",
+    gap: "4px",
+    minHeight: 34,
+  },
+
+  singleBoardDesktopWorkflowCard: {
+    flex: 1,
+    minWidth: 0,
+    display: "flex",
+    alignItems: "center",
+    padding: "4px 7px",
+    borderRadius: radius.lg,
+    border: `1px solid ${makingCandy.border}`,
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.94), rgba(255,247,242,0.92))",
+    boxShadow: makingCandy.shadowSoft,
+  },
+
+  singleBoardDesktopMetaRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "6px",
+    width: "100%",
+  },
+
+  singleBoardDesktopWorkflowMeta: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "1px",
+    minWidth: 0,
+  },
+
+  singleBoardDesktopActionRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "3px",
+    flexShrink: 0,
+  },
+
+  singleBoardDesktopMinorBtn: {
+    height: "20px",
+    padding: "0 7px",
+    fontSize: "9px",
+  },
+
   singleBoardSummaryCard: {
     flex: 1,
     minWidth: 0,
@@ -6222,11 +6588,20 @@ const styles: Record<string, React.CSSProperties> = {
     paddingBottom: "1px",
   },
 
+  singleBoardDesktopGrid: {
+    gap: "3px",
+  },
+
   singleBoardCompactNav: {
     display: "flex",
     alignItems: "center",
     gap: "6px",
     minWidth: 0,
+  },
+
+  singleBoardDesktopCompactNav: {
+    gap: "4px",
+    marginTop: "-2px",
   },
 
   singleBoardCompactNavBtn: {
@@ -6242,6 +6617,12 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
+  singleBoardDesktopCompactNavBtn: {
+    height: "20px",
+    padding: "0 6px",
+    fontSize: "9px",
+  },
+
   singleBoardCompactNavChips: {
     display: "flex",
     alignItems: "center",
@@ -6249,6 +6630,10 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
     overflowX: "auto",
     paddingBottom: "1px",
+  },
+
+  singleBoardDesktopCompactNavChips: {
+    gap: "3px",
   },
 
   singleBoardChip: {
@@ -6263,6 +6648,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: "pointer",
     flexShrink: 0,
+  },
+
+  singleBoardDesktopChip: {
+    minWidth: "40px",
+    height: "20px",
+    padding: "0 6px",
+    fontSize: "9px",
   },
 
   singleBoardChipActive: {
@@ -6312,6 +6704,12 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: makingCandy.shadowSoft,
   },
 
+  singleBoardDesktopMiniMapCard: {
+    width: 58,
+    padding: "3px",
+    gap: "0",
+  },
+
   singleBoardMiniMapFrame: {
     flex: 1,
     display: "flex",
@@ -6330,6 +6728,10 @@ const styles: Record<string, React.CSSProperties> = {
       "linear-gradient(180deg, rgba(241,245,249,0.95), rgba(255,255,255,0.96))",
     display: "block",
     cursor: "pointer",
+  },
+
+  singleBoardDesktopMiniMapCanvas: {
+    maxHeight: 30,
   },
 
   singleBoardMiniMapCell: {

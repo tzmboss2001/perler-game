@@ -7,6 +7,46 @@ export function getSingleBoardMinScale({ fitScale, baseMinScale }) {
 
 /**
  * @param {{
+ *   viewMode: string;
+ *   viewportWidth: number;
+ * }} input
+ */
+export function getSingleBoardLayoutFlags({ viewMode, viewportWidth }) {
+  const isSingleBoardMobile =
+    viewMode === "singleBoard" && viewportWidth <= 640;
+  return {
+    isSingleBoardMobile,
+    isSingleBoardDesktop: viewMode === "singleBoard" && viewportWidth > 640,
+  };
+}
+
+/**
+ * @param {{
+ *   viewMode: string;
+ *   isSingleBoardMobile: boolean;
+ *   isSingleBoardDesktop: boolean;
+ *   singleBoardAllDone: boolean;
+ * }} input
+ */
+export function getSingleBoardCanvasMinHeight({
+  viewMode,
+  isSingleBoardMobile,
+  isSingleBoardDesktop,
+  singleBoardAllDone,
+}) {
+  if (viewMode !== "singleBoard") return undefined;
+  if (isSingleBoardDesktop) {
+    return singleBoardAllDone
+      ? "clamp(460px, 72vh, 860px)"
+      : "clamp(560px, 80vh, 980px)";
+  }
+  return isSingleBoardMobile && !singleBoardAllDone
+    ? "clamp(500px, 76vh, 920px)"
+    : "clamp(420px, 68vh, 760px)";
+}
+
+/**
+ * @param {{
  *   currentScale: number;
  *   minScale: number;
  *   maxScale: number;

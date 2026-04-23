@@ -13,6 +13,8 @@ import {
   getSingleBoardOverviewTitle,
   getTextOverlayStabilizationFrames,
   getSingleBoardAutoFocusScaleDecision,
+  getSingleBoardCanvasMinHeight,
+  getSingleBoardLayoutFlags,
   getNeighborBoardNumber,
   getSingleBoardMinScale,
   getSingleBoardSwipeStatus,
@@ -23,6 +25,50 @@ import {
 
 test("single board min scale follows fit scale instead of snapping to fit scale", () => {
   assert.equal(getSingleBoardMinScale({ fitScale: 0.63, baseMinScale: 0.2 }), 0.2835);
+});
+
+test("single-board layout flags distinguish desktop from mobile", () => {
+  assert.deepEqual(
+    getSingleBoardLayoutFlags({
+      viewMode: "singleBoard",
+      viewportWidth: 1540,
+    }),
+    {
+      isSingleBoardMobile: false,
+      isSingleBoardDesktop: true,
+    },
+  );
+  assert.deepEqual(
+    getSingleBoardLayoutFlags({
+      viewMode: "singleBoard",
+      viewportWidth: 390,
+    }),
+    {
+      isSingleBoardMobile: true,
+      isSingleBoardDesktop: false,
+    },
+  );
+});
+
+test("desktop single-board mode gets a taller canvas min height", () => {
+  assert.equal(
+    getSingleBoardCanvasMinHeight({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: false,
+      isSingleBoardDesktop: true,
+      singleBoardAllDone: false,
+    }),
+    "clamp(560px, 80vh, 980px)",
+  );
+  assert.equal(
+    getSingleBoardCanvasMinHeight({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      isSingleBoardDesktop: false,
+      singleBoardAllDone: false,
+    }),
+    "clamp(500px, 76vh, 920px)",
+  );
 });
 
 test("neighbor board lookup supports four directions", () => {
