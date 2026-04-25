@@ -40,6 +40,7 @@ interface ExportCoordGutters {
 export interface ColorMatchOptions {
   brand?: 'perler' | 'hama' | 'artkal';  // 鍙€夛紝鍚戝悗鍏煎
   colorCount?: number;                    // 鏂板锛氶鑹叉暟閲忥紙浣跨敤缁熶竴鑹插簱锛?
+  paletteColors?: BeadColor[];            // 鏄惧紡浼犲叆鍩虹鑹插簱
   excludeColors?: string[];               // 瑕佹帓闄ょ殑棰滆壊ID
   maxColors?: number;                     // 鏈€澶ч鑹叉暟閲忥紙鍚堝苟鐩镐技棰滆壊锛?
   saturationBoost?: number;               // 楗卞拰搴﹀寮?0-100锛岄粯璁?0
@@ -58,6 +59,7 @@ export const matchPixelsToBead = (
   const {
     brand,
     colorCount,
+    paletteColors,
     excludeColors = [],
     saturationBoost = 0,
     useLabSpace = true,
@@ -66,9 +68,11 @@ export const matchPixelsToBead = (
   } = options;
 
   // 鑾峰彇鍙敤棰滆壊锛氬鏋滄寚瀹氫簡 colorCount锛屼娇鐢ㄧ粺涓€鑹插簱锛涘惁鍒欎娇鐢ㄥ搧鐗岃壊搴?
-  let availableColors = colorCount
-    ? allBeadColors
-    : getColorsByBrand(brand || 'artkal');
+  let availableColors = paletteColors && paletteColors.length > 0
+    ? paletteColors
+    : colorCount
+      ? allBeadColors
+      : getColorsByBrand(brand || 'artkal');
 
   // 鎺掗櫎鎸囧畾棰滆壊
   if (excludeColors.length > 0) {

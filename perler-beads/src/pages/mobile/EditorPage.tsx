@@ -9,7 +9,17 @@ import { pixelizeImage, PixelData } from '../../services/pixelizeService';
 
 import { matchPixelsToBead, calculateBeadStatistics, renderBeadsToCanvas, BeadPixelData, BeadStatistics, reduceColors } from '../../services/colorMatchService';
 
-import { colorCountOptions, defaultColorCount, allBeadColors, BeadColor } from '../../data/beadColors';
+import {
+  colorLimitOptions,
+  defaultColorCount,
+  allBeadColors,
+  BeadColor,
+  PaletteMode,
+  normalizePaletteSelection,
+  clampColorLimitByPaletteSize,
+  getPaletteColorsForMode,
+  officialPaletteOptions,
+} from '../../data/beadColors';
 
 import { useEditorStore, EditorTool } from '../../store/editorStore';
 
@@ -42,6 +52,7 @@ import { localStorageService } from '../../services/localStorageService';
 
 import { myColorsService } from '../../services/myColorsService';
 import { applyTransparentIndices, suggestQuickBackgroundRemoval } from '../../services/backgroundRemovalService';
+import { normalizeProjectSaveFailure } from '../../utils/projectSaveAuthFlow';
 import {
   collectLowConfidenceIndices,
   getNextLowConfidenceReviewIndex,
@@ -61,6 +72,8 @@ export interface EditorStateData {
   imageData?: string;
 
   colorCount?: number;
+
+  paletteMode?: PaletteMode;
 
   gridWidth?: number;
 
@@ -517,7 +530,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const toast = useToast();
 
-  const { isLoggedIn, initUser } = useUserStore();
+  const { isLoggedIn, initUser, logout } = useUserStore();
 
   const { modalProps, showAlert, showConfirm } = useModal();
 
@@ -578,10 +591,26 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const mergedStateData = embeddedStateData ?? (stateData.imageData ? stateData : pendingResumeDraft?.imageData ? pendingResumeDraft : sessionData);
 
-  const { imageData, colorCount: initialColorCount, gridWidth: initialGridWidth, customColorIds } = mergedStateData;
+  const {
+    imageData,
+    colorCount: initialColorCount,
+    paletteMode: initialPaletteMode,
+    gridWidth: initialGridWidth,
+    customColorIds,
+  } = mergedStateData;
+
+  const normalizedPaletteSelection = React.useMemo(() => (
+    normalizePaletteSelection({
+      paletteMode: initialPaletteMode,
+      colorCount: initialColorCount,
+      customColorIds,
+      myColorCount: customColorIds?.length,
+    })
+  ), [customColorIds, initialColorCount, initialPaletteMode]);
 
   const importReviewSummary = React.useMemo(() => summarizeLowConfidenceCells(pendingResumeDraft?.lowConfidenceCells || []), [pendingResumeDraft]);
   const shouldShowImportReviewNotice = pendingResumeDraft?.importSource === 'external-pattern-import';
+  const [activeImportReviewIndex, setActiveImportReviewIndex] = useState<number | null>(null);
   const importReviewIndices = React.useMemo(() => {
     if (!pendingResumeDraft?.beadData) {
       return [];
@@ -621,7 +650,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const [gridSizeInput, setGridSizeInput] = useState(String(normalizeGridSize(initialGridWidth || 52)));
 
-  const [colorCount, setColorCount] = useState<number>(initialColorCount || defaultColorCount);
+  const [paletteMode, setPaletteMode] = useState<PaletteMode>(normalizedPaletteSelection.paletteMode);
+  const [colorCount, setColorCount] = useState<number>(normalizedPaletteSelection.colorLimit);
 
   const [simplifyLevel, setSimplifyLevel] = useState<number>(0);
 
@@ -637,18 +667,23 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const [showPaletteSettings, setShowPaletteSettings] = useState(false);
   const [showColorStyleSettings, setShowColorStyleSettings] = useState(false);
 
-  const [useMyColors, setUseMyColors] = useState<boolean>(() => Boolean(customColorIds?.length));
-
   const [showMyColorsModal, setShowMyColorsModal] = useState(false);
 
   const [myColorCount, setMyColorCount] = useState(() => myColorsService.getSelectedIds().length);
 
   const [activeCustomColorIds, setActiveCustomColorIds] = useState<string[] | undefined>(customColorIds);
+  const useMyColors = paletteMode === 'my-colors';
+  const activePaletteColors = React.useMemo(
+    () => getPaletteColorsForMode(paletteMode, activeCustomColorIds || []),
+    [activeCustomColorIds, paletteMode]
+  );
+  const effectiveColorLimit = React.useMemo(
+    () => clampColorLimitByPaletteSize(paletteMode, colorCount, myColorCount),
+    [colorCount, myColorCount, paletteMode]
+  );
 
   const [cellSize, setCellSize] = useState(12);
   const [showImportRiskOverlay, setShowImportRiskOverlay] = useState(true);
-  const [activeImportReviewIndex, setActiveImportReviewIndex] = useState<number | null>(null);
-
   const [recentColors, setRecentColors] = useState<BeadColor[]>([]);
 
   const [isEditMode, setIsEditMode] = useState(false);
@@ -758,6 +793,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       colorCount?: number;
 
+      paletteMode?: PaletteMode;
+
       customColorIds?: string[] | undefined;
 
     }
@@ -789,8 +826,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       const nextVibrancyPreference = overrides?.vibrancyPreference ?? vibrancyPreference;
 
       const nextColorCount = overrides?.colorCount ?? colorCount;
+      const nextPaletteMode = overrides?.paletteMode ?? paletteMode;
 
       const nextCustomColorIds = overrides?.customColorIds ?? activeCustomColorIds;
+      const nextPaletteColors = getPaletteColorsForMode(nextPaletteMode, nextCustomColorIds || []);
+      const nextColorLimit = clampColorLimitByPaletteSize(
+        nextPaletteMode,
+        nextColorCount,
+        nextCustomColorIds?.length || 0
+      );
 
       const pixels = await pixelizeImage(currentImageData, {
 
@@ -802,7 +846,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       let beads = matchPixelsToBead(pixels, {
 
-        colorCount: nextColorCount,
+        colorCount: nextColorLimit,
+        paletteColors: nextPaletteColors,
 
         useLabSpace: true,           // 婵犵數濮烽弫鎼佸磻閻樿绠垫い蹇撴缁躲倝鏌﹀Ο渚▓闁绘帊绮欓弻銊╂偄閸濆嫅銏ゆ煛鐎ｂ晝绐旈柡宀€鍠栭獮鎴﹀箛闂堟稒顔勬繝纰樻閸嬪懘鏁冮姀銈呰摕闁哄洢鍨归柋鍥ㄧ節闂堟稒绁╂俊顐ゅ仜椤?Lab 闂傚倸鍊搁崐宄懊归崶銊х彾闁割偁鍎荤紞鏍ь熆閼搁潧濮堥柛瀣€块弻銊╂偄閸濆嫅銏ゆ煛鐎ｂ晝绐旈柡宀€鍠栭獮鍡氼槻妞わ絽纾惀顏堝箚瑜嬮崑銏ゆ煛瀹€瀣М妤犵偛娲、姘跺川椤旂晫妲ｉ梻鍌欐祰濡椼劎绮堟担琛″亾濮橆厽绶叉い顐㈢箲缁绘繂顫濋鍌︾床婵犵數濞€濞佳兠洪妶鍛鐟滃繒妲愰幘瀛樺濞寸姴顑呴幗鐢电磽娴ｇ瓔鍤欓柣妤佹尭椤曪絾绻濆顑┾晠鏌嶉崫鍕偓鍛婄濠婂牊鈷戦柛娑橈功閳藉鏌ㄩ弴顏堟閻庨潧銈稿畷鐔碱敍濞戞帗瀚奸柣鐔哥矌婢ф鏁埡浣勬盯骞嬮敂鐣屽幈闂婎偄娲﹀Λ鎴︽嚀鐠恒劉鍋撳▓鍨珮闁稿锕悰顔嘉熼崗鐓庣彴闂佸憡鐟ラˇ钘壩涢悢鍏尖拻濞撴埃鍋撴繛浣冲洦鍋嬮柛鈩冦亗濞戞鏃堝椽娴ｈ娅嗛梻浣稿閸嬪懎煤濮椻偓閸╂盯骞嬮敂钘変化闂佽鍘界敮鎺撲繆婵傚憡鐓涢悗锝庡亜閻忔挳鏌″畝瀣？闁逞屽墾缂嶅棙绂嶉崼鏇熷亗闁稿繒鈷堝▓浠嬫煟閹邦垰鐨虹紒鐘差煼閺岀喖顢欓悾宀€鐓夐梺鐟扮－閸嬨倖淇婇悜鑺ユ櫆缂佹稑顑勯幋鐑芥⒒閸屾艾鈧绮堟笟鈧獮鏍敃閿曗偓绾惧綊鏌涢锝嗙缁炬儳缍婇弻鈥愁吋鎼粹€茬爱闂佺顑嗛幐鎼侊綖濠靛鏁嗛柛灞剧敖閵娾晜鈷戦柛婵嗗椤箓鏌涢弮鈧崹鍧楃嵁閸愵喖顫呴柕鍫濇噽椤︻參姊洪崨濠勬噧妞わ附婢橀埢宥夊箻缂佹ǚ鎷婚梺绋挎湰閼归箖鍩€椤掍焦鍊愰柟顔ㄥ洤绀冩い鏃囧亹閺屟冣攽閻樿宸ラ柟鍐差樀瀹曟垿骞橀幇浣瑰兊濡炪倖甯掗崐缁橆殭闂?
         saturationBoost: nextSaturationBoost,             // 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒闂佸憡鍨规慨鎾煘閹达附鍋愰悗鍦Т椤ユ繄绱撴担鍝勵€岄柛銊ョ埣瀵鏁愭径濠勵吅闂佹寧绻傞幉娑㈠箻缂佹鍘搁梺鍛婁緱閸犳宕愰幇顓熷弿濠电姴瀚崝瀣煥濞戞瑥濮堥柟宄版嚇閹煎綊鐛崹顔荤敾婵犵绱曢崑鎴﹀磹閺嵮屾綎鐟滅増甯掔粈澶嬬箾閸℃ɑ灏电€规挷绶氶悡顐﹀炊閵娧€濮囬梺绋匡工椤兘寮婚妶澶婄畳闁圭儤鍨垫慨鏇炩攽閻愬弶鍣烽柛銊ㄦ椤繐煤椤忓嫪绱堕梺鍛婃处閸嬧偓闁稿鎹囧畷濂稿即閻愮绱梻浣告惈缁嬩線宕戦埀顒勬煕??
@@ -830,7 +875,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
         if (targetColors < currentColorCount) {
 
-          beads = reduceColors(beads, targetColors, allBeadColors);
+          beads = reduceColors(beads, targetColors, nextPaletteColors);
 
         }
 
@@ -922,7 +967,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [activeCustomColorIds, colorCount, currentColor, currentImageData, gridSize, initializeBeadData, isHorizontallyMirrored, setCurrentColor, simplifyLevel, saturationBoost, vibrancyPreference, beadData, regeneratedBaseData]);
+  }, [activeCustomColorIds, colorCount, currentColor, currentImageData, gridSize, initializeBeadData, isHorizontallyMirrored, paletteMode, setCurrentColor, simplifyLevel, saturationBoost, vibrancyPreference, beadData, regeneratedBaseData]);
 
   const buildBackgroundDetectionData = useCallback(async (): Promise<BeadPixelData | null> => {
     if (!currentImageData || !beadData) {
@@ -944,7 +989,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     });
 
     let detectionBeads = matchPixelsToBead(pixels, {
-      colorCount,
+      colorCount: effectiveColorLimit,
+      paletteColors: activePaletteColors,
       useLabSpace: true,
       saturationBoost,
       vibrancyPreference,
@@ -960,12 +1006,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       );
 
       if (targetColors < currentColorCount) {
-        detectionBeads = reduceColors(detectionBeads, targetColors, allBeadColors);
+        detectionBeads = reduceColors(detectionBeads, targetColors, activePaletteColors);
       }
     }
 
     return detectionBeads;
-  }, [beadData, colorCount, currentImageData, simplifyLevel, saturationBoost, vibrancyPreference]);
+  }, [activePaletteColors, beadData, currentImageData, effectiveColorLimit, simplifyLevel, saturationBoost, vibrancyPreference]);
 
   const detectQuickBackgroundSuggestion = useCallback(async () => {
     if (!beadData) return null;
@@ -1248,9 +1294,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const getEraserColor = useCallback(() => {
 
-    return allBeadColors.find(c => c.name.toLowerCase().includes('white')) || allBeadColors[0];
+    return activePaletteColors.find(c => c.name.toLowerCase().includes('white')) || activePaletteColors[0] || allBeadColors[0];
 
-  }, []);
+  }, [activePaletteColors]);
 
 
 
@@ -1913,6 +1959,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
         colorCount,
 
+        paletteMode,
+
         gridWidth: gridSize,
 
         customColorIds: activeCustomColorIds,
@@ -1927,7 +1975,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [currentImageData, colorCount, gridSize, activeCustomColorIds]);
+  }, [activeCustomColorIds, colorCount, currentImageData, gridSize, paletteMode]);
 
   const serializeBeadDataForSave = useCallback((data: BeadPixelData) => {
 
@@ -1969,6 +2017,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
         colorCount,
 
+        paletteMode,
+
         gridWidth: gridSize,
 
         customColorIds: activeCustomColorIds,
@@ -1997,7 +2047,18 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [activeCustomColorIds, beadData, colorCount, currentImageData, gridSize, initialBeadData, isHorizontallyMirrored, pendingResumeDraft, regeneratedBaseData, saturationBoost, vibrancyPreference]);
+  }, [activeCustomColorIds, beadData, colorCount, currentImageData, gridSize, initialBeadData, isHorizontallyMirrored, paletteMode, pendingResumeDraft, regeneratedBaseData, saturationBoost, vibrancyPreference]);
+
+  const handleReauthAndResumeCloudSave = useCallback((message?: string) => {
+    setShowSaveModal(false);
+    saveEditorStateToSession();
+    saveEditorResumeDraftToSession('startMaking');
+    logout();
+    toast.info(message || '登录状态已失效，请重新登录后继续云端保存。');
+    navigate('/mobile/login', { state: { from: '/mobile/editor', resumeStartMaking: true } });
+  }, [logout, navigate, saveEditorResumeDraftToSession, saveEditorStateToSession, toast]);
+
+
 
   const handleStartMakingClick = (e?: React.MouseEvent) => {
 
@@ -2034,7 +2095,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       navigate('/mobile/making', {
 
-        state: { beadData, colorCount, backTarget: '/mobile/create' },
+        state: { beadData, colorCount: effectiveColorLimit, backTarget: '/mobile/create' },
 
       });
 
@@ -2184,7 +2245,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
             gridHeight: beadData.height,
 
-            colorCount,
+            colorCount: effectiveColorLimit,
 
             saturationBoost,
 
@@ -2204,12 +2265,17 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           navigate('/mobile/making', {
 
-            state: { beadData, colorCount, projectId: response.data.id, backTarget: '/mobile/create' },
+            state: { beadData, colorCount: effectiveColorLimit, projectId: response.data.id, backTarget: '/mobile/create' },
 
           });
 
         } else {
           console.error('创建方案失败:', response.msg);
+          const failure = normalizeProjectSaveFailure({ response });
+          if (failure.kind === 'reauth') {
+            handleReauthAndResumeCloudSave(failure.message);
+            return;
+          }
           saveToLocal(name, thumbnail, originalImage, { fromCloudFallback: true });
 
         }
@@ -2227,6 +2293,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       }
 
       console.error('保存方案异常:', error);
+      const failure = normalizeProjectSaveFailure({ error });
+      if (failure.kind === 'reauth') {
+        handleReauthAndResumeCloudSave(failure.message);
+        return;
+      }
       saveToLocal(name, thumbnail, originalImage, { fromCloudFallback: true });
 
     } finally {
@@ -2270,7 +2341,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
           gridHeight: beadData.height,
 
-          colorCount,
+          colorCount: effectiveColorLimit,
 
           saturationBoost,
 
@@ -2302,7 +2373,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       navigate('/mobile/making', {
 
-        state: { beadData, colorCount, localProjectId: result.id, backTarget: '/mobile/create' },
+        state: { beadData, colorCount: effectiveColorLimit, localProjectId: result.id, backTarget: '/mobile/create' },
 
       });
 
@@ -2314,7 +2385,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       navigate('/mobile/making', {
 
-        state: { beadData, colorCount, backTarget: '/mobile/create' },
+        state: { beadData, colorCount: effectiveColorLimit, backTarget: '/mobile/create' },
 
       });
 
@@ -2434,7 +2505,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   };
 
   const handleApplyColorCount = (nextValue: number) => {
-    if (!useMyColors && nextValue === colorCount) {
+    if (nextValue === colorCount) {
 
       return;
 
@@ -2451,8 +2522,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     }
 
     setColorCount(nextValue);
-    setUseMyColors(false);
-    setActiveCustomColorIds(undefined);
 
     lastAppliedParamsRef.current = {
       gridSize,
@@ -2469,6 +2538,53 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     processImage(true, { colorCount: nextValue });
 
+  };
+
+  const handleApplyPaletteMode = (nextMode: PaletteMode) => {
+    if (nextMode === paletteMode) {
+      return;
+    }
+
+    if (nextMode === 'my-colors') {
+      const selectedIds = myColorsService.getSelectedIds();
+      if (selectedIds.length === 0) {
+        toast.info('请先点击“管理”选择个人色库。');
+        setShowMyColorsModal(true);
+        return;
+      }
+      setMyColorCount(selectedIds.length);
+      setActiveCustomColorIds(selectedIds);
+    }
+
+    if (canUndo) {
+      if (!window.confirm('重新生成会按新的色库参数重新计算图案。已去背景区域会尽量保留，但其他手动编辑可能被覆盖，确定继续吗？')) {
+        return;
+      }
+    }
+
+    const nextCustomColorIds = nextMode === 'my-colors'
+      ? myColorsService.getSelectedIds()
+      : undefined;
+
+    setPaletteMode(nextMode);
+    setActiveCustomColorIds(nextCustomColorIds);
+
+    lastAppliedParamsRef.current = {
+      gridSize,
+      saturationBoost,
+      vibrancyPreference,
+      colorCount,
+    };
+
+    if (containerRef.current) {
+      savedScrollPosition.current = containerRef.current.scrollTop;
+    }
+
+    processImage(true, {
+      colorCount,
+      paletteMode: nextMode,
+      customColorIds: nextCustomColorIds,
+    });
   };
 
   const handleGridSizeStep = (delta: number) => {
@@ -2542,55 +2658,6 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     });
 
   };
-
-  const handleToggleMyColors = () => {
-
-    if (!useMyColors) {
-
-      const selectedIds = myColorsService.getSelectedIds();
-
-      if (selectedIds.length === 0) {
-        toast.info('请先点击“管理”选择个人色系。');
-
-        return;
-
-      }
-
-      setUseMyColors(true);
-      setActiveCustomColorIds(selectedIds);
-      setMyColorCount(selectedIds.length);
-      lastAppliedParamsRef.current = {
-        gridSize,
-        saturationBoost,
-        vibrancyPreference,
-        colorCount,
-      };
-      processImage(true, {
-        colorCount,
-        customColorIds: selectedIds,
-      });
-
-      return;
-
-    }
-
-
-
-    setUseMyColors(false);
-    setActiveCustomColorIds(undefined);
-    lastAppliedParamsRef.current = {
-      gridSize,
-      saturationBoost,
-      vibrancyPreference,
-      colorCount,
-    };
-    processImage(true, {
-      colorCount,
-      customColorIds: undefined,
-    });
-
-  };
-
 
   const dominantBrand = React.useMemo(() => {
 
@@ -2940,7 +3007,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                         <span style={styles.drawerPanelSummary}>
                           {useMyColors
                             ? <>当前仅使用我的颜色{myColorCount > 0 && <>，共 {myColorCount} 色</>}</>
-                            : <>当前 {colorCount} 色</>}
+                            : <>{officialPaletteOptions.find((item) => item.id === paletteMode)?.label || 'MARD 291 全色'} / 当前上限 {effectiveColorLimit} 色</>}
                         </span>
                       </div>
                     </div>
@@ -2953,32 +3020,27 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
                   <div style={styles.paletteSection}>
                     <div style={styles.paletteSectionHeader}>
-                      <span style={styles.paletteSectionTitle}>系统色系</span>
+                      <span style={styles.paletteSectionTitle}>官方色库</span>
                     </div>
                     <div style={styles.colorCountTabs}>
-                      {colorCountOptions.map((opt) => (
+                      {officialPaletteOptions.map((opt) => (
                         <button
-                          key={opt.count}
+                          key={opt.id}
                           style={{
                             ...styles.colorCountTab,
-                            ...(!useMyColors && colorCount === opt.count ? styles.colorCountTabActive : {}),
+                            ...(paletteMode === opt.id ? styles.colorCountTabActive : {}),
                           }}
-                          onClick={() => handleApplyColorCount(opt.count)}
+                          onClick={() => handleApplyPaletteMode(opt.id)}
                         >
                           <span>{opt.label}</span>
                         </button>
                       ))}
                     </div>
-                    {useMyColors && (
-                      <div style={styles.paletteModeHint}>
-                        当前仅使用“我的颜色”生成，系统色数已停用。
-                      </div>
-                    )}
                   </div>
 
                   <div style={styles.paletteSection}>
                     <div style={styles.paletteSectionHeader}>
-                      <span style={styles.paletteSectionTitle}>个人色系</span>
+                      <span style={styles.paletteSectionTitle}>个人库存</span>
                     </div>
                     <div style={styles.paletteSwitchRow}>
                       <div style={styles.paletteSwitchInfo}>
@@ -2996,11 +3058,34 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                             ...styles.paletteUseBtn,
                             ...(useMyColors ? styles.paletteUseBtnActive : {}),
                           }}
-                          onClick={handleToggleMyColors}
+                          onClick={() => handleApplyPaletteMode('my-colors')}
                         >
-                          启用
+                          {useMyColors ? '使用中' : '启用'}
                         </button>
                       </div>
+                    </div>
+                  </div>
+
+                  <div style={styles.paletteSection}>
+                    <div style={styles.paletteSectionHeader}>
+                      <span style={styles.paletteSectionTitle}>颜色精简</span>
+                    </div>
+                    <div style={styles.colorCountTabs}>
+                      {colorLimitOptions.map((opt) => (
+                        <button
+                          key={opt.id}
+                          style={{
+                            ...styles.colorCountTab,
+                            ...(colorCount === opt.count ? styles.colorCountTabActive : {}),
+                          }}
+                          onClick={() => handleApplyColorCount(opt.count)}
+                        >
+                          <span>{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div style={styles.paletteModeHint}>
+                      在当前基础色库范围内限制最终使用的颜色数量。
                     </div>
                   </div>
                 </div>
@@ -3188,7 +3273,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
         <ColorPicker
 
-          colorCount={colorCount}
+          colorCount={effectiveColorLimit}
+          availableColors={activePaletteColors}
 
           selectedColor={currentColor}
 
@@ -3216,7 +3302,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
           setActiveCustomColorIds(selectedIds.length > 0 ? selectedIds : undefined);
 
           if (selectedIds.length === 0) {
-            setUseMyColors(false);
+            if (useMyColors) {
+              setPaletteMode('mard-291');
+            }
             lastAppliedParamsRef.current = {
               gridSize,
               saturationBoost,
@@ -3225,6 +3313,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             };
             processImage(true, {
               colorCount,
+              paletteMode: useMyColors ? 'mard-291' : paletteMode,
               customColorIds: undefined,
             });
             return;
@@ -3239,6 +3328,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             };
             processImage(true, {
               colorCount,
+              paletteMode: 'my-colors',
               customColorIds: selectedIds,
             });
           }

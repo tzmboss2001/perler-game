@@ -45,8 +45,8 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete, forceShow
     {
       icon: <Palette size={64} weight="fill" />,
       iconColor: colors.bead.pink,
-      title: 'MARD 拼豆色板',
-      description: '当前支持 MARD 色系\n自动匹配最接近的拼豆颜色',
+      title: 'MARD 官方色库 + 我的颜色',
+      description: '当前保留 MARD 官方色库 221 / 291\n“我的颜色”是独立的个人库存层\n算法只提供颜色上限建议，不代表官方方案',
       beadColors: [colors.bead.red, colors.bead.pink, colors.bead.purple],
     },
     {

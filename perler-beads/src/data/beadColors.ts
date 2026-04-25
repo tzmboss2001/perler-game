@@ -746,3 +746,137 @@ export const colorCountOptions: ColorCountOption[] = [
 ];
 
 export const defaultColorCount = 150;
+
+export const mard221Colors: BeadColor[] = mardColors.slice(0, 221);
+
+export type PaletteMode = 'mard-221' | 'mard-291' | 'my-colors';
+
+export interface OfficialPaletteOption {
+  id: 'mard-221' | 'mard-291';
+  label: string;
+  description: string;
+  colors: BeadColor[];
+}
+
+export interface ColorLimitOption {
+  id: string;
+  count: number;
+  label: string;
+  description: string;
+  detailDesc: string;
+  icon: string;
+  recommended?: boolean;
+}
+
+export interface PaletteSelectionInput {
+  paletteMode?: PaletteMode | string | null;
+  colorLimit?: number | null;
+  colorCount?: number | null;
+  customColorIds?: readonly string[] | null;
+  myColorCount?: number | null;
+}
+
+export interface NormalizedPaletteSelection {
+  paletteMode: PaletteMode;
+  colorLimit: number;
+}
+
+const normalizeColorLimit = (value: number | null | undefined, fallback: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.round(value));
+};
+
+export const officialPaletteOptions: OfficialPaletteOption[] = [
+  {
+    id: 'mard-221',
+    label: 'MARD 221 常用色',
+    description: '精简且稳定的官方常用色库',
+    colors: mard221Colors,
+  },
+  {
+    id: 'mard-291',
+    label: 'MARD 291 全色',
+    description: '完整官方色库',
+    colors: mardColors,
+  },
+];
+
+export const colorLimitOptions: ColorLimitOption[] = [
+  { id: 'limit-48', count: 48, label: '最多 48 色', description: '极简风格', detailDesc: '卡通、简笔画', icon: '🚀' },
+  { id: 'limit-72', count: 72, label: '最多 72 色', description: '基础配色', detailDesc: '像素画、图标', icon: '🖼️' },
+  { id: 'limit-96', count: 96, label: '最多 96 色', description: '细腻表现', detailDesc: '风景、插画', icon: '🌈' },
+  { id: 'limit-150', count: 150, label: '最多 150 色', description: '精细还原', detailDesc: '人物、照片', icon: '✅', recommended: true },
+  { id: 'limit-200', count: 200, label: '最多 200 色', description: '色彩丰富', detailDesc: '高精度还原', icon: '🧵' },
+  { id: 'limit-291', count: 291, label: '不限制', description: '使用当前基础色库全部颜色', detailDesc: '', icon: '🏳' },
+];
+
+export const normalizePaletteSelection = (
+  selection: PaletteSelectionInput = {},
+): NormalizedPaletteSelection => {
+  const hasCustomColors = (selection.myColorCount ?? selection.customColorIds?.length ?? 0) > 0;
+  const nextColorLimit = normalizeColorLimit(
+    selection.colorLimit ?? selection.colorCount,
+    defaultColorCount,
+  );
+
+  if (selection.paletteMode === 'my-colors' && hasCustomColors) {
+    return {
+      paletteMode: 'my-colors',
+      colorLimit: nextColorLimit,
+    };
+  }
+
+  if (selection.paletteMode === 'mard-221' || selection.paletteMode === 'mard-291') {
+    return {
+      paletteMode: selection.paletteMode,
+      colorLimit: nextColorLimit,
+    };
+  }
+
+  return {
+    paletteMode: 'mard-291',
+    colorLimit: nextColorLimit,
+  };
+};
+
+export const clampColorLimitByPaletteSize = (
+  paletteMode: PaletteMode,
+  colorLimit: number,
+  myColorCount: number,
+): number => {
+  const nextColorLimit = normalizeColorLimit(colorLimit, defaultColorCount);
+  const nextMyColorCount = Math.max(0, Math.round(myColorCount || 0));
+
+  if (paletteMode === 'mard-221') {
+    return Math.min(nextColorLimit, mard221Colors.length);
+  }
+
+  if (paletteMode === 'mard-291') {
+    return Math.min(nextColorLimit, mardColors.length);
+  }
+
+  return Math.min(nextColorLimit, nextMyColorCount);
+};
+
+export const getPaletteColorsForMode = (
+  paletteMode: PaletteMode,
+  customColorIds: readonly string[] = [],
+): BeadColor[] => {
+  if (paletteMode === 'mard-221') {
+    return mard221Colors;
+  }
+
+  if (paletteMode === 'mard-291') {
+    return mardColors;
+  }
+
+  if (customColorIds.length === 0) {
+    return [];
+  }
+
+  const selectedIds = new Set(customColorIds);
+  return mardColors.filter((color) => selectedIds.has(color.id));
+};

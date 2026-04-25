@@ -9,6 +9,7 @@ import { BeadColor, allBeadColors } from '../data/beadColors';
 import { colors, radius, typography, shadows, animation } from '../styles/designSystem';
 
 interface ColorPickerProps {
+  availableColors?: BeadColor[];
   colorCount?: number;  // 可选的颜色数量限制
   selectedColor: BeadColor | null;
   onSelectColor: (color: BeadColor) => void;
@@ -18,6 +19,7 @@ interface ColorPickerProps {
 
 const ColorPicker: React.FC<ColorPickerProps> = ({
   colorCount,
+  availableColors: inputAvailableColors,
   selectedColor,
   onSelectColor,
   onClose,
@@ -27,11 +29,14 @@ const ColorPicker: React.FC<ColorPickerProps> = ({
 
   // 使用统一色库，最多显示 colorCount 个颜色（如果指定了的话）
   const availableColors = useMemo(() => {
+    if (inputAvailableColors && inputAvailableColors.length > 0) {
+      return inputAvailableColors;
+    }
     if (colorCount && colorCount < allBeadColors.length) {
       return allBeadColors.slice(0, colorCount);
     }
     return allBeadColors;
-  }, [colorCount]);
+  }, [colorCount, inputAvailableColors]);
 
   // 过滤颜色
   const filteredColors = searchText
