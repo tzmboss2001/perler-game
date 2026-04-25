@@ -50,8 +50,10 @@ import {
   getColorIdTextStyle,
   getRenderScaleAnchorDelayMs,
   getSafeRenderMetricsBudget,
+  getMakingDesktopLayoutFlags,
   getSingleBoardCanvasMinHeight,
   getSingleBoardLayoutFlags,
+  getMakingDesktopSidebarLayout,
   getSingleBoardMobileOverviewLayout,
   getSingleBoardOverviewTitle,
   getTextOverlayTransitionTransform,
@@ -87,6 +89,7 @@ const SINGLE_BOARD_ONBOARDING_STORAGE_KEY =
   "making_single_board_onboarding_v1";
 const SINGLE_BOARD_MOBILE_OVERVIEW_WIDTH_STORAGE_KEY =
   "making_single_board_mobile_overview_width_v1";
+const MAKING_DESKTOP_SIDEBAR_STORAGE_KEY = "makingDesktopSidebarCollapsed";
 type CommunityMakingDraftPayload =
   | BeadPixelData
   | {
@@ -340,6 +343,8 @@ const MakingPage: React.FC = () => {
   const [boardStatusMap, setBoardStatusMap] = useState<BoardStatusMap>({});
   const [singleBoardOverviewCollapsed, setSingleBoardOverviewCollapsed] =
     useState(false);
+  const [makingDesktopSidebarCollapsed, setMakingDesktopSidebarCollapsed] =
+    useState(false);
   const [
     singleBoardMobileMiniMapExpanded,
     setSingleBoardMobileMiniMapExpanded,
@@ -388,6 +393,10 @@ const MakingPage: React.FC = () => {
   });
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+  const [pointerFine, setPointerFine] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(pointer: fine)").matches;
+  });
   const { isSingleBoardMobile, isSingleBoardDesktop } = useMemo(
     () =>
       getSingleBoardLayoutFlags({
@@ -395,6 +404,23 @@ const MakingPage: React.FC = () => {
         viewportWidth,
       }),
     [viewMode, viewportWidth],
+  );
+  const { useDesktopSidebarLayout } = useMemo(
+    () =>
+      getMakingDesktopLayoutFlags({
+        viewMode,
+        viewportWidth,
+        pointerFine,
+      }),
+    [pointerFine, viewMode, viewportWidth],
+  );
+  const desktopSidebarLayout = useMemo(
+    () =>
+      getMakingDesktopSidebarLayout({
+        viewportWidth,
+        collapsed: makingDesktopSidebarCollapsed,
+      }),
+    [makingDesktopSidebarCollapsed, viewportWidth],
   );
   const isIOSWebKit = useMemo(() => {
     if (typeof navigator === "undefined") return false;
@@ -404,17 +430,13 @@ const MakingPage: React.FC = () => {
     const isCriOS = /CriOS|FxiOS|EdgiOS/i.test(ua);
     return isiOS && isWebKit && !isCriOS;
   }, []);
-  const hasFinePointer = useMemo(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia("(pointer: fine)").matches;
-  }, []);
   const renderScaleAnchorDelayMs = useMemo(
     () =>
       getRenderScaleAnchorDelayMs({
-        hasFinePointer,
+        hasFinePointer: pointerFine,
         isIOSWebKit,
       }),
-    [hasFinePointer, isIOSWebKit],
+    [pointerFine, isIOSWebKit],
   );
 
   // 坐标提示框状态
@@ -520,6 +542,27 @@ const MakingPage: React.FC = () => {
     window.addEventListener("resize", updateViewport);
     updateViewport();
     return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mediaQueryList = window.matchMedia("(pointer: fine)");
+    const updatePointerFine = () => {
+      setPointerFine(mediaQueryList.matches);
+    };
+
+    updatePointerFine();
+
+    if (typeof mediaQueryList.addEventListener === "function") {
+      mediaQueryList.addEventListener("change", updatePointerFine);
+      return () =>
+        mediaQueryList.removeEventListener("change", updatePointerFine);
+    }
+
+    if (typeof mediaQueryList.addListener === "function") {
+      mediaQueryList.addListener(updatePointerFine);
+      return () => mediaQueryList.removeListener(updatePointerFine);
+    }
   }, []);
 
   const physicalBoardSize = useMemo(() => {
@@ -1983,6 +2026,12 @@ const MakingPage: React.FC = () => {
           setAutoAdvanceOnBoardDone(parsed.autoAdvanceOnBoardDone);
         }
       }
+      const desktopSidebarRaw = localStorage.getItem(
+        MAKING_DESKTOP_SIDEBAR_STORAGE_KEY,
+      );
+      if (desktopSidebarRaw === "1" || desktopSidebarRaw === "0") {
+        setMakingDesktopSidebarCollapsed(desktopSidebarRaw === "1");
+      }
     } catch (error) {
       console.warn("[MakingPage] 读取单板模式本地状态失败", error);
     }
@@ -2037,6 +2086,22 @@ const MakingPage: React.FC = () => {
     singleBoardOverviewCollapsed,
     singleBoardStorageKey,
     viewMode,
+  ]);
+
+  useEffect(() => {
+    if (!singleBoardHydrated || !useDesktopSidebarLayout) return;
+    try {
+      localStorage.setItem(
+        MAKING_DESKTOP_SIDEBAR_STORAGE_KEY,
+        makingDesktopSidebarCollapsed ? "1" : "0",
+      );
+    } catch (error) {
+      console.warn("[MakingPage] 保存桌面侧边栏折叠状态失败", error);
+    }
+  }, [
+    makingDesktopSidebarCollapsed,
+    singleBoardHydrated,
+    useDesktopSidebarLayout,
   ]);
 
   useEffect(() => {
@@ -3942,6 +4007,23 @@ const MakingPage: React.FC = () => {
       singleBoardAllDone,
     }),
   };
+  const singleBoardOverviewStyle: React.CSSProperties = {
+    ...styles.singleBoardOverview,
+    ...(useDesktopSidebarLayout
+      ? {
+          gap: makingDesktopSidebarCollapsed ? "2px" : "6px",
+          paddingTop: makingDesktopSidebarCollapsed ? "2px" : "4px",
+        }
+      : {}),
+  };
+  const previewSectionStyle: React.CSSProperties = {
+    ...styles.previewSection,
+    ...(useDesktopSidebarLayout
+      ? {
+          paddingRight: `${desktopSidebarLayout.width + 20}px`,
+        }
+      : {}),
+  };
   const canvasStageStyle: React.CSSProperties = {
     ...styles.canvasStage,
     width: `${safeRenderCanvasWidth}px`,
@@ -3963,7 +4045,7 @@ const MakingPage: React.FC = () => {
       </div>
 
       {/* 预览区 */}
-      <div style={styles.previewSection}>
+      <div style={previewSectionStyle}>
         {!(viewMode === "singleBoard" && singleBoardAllDone) && (
           <div style={modeSwitchBarStyle}>
             <button
@@ -3991,7 +4073,20 @@ const MakingPage: React.FC = () => {
         )}
 
         {viewMode === "singleBoard" && (
-          <div style={styles.singleBoardOverview}>
+          <div
+            style={singleBoardOverviewStyle}
+            data-making-desktop-sidebar-layout={
+              useDesktopSidebarLayout ? "1" : "0"
+            }
+            data-making-desktop-sidebar-collapsed={
+              useDesktopSidebarLayout
+                ? makingDesktopSidebarCollapsed
+                  ? "1"
+                  : "0"
+                : undefined
+            }
+          >
+            <div style={styles.singleBoardOverview}>
             {singleBoardAllDone ? (
               <div style={styles.singleBoardCompletionEntry}>
                 <div style={styles.singleBoardResumeEntryMeta}>
@@ -4343,6 +4438,7 @@ const MakingPage: React.FC = () => {
                         )}
                       </div>
                       {isSingleBoardDesktop ? (
+                        useDesktopSidebarLayout ? null : (
                         <div style={styles.singleBoardDesktopHeaderActions}>
                           {resumeBoardNumber &&
                             resumeBoardNumber !== activeBoardNumber && (
@@ -4380,6 +4476,7 @@ const MakingPage: React.FC = () => {
                               : "收起总览"}
                           </button>
                         </div>
+                        )
                       ) : (
                         <button
                           style={styles.singleBoardCollapseBtn}
@@ -4485,7 +4582,33 @@ const MakingPage: React.FC = () => {
                       </div>
                     )}
                     {!singleBoardOverviewCollapsed && (
-                      isSingleBoardDesktop ? (
+                      useDesktopSidebarLayout ? (
+                        <div style={styles.singleBoardDesktopWorkflowCard}>
+                          <div style={styles.singleBoardDesktopMetaRow}>
+                            <div style={styles.singleBoardDesktopWorkflowMeta}>
+                              <span style={styles.singleBoardSummaryText}>
+                                当前板 板{activeBoardNumber} / 共{" "}
+                                {singleBoardProgress.totalCount} 块
+                              </span>
+                            </div>
+                            <div style={styles.singleBoardDesktopActionRow}>
+                              <button
+                                style={{
+                                  ...styles.singleBoardMinorBtn,
+                                  ...styles.singleBoardDesktopMinorBtn,
+                                }}
+                                onClick={handleToggleBoardDone}
+                                disabled={!activeBoardRect}
+                              >
+                                {activeBoardRect &&
+                                boardStatusMap[activeBoardRect.boardNumber]
+                                  ? "取消完成"
+                                  : "标记本板完成"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : isSingleBoardDesktop ? (
                         <div style={styles.singleBoardDesktopDenseRow}>
                           <div style={styles.singleBoardDesktopWorkflowCard}>
                             <div style={styles.singleBoardDesktopMetaRow}>
@@ -4539,7 +4662,7 @@ const MakingPage: React.FC = () => {
                                   ...styles.singleBoardDesktopMiniMapCanvas,
                                   aspectRatio: beadData
                                     ? `${beadData.width} / ${beadData.height}`
-                                  : "1 / 1",
+                                    : "1 / 1",
                                 }}
                               />
                             </div>
@@ -4597,41 +4720,92 @@ const MakingPage: React.FC = () => {
                         </div>
                       )
                     )}
-                    {singleBoardOverviewCollapsed ? (
-                      <div
-                        style={{
-                          ...styles.singleBoardCompactNav,
-                          ...(isSingleBoardDesktop
-                            ? styles.singleBoardDesktopCompactNav
-                            : {}),
-                        }}
-                      >
-                        <button
-                          style={{
-                            ...styles.singleBoardCompactNavBtn,
-                            ...(isSingleBoardDesktop
-                              ? styles.singleBoardDesktopCompactNavBtn
-                              : {}),
-                          }}
-                          onClick={() => jumpToBoard(-1)}
-                          disabled={activeBoardNumber <= 1}
-                        >
-                          上一块板
-                        </button>
+                    {!useDesktopSidebarLayout &&
+                      (singleBoardOverviewCollapsed ? (
                         <div
                           style={{
-                            ...styles.singleBoardCompactNavChips,
+                            ...styles.singleBoardCompactNav,
                             ...(isSingleBoardDesktop
-                              ? styles.singleBoardDesktopCompactNavChips
+                              ? styles.singleBoardDesktopCompactNav
                               : {}),
                           }}
                         >
-                          {compactBoardNav.map((boardNumber) => {
-                            const isActive = boardNumber === activeBoardNumber;
-                            const isDone = Boolean(boardStatusMap[boardNumber]);
+                          <button
+                            style={{
+                              ...styles.singleBoardCompactNavBtn,
+                              ...(isSingleBoardDesktop
+                                ? styles.singleBoardDesktopCompactNavBtn
+                                : {}),
+                            }}
+                            onClick={() => jumpToBoard(-1)}
+                            disabled={activeBoardNumber <= 1}
+                          >
+                            上一块板
+                          </button>
+                          <div
+                            style={{
+                              ...styles.singleBoardCompactNavChips,
+                              ...(isSingleBoardDesktop
+                                ? styles.singleBoardDesktopCompactNavChips
+                                : {}),
+                            }}
+                          >
+                            {compactBoardNav.map((boardNumber) => {
+                              const isActive = boardNumber === activeBoardNumber;
+                              const isDone = Boolean(boardStatusMap[boardNumber]);
+                              return (
+                                <button
+                                  key={`compact-board-${boardNumber}`}
+                                  style={{
+                                    ...styles.singleBoardChip,
+                                    ...(isSingleBoardDesktop
+                                      ? styles.singleBoardDesktopChip
+                                      : {}),
+                                    ...(isActive
+                                      ? styles.singleBoardChipActive
+                                      : {}),
+                                    ...(isDone ? styles.singleBoardChipDone : {}),
+                                  }}
+                                  onClick={() =>
+                                    activateBoard(boardNumber, true)
+                                  }
+                                >
+                                  板{boardNumber}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <button
+                            style={{
+                              ...styles.singleBoardCompactNavBtn,
+                              ...(isSingleBoardDesktop
+                                ? styles.singleBoardDesktopCompactNavBtn
+                                : {}),
+                            }}
+                            onClick={() => jumpToBoard(1)}
+                            disabled={activeBoardNumber >= totalBoardCount}
+                          >
+                            下一块板
+                          </button>
+                        </div>
+                      ) : (
+                      <div
+                        style={{
+                          ...styles.singleBoardGrid,
+                          ...(isSingleBoardDesktop
+                            ? styles.singleBoardDesktopGrid
+                              : {}),
+                          }}
+                        >
+                          {boardRects.map((board) => {
+                            const isActive =
+                              board.boardNumber === activeBoardNumber;
+                            const isDone = Boolean(
+                              boardStatusMap[board.boardNumber],
+                            );
                             return (
                               <button
-                                key={`compact-board-${boardNumber}`}
+                                key={board.boardNumber}
                                 style={{
                                   ...styles.singleBoardChip,
                                   ...(isSingleBoardDesktop
@@ -4642,68 +4816,21 @@ const MakingPage: React.FC = () => {
                                     : {}),
                                   ...(isDone ? styles.singleBoardChipDone : {}),
                                 }}
-                                onClick={() => activateBoard(boardNumber, true)}
+                                onClick={() =>
+                                  activateBoard(board.boardNumber, true)
+                                }
                               >
-                                板{boardNumber}
+                                板{board.boardNumber}
                               </button>
                             );
                           })}
                         </div>
-                        <button
-                          style={{
-                            ...styles.singleBoardCompactNavBtn,
-                            ...(isSingleBoardDesktop
-                              ? styles.singleBoardDesktopCompactNavBtn
-                              : {}),
-                          }}
-                          onClick={() => jumpToBoard(1)}
-                          disabled={activeBoardNumber >= totalBoardCount}
-                        >
-                          下一块板
-                        </button>
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          ...styles.singleBoardGrid,
-                          ...(isSingleBoardDesktop
-                            ? styles.singleBoardDesktopGrid
-                            : {}),
-                        }}
-                      >
-                        {boardRects.map((board) => {
-                          const isActive =
-                            board.boardNumber === activeBoardNumber;
-                          const isDone = Boolean(
-                            boardStatusMap[board.boardNumber],
-                          );
-                          return (
-                            <button
-                              key={board.boardNumber}
-                              style={{
-                                ...styles.singleBoardChip,
-                                ...(isSingleBoardDesktop
-                                  ? styles.singleBoardDesktopChip
-                                  : {}),
-                                ...(isActive
-                                  ? styles.singleBoardChipActive
-                                  : {}),
-                                ...(isDone ? styles.singleBoardChipDone : {}),
-                              }}
-                              onClick={() =>
-                                activateBoard(board.boardNumber, true)
-                              }
-                            >
-                              板{board.boardNumber}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                      ))}
                   </>
                 )}
               </>
             )}
+          </div>
           </div>
         )}
 
@@ -4880,7 +5007,8 @@ const MakingPage: React.FC = () => {
                         : `完成板${activeBoardNumber}`}
                 </button>
               )}
-              {!(viewMode === "singleBoard" && singleBoardAllDone) && (
+              {!(viewMode === "singleBoard" && singleBoardAllDone) &&
+                !(useDesktopSidebarLayout && viewMode === "singleBoard") && (
                 <button
                   style={
                     viewMode === "singleBoard"
@@ -4900,29 +5028,31 @@ const MakingPage: React.FC = () => {
                   )}
                 </button>
               )}
-              <button
-                style={
-                  viewMode === "singleBoard"
-                    ? {
-                        ...singleBoardToolbarBtnStyle,
-                        ...(singleBoardAllDone
-                          ? styles.singleBoardToolbarBtnCompact
-                          : {}),
-                      }
-                    : styles.miniBtn
-                }
-                onClick={() => setShowSettings(!showSettings)}
-                title="设置"
-              >
-                {viewMode === "singleBoard" ? (
-                  <>
-                    <Gear size={13} />
-                    辅助
-                  </>
-                ) : (
-                  <Gear size={14} />
-                )}
-              </button>
+              {!(useDesktopSidebarLayout && viewMode === "singleBoard") && (
+                <button
+                  style={
+                    viewMode === "singleBoard"
+                      ? {
+                          ...singleBoardToolbarBtnStyle,
+                          ...(singleBoardAllDone
+                            ? styles.singleBoardToolbarBtnCompact
+                            : {}),
+                        }
+                      : styles.miniBtn
+                  }
+                  onClick={() => setShowSettings(!showSettings)}
+                  title="设置"
+                >
+                  {viewMode === "singleBoard" ? (
+                    <>
+                      <Gear size={13} />
+                      辅助
+                    </>
+                  ) : (
+                    <Gear size={14} />
+                  )}
+                </button>
+              )}
               {viewMode === "singleBoard" &&
                 selection.type === "color" &&
                 selectedBeadColor && (
@@ -5161,12 +5291,409 @@ const MakingPage: React.FC = () => {
             />
           </div>
         </div>
+          {useDesktopSidebarLayout && (
+            <aside
+              style={{
+                ...styles.makingDesktopSidebar,
+                width: `${desktopSidebarLayout.width}px`,
+              }}
+              data-making-desktop-sidebar="1"
+            >
+              {makingDesktopSidebarCollapsed ? (
+                <div style={styles.makingDesktopSidebarRail}>
+                  <button
+                    style={styles.makingDesktopSidebarRailBtn}
+                    onClick={() => setMakingDesktopSidebarCollapsed(false)}
+                  >
+                    展开工具
+                  </button>
+                </div>
+              ) : (
+                <div style={styles.makingDesktopSidebarPanel}>
+                  <div style={styles.makingDesktopSidebarHeader}>
+                    <span style={styles.makingDesktopSidebarTitle}>
+                      桌面工具区
+                    </span>
+                    <button
+                      style={styles.makingDesktopSidebarToggle}
+                      onClick={() => setMakingDesktopSidebarCollapsed(true)}
+                    >
+                      收起
+                    </button>
+                  </div>
+                  <div
+                    style={{
+                      ...styles.makingDesktopSidebarContent,
+                      padding: `${desktopSidebarLayout.contentPadding}px`,
+                    }}
+                  >
+                    <div
+                      style={styles.makingDesktopSidebarSlot}
+                      data-making-desktop-sidebar-slot="1"
+                    >
+                      <div style={styles.makingDesktopSidebarSlotHeader}>
+                        <div style={styles.makingDesktopSidebarSlotMeta}>
+                          <span style={styles.makingDesktopSidebarSlotTitle}>
+                            整图总览
+                          </span>
+                          <span style={styles.makingDesktopSidebarSlotText}>
+                            当前板 板{activeBoardNumber} / 共{" "}
+                            {singleBoardProgress.totalCount} 块
+                          </span>
+                        </div>
+                        <span style={styles.makingDesktopSidebarSlotBadge}>
+                          {singleBoardOverviewCollapsed ? "精简切换" : "完整切换"}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          ...styles.singleBoardMiniMapCard,
+                          ...styles.singleBoardDesktopMiniMapCard,
+                          width: "100%",
+                          minWidth: 0,
+                        }}
+                        title="整图总览"
+                      >
+                        <div style={styles.singleBoardMiniMapFrame}>
+                          <canvas
+                            ref={singleBoardMiniMapCanvasRef}
+                            onClick={(e) => handleOverviewCanvasClick(e)}
+                            style={{
+                              ...styles.singleBoardMiniMapCanvas,
+                              ...styles.singleBoardDesktopMiniMapCanvas,
+                              aspectRatio: beadData
+                                ? `${beadData.width} / ${beadData.height}`
+                                : "1 / 1",
+                            }}
+                          />
+                        </div>
+                        <div style={styles.singleBoardMiniMapHint}>
+                          点击总览可直接跳转
+                        </div>
+                      </div>
+
+                      {singleBoardOverviewCollapsed ? (
+                        <div
+                          style={{
+                            ...styles.singleBoardCompactNav,
+                            ...(isSingleBoardDesktop
+                              ? styles.singleBoardDesktopCompactNav
+                              : {}),
+                            flexWrap: "nowrap",
+                          }}
+                        >
+                          <button
+                            style={{
+                              ...styles.singleBoardCompactNavBtn,
+                              ...(isSingleBoardDesktop
+                                ? styles.singleBoardDesktopCompactNavBtn
+                                : {}),
+                            }}
+                            onClick={() => jumpToBoard(-1)}
+                            disabled={activeBoardNumber <= 1}
+                          >
+                            上一板
+                          </button>
+                          <div
+                            style={{
+                              ...styles.singleBoardCompactNavChips,
+                              ...(isSingleBoardDesktop
+                                ? styles.singleBoardDesktopCompactNavChips
+                                : {}),
+                            }}
+                          >
+                            {compactBoardNav.map((boardNumber) => {
+                              const isActive = boardNumber === activeBoardNumber;
+                              const isDone = Boolean(boardStatusMap[boardNumber]);
+                              return (
+                                <button
+                                  key={`sidebar-compact-board-${boardNumber}`}
+                                  style={{
+                                    ...styles.singleBoardChip,
+                                    ...(isSingleBoardDesktop
+                                      ? styles.singleBoardDesktopChip
+                                      : {}),
+                                    ...(isActive
+                                      ? styles.singleBoardChipActive
+                                      : {}),
+                                    ...(isDone ? styles.singleBoardChipDone : {}),
+                                  }}
+                                  onClick={() =>
+                                    activateBoard(boardNumber, true)
+                                  }
+                                >
+                                  板{boardNumber}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <button
+                            style={{
+                              ...styles.singleBoardCompactNavBtn,
+                              ...(isSingleBoardDesktop
+                                ? styles.singleBoardDesktopCompactNavBtn
+                                : {}),
+                            }}
+                            onClick={() => jumpToBoard(1)}
+                            disabled={activeBoardNumber >= totalBoardCount}
+                          >
+                            下一板
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            ...styles.singleBoardGrid,
+                            ...(isSingleBoardDesktop
+                              ? styles.singleBoardDesktopGrid
+                              : {}),
+                          }}
+                        >
+                          {boardRects.map((board) => {
+                            const isActive =
+                              board.boardNumber === activeBoardNumber;
+                            const isDone = Boolean(
+                              boardStatusMap[board.boardNumber],
+                            );
+                            return (
+                              <button
+                                key={`sidebar-board-${board.boardNumber}`}
+                                style={{
+                                  ...styles.singleBoardChip,
+                                  ...(isSingleBoardDesktop
+                                    ? styles.singleBoardDesktopChip
+                                    : {}),
+                                  ...(isActive
+                                    ? styles.singleBoardChipActive
+                                    : {}),
+                                  ...(isDone ? styles.singleBoardChipDone : {}),
+                                }}
+                                onClick={() =>
+                                  activateBoard(board.boardNumber, true)
+                                }
+                              >
+                                板{board.boardNumber}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <div style={styles.makingDesktopSidebarBoardActions}>
+                        <button
+                          style={styles.makingDesktopSidebarBoardBtn}
+                          onClick={() => jumpToBoard(-1)}
+                          disabled={activeBoardNumber <= 1}
+                        >
+                          上一板
+                        </button>
+                        <button
+                          style={styles.makingDesktopSidebarBoardBtn}
+                          onClick={() => jumpToBoard(1)}
+                          disabled={activeBoardNumber >= totalBoardCount}
+                        >
+                          下一板
+                        </button>
+                      </div>
+                      {pendingBoardNumbers.length > 0 && (
+                        <div style={styles.makingDesktopSidebarPendingRow}>
+                          <span style={styles.makingDesktopSidebarPendingLabel}>
+                            未完成：
+                          </span>
+                          {pendingBoardNumbers.slice(0, 4).map((boardNumber) => (
+                            <button
+                              key={`sidebar-pending-${boardNumber}`}
+                              style={{
+                                ...styles.singleBoardPendingChip,
+                                ...styles.singleBoardDesktopPendingChip,
+                              }}
+                              onClick={() => activateBoard(boardNumber, true)}
+                            >
+                              板{boardNumber}
+                            </button>
+                          ))}
+                          {pendingBoardNumbers.length > 4 && (
+                            <span style={styles.singleBoardPendingMore}>
+                              +{pendingBoardNumbers.length - 4}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div style={styles.makingDesktopSidebarSection}>
+                      <div style={styles.makingDesktopSidebarSectionHeader}>
+                        <div style={styles.makingDesktopSidebarSectionMeta}>
+                          <span style={styles.makingDesktopSidebarSlotTitle}>
+                            常用工具
+                          </span>
+                          <span style={styles.makingDesktopSidebarSlotText}>
+                            图纸导出、视觉辅助和常用开关
+                          </span>
+                        </div>
+                        {selection.type === "color" && selectedBeadColor && (
+                          <button
+                            style={styles.makingDesktopSidebarMinorBtn}
+                            onClick={() => setShowReplaceModal(true)}
+                          >
+                            换色
+                          </button>
+                        )}
+                      </div>
+                      <div style={styles.makingDesktopSidebarActionGrid}>
+                        <button
+                          style={styles.makingDesktopSidebarActionBtn}
+                          onClick={handleOpenExport}
+                        >
+                          图纸
+                        </button>
+                        <button
+                          style={styles.makingDesktopSidebarActionBtn}
+                          onClick={resetCurrentView}
+                          disabled={!activeBoardRect}
+                        >
+                          复位视图
+                        </button>
+                        <button
+                          style={styles.makingDesktopSidebarActionBtn}
+                          onClick={() => {
+                            setShowSettings(false);
+                            setShowVisionAssist(true);
+                          }}
+                        >
+                          视觉辅助
+                        </button>
+                      </div>
+                      <div style={styles.makingDesktopSidebarToggleList}>
+                        <div style={styles.makingDesktopSidebarToggleRow}>
+                          <span style={styles.makingDesktopSidebarToggleLabel}>
+                            显示色号
+                          </span>
+                          <button
+                            style={{
+                              ...styles.toggleBtn,
+                              ...(showColorId ? styles.toggleBtnActive : {}),
+                            }}
+                            onClick={() => setShowColorId(!showColorId)}
+                          >
+                            {showColorId ? (
+                              <Eye size={16} />
+                            ) : (
+                              <EyeSlash size={16} />
+                            )}
+                          </button>
+                        </div>
+                        <div style={styles.makingDesktopSidebarToggleRow}>
+                          <span style={styles.makingDesktopSidebarToggleLabel}>
+                            屏幕常亮
+                          </span>
+                          <button
+                            style={{
+                              ...styles.toggleBtn,
+                              ...(wakeLockActive ? styles.toggleBtnActive : {}),
+                            }}
+                            onClick={toggleWakeLock}
+                          >
+                            {wakeLockActive ? (
+                              <Lightning size={16} weight="fill" />
+                            ) : (
+                              <LightningSlash size={16} />
+                            )}
+                          </button>
+                        </div>
+                        <div style={styles.makingDesktopSidebarToggleRow}>
+                          <span style={styles.makingDesktopSidebarToggleLabel}>
+                            语音播报
+                          </span>
+                          <button
+                            style={{
+                              ...styles.toggleBtn,
+                              ...(voiceEnabled ? styles.toggleBtnActive : {}),
+                            }}
+                            onClick={() => {
+                              if (!canSpeak()) {
+                                toast.info("您的浏览器不支持语音功能");
+                                return;
+                              }
+                              setVoiceEnabled(!voiceEnabled);
+                              toast.info(
+                                voiceEnabled
+                                  ? "语音提示已关闭"
+                                  : "语音提示已开启",
+                              );
+                            }}
+                          >
+                            {voiceEnabled ? (
+                              <SpeakerHigh size={16} />
+                            ) : (
+                              <SpeakerSlash size={16} />
+                            )}
+                          </button>
+                        </div>
+                        <div style={styles.makingDesktopSidebarToggleRow}>
+                          <span style={styles.makingDesktopSidebarToggleLabel}>
+                            高级制作辅助
+                          </span>
+                          <button
+                            style={{
+                              ...styles.toggleBtn,
+                              ...(assistPackEnabled
+                                ? styles.toggleBtnActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setAssistPackEnabled(!assistPackEnabled)
+                            }
+                          >
+                            {assistPackEnabled ? (
+                              <CheckCircle size={16} weight="fill" />
+                            ) : (
+                              <CheckCircle size={16} />
+                            )}
+                          </button>
+                        </div>
+                        <div style={styles.makingDesktopSidebarToggleRow}>
+                          <span style={styles.makingDesktopSidebarToggleLabel}>
+                            自动切下一板
+                          </span>
+                          <button
+                            style={{
+                              ...styles.toggleBtn,
+                              ...(autoAdvanceOnBoardDone
+                                ? styles.toggleBtnActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setAutoAdvanceOnBoardDone((prev) => !prev)
+                            }
+                          >
+                            {autoAdvanceOnBoardDone ? (
+                              <CheckCircle size={16} weight="fill" />
+                            ) : (
+                              <CheckCircle size={16} />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={styles.makingDesktopSidebarSlot}>
+                      <span style={styles.makingDesktopSidebarSlotTitle}>
+                        更多设置
+                      </span>
+                      <span style={styles.makingDesktopSidebarSlotText}>
+                        如果需要完整设置面板，仍可继续使用弹出面板。
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </aside>
+          )}
       </div>
 
       {/* 底部操作栏 */}
       {viewMode !== "singleBoard" && <BannerAd placement="making_bottom" />}
 
-      {!isSingleBoardMobile &&
+      {!useDesktopSidebarLayout &&
+        !isSingleBoardMobile &&
         (!isTraditionalMobile || selection.type === "color") && (
           <div style={styles.bottomBar}>
             {selection.type === null ? (
@@ -5702,6 +6229,249 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     position: "relative" as const,
     minHeight: 0,
+  },
+
+  makingDesktopSidebar: {
+    position: "absolute" as const,
+    top: "10px",
+    right: "10px",
+    bottom: "12px",
+    display: "flex",
+    flexDirection: "column" as const,
+    alignSelf: "stretch",
+    flexShrink: 0,
+    minHeight: 0,
+    zIndex: 4,
+    borderLeft: `1px solid ${makingCandy.border}`,
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,246,239,0.94) 100%)",
+    boxShadow: "inset 1px 0 0 rgba(255,255,255,0.6)",
+    borderRadius: "18px",
+    overflow: "hidden" as const,
+  },
+
+  makingDesktopSidebarPanel: {
+    display: "flex",
+    flexDirection: "column" as const,
+    minHeight: 0,
+    height: "100%",
+  },
+
+  makingDesktopSidebarHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    padding: "10px 12px 8px",
+    borderBottom: `1px solid rgba(96,165,250,0.12)`,
+  },
+
+  makingDesktopSidebarTitle: {
+    fontSize: "12px",
+    fontWeight: 800,
+    color: makingCandy.text,
+  },
+
+  makingDesktopSidebarToggle: {
+    height: "24px",
+    padding: "0 10px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.9)",
+    color: makingCandy.textSoft,
+    fontSize: "10px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  makingDesktopSidebarContent: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "12px",
+    minHeight: 0,
+    overflowY: "auto" as const,
+  },
+
+  makingDesktopSidebarSlot: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "6px",
+    padding: "12px",
+    borderRadius: radius.xl,
+    border: `1px dashed rgba(96,165,250,0.24)`,
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.95), rgba(244,114,182,0.06))",
+  },
+
+  makingDesktopSidebarSlotHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+
+  makingDesktopSidebarSlotMeta: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "2px",
+    minWidth: 0,
+  },
+
+  makingDesktopSidebarSlotTitle: {
+    fontSize: "11px",
+    fontWeight: 800,
+    color: makingCandy.text,
+  },
+
+  makingDesktopSidebarSlotText: {
+    fontSize: "10px",
+    lineHeight: 1.5,
+    color: makingCandy.textSoft,
+  },
+
+  makingDesktopSidebarSlotBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "22px",
+    padding: "0 8px",
+    borderRadius: radius.full,
+    border: `1px solid rgba(96,165,250,0.22)`,
+    background: "rgba(255,255,255,0.86)",
+    color: makingCandy.textSoft,
+    fontSize: "9px",
+    fontWeight: 800,
+    flexShrink: 0,
+  },
+
+  makingDesktopSidebarBoardActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
+
+  makingDesktopSidebarBoardBtn: {
+    flex: 1,
+    height: "28px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.92)",
+    color: makingCandy.text,
+    fontSize: "11px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  makingDesktopSidebarPendingRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    flexWrap: "wrap" as const,
+  },
+
+  makingDesktopSidebarPendingLabel: {
+    fontSize: "10px",
+    fontWeight: 700,
+    color: makingCandy.textSoft,
+  },
+
+  makingDesktopSidebarSection: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "10px",
+    padding: "12px",
+    borderRadius: radius.xl,
+    border: `1px solid rgba(96,165,250,0.16)`,
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(125,211,252,0.08))",
+  },
+
+  makingDesktopSidebarSectionHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+
+  makingDesktopSidebarSectionMeta: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "2px",
+    minWidth: 0,
+  },
+
+  makingDesktopSidebarMinorBtn: {
+    height: "24px",
+    padding: "0 10px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.9)",
+    color: makingCandy.textSoft,
+    fontSize: "10px",
+    fontWeight: 700,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  makingDesktopSidebarActionGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "8px",
+  },
+
+  makingDesktopSidebarActionBtn: {
+    height: "30px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.18), rgba(244,114,182,0.14))",
+    color: makingCandy.text,
+    fontSize: "11px",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+
+  makingDesktopSidebarToggleList: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "8px",
+  },
+
+  makingDesktopSidebarToggleRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+
+  makingDesktopSidebarToggleLabel: {
+    fontSize: "11px",
+    fontWeight: 700,
+    color: makingCandy.text,
+  },
+
+  makingDesktopSidebarRail: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    paddingTop: "12px",
+    height: "100%",
+  },
+
+  makingDesktopSidebarRailBtn: {
+    writingMode: "vertical-rl" as const,
+    textOrientation: "mixed" as const,
+    height: "88px",
+    minWidth: "24px",
+    padding: "10px 0",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.96), rgba(125,211,252,0.18))",
+    color: makingCandy.text,
+    fontSize: "10px",
+    fontWeight: 800,
+    cursor: "pointer",
   },
 
   modeSwitchBar: {

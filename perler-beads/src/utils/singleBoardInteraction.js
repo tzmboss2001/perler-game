@@ -23,6 +23,45 @@ export function getSingleBoardLayoutFlags({ viewMode, viewportWidth }) {
 /**
  * @param {{
  *   viewMode: string;
+ *   viewportWidth: number;
+ *   pointerFine: boolean;
+ * }} input
+ */
+export function getMakingDesktopLayoutFlags({
+  viewMode,
+  viewportWidth,
+  pointerFine,
+}) {
+  const { isSingleBoardMobile, isSingleBoardDesktop } =
+    getSingleBoardLayoutFlags({
+      viewMode,
+      viewportWidth,
+    });
+  return {
+    isSingleBoardMobile,
+    isSingleBoardDesktop,
+    useDesktopSidebarLayout: Boolean(
+      isSingleBoardDesktop && pointerFine && viewportWidth >= 1280,
+    ),
+  };
+}
+
+/**
+ * @param {{
+ *   viewportWidth: number;
+ *   collapsed: boolean;
+ * }} input
+ */
+export function getMakingDesktopSidebarLayout({ viewportWidth, collapsed }) {
+  return {
+    width: collapsed ? 40 : viewportWidth >= 1600 ? 280 : 264,
+    contentPadding: collapsed ? 0 : 12,
+  };
+}
+
+/**
+ * @param {{
+ *   viewMode: string;
  *   isSingleBoardMobile: boolean;
  *   isSingleBoardDesktop: boolean;
  *   singleBoardAllDone: boolean;

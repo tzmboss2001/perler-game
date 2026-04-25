@@ -4,6 +4,8 @@ import {
   buildCompletedSingleBoardOnboardingState,
   clampSingleBoardMobileOverviewOffset,
   clampSingleBoardMobileOverviewWidth,
+  getMakingDesktopLayoutFlags,
+  getMakingDesktopSidebarLayout,
   getTextOverlayTransitionTransform,
   getTextOverlayVisualState,
   getSafeRenderMetricsBudget,
@@ -46,6 +48,102 @@ test("single-board layout flags distinguish desktop from mobile", () => {
     {
       isSingleBoardMobile: true,
       isSingleBoardDesktop: false,
+    },
+  );
+});
+
+test("making desktop layout flags enable sidebar only on wide fine-pointer single-board view", () => {
+  assert.deepEqual(
+    getMakingDesktopLayoutFlags({
+      viewMode: "singleBoard",
+      viewportWidth: 1440,
+      pointerFine: true,
+    }),
+    {
+      isSingleBoardMobile: false,
+      isSingleBoardDesktop: true,
+      useDesktopSidebarLayout: true,
+    },
+  );
+  assert.deepEqual(
+    getMakingDesktopLayoutFlags({
+      viewMode: "singleBoard",
+      viewportWidth: 1100,
+      pointerFine: true,
+    }),
+    {
+      isSingleBoardMobile: false,
+      isSingleBoardDesktop: true,
+      useDesktopSidebarLayout: false,
+    },
+  );
+  assert.deepEqual(
+    getMakingDesktopLayoutFlags({
+      viewMode: "singleBoard",
+      viewportWidth: 1280,
+      pointerFine: true,
+    }),
+    {
+      isSingleBoardMobile: false,
+      isSingleBoardDesktop: true,
+      useDesktopSidebarLayout: true,
+    },
+  );
+  assert.deepEqual(
+    getMakingDesktopLayoutFlags({
+      viewMode: "singleBoard",
+      viewportWidth: 1440,
+      pointerFine: false,
+    }),
+    {
+      isSingleBoardMobile: false,
+      isSingleBoardDesktop: true,
+      useDesktopSidebarLayout: false,
+    },
+  );
+  assert.deepEqual(
+    getMakingDesktopLayoutFlags({
+      viewMode: "traditional",
+      viewportWidth: 1440,
+      pointerFine: true,
+    }),
+    {
+      isSingleBoardMobile: false,
+      isSingleBoardDesktop: false,
+      useDesktopSidebarLayout: false,
+    },
+  );
+});
+
+test("making desktop sidebar layout stays compact when collapsed", () => {
+  assert.deepEqual(
+    getMakingDesktopSidebarLayout({
+      viewportWidth: 1440,
+      collapsed: false,
+    }),
+    {
+      width: 264,
+      contentPadding: 12,
+    },
+  );
+  assert.deepEqual(
+    getMakingDesktopSidebarLayout({
+      viewportWidth: 1600,
+      collapsed: false,
+    }),
+    {
+      width: 280,
+      contentPadding: 12,
+    },
+  );
+  assert.deepEqual(
+    getMakingDesktopSidebarLayout({
+      viewportWidth: 1440,
+      collapsed: true,
+    }),
+    {
+      width: 40,
+      contentPadding: 0,
     },
   );
 });
