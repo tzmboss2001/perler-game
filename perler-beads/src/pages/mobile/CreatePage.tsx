@@ -1,5 +1,5 @@
 ﻿import React, { useRef, useState } from 'react';
-import { Camera, Image, ArrowLeft, SpinnerGap } from '@phosphor-icons/react';
+import { Camera, Image, ArrowLeft, SpinnerGap, GridFour } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { colors, radius, typography, shadows, animation, mixins } from '../../styles/designSystem';
 import { defaultColorCount } from '../../data/beadColors';
@@ -115,6 +115,10 @@ const CreatePage: React.FC = () => {
     fileInputRef.current.removeAttribute('capture');
   };
 
+  const handleImportPatternClick = () => {
+    navigate('/mobile/import-pattern');
+  };
+
   const handleHeaderBack = () => {
     if (rawImage && croppedImage) {
       setCroppedImage(null);
@@ -171,6 +175,16 @@ const CreatePage: React.FC = () => {
               <p style={styles.uploadHint}>支持 JPG、PNG，{uploadLimitMb}MB 内快速导入，超大图会自动优化后继续</p>
             </div>
 
+            <button style={styles.importPatternCard} onClick={handleImportPatternClick}>
+              <div style={styles.importPatternIconBox}>
+                <GridFour size={24} weight="duotone" />
+              </div>
+              <div style={styles.importPatternBody}>
+                <span style={styles.importPatternTitle}>导入现成图纸</span>
+                <span style={styles.importPatternHint}>上传别人家的拼豆图纸截图或预览图，识别后直接进入编辑器校对</span>
+              </div>
+            </button>
+
             <button style={styles.cameraBtn} onClick={handleCameraClick}>
               <Camera size={22} weight="fill" />
               <span>拍照</span>
@@ -179,7 +193,7 @@ const CreatePage: React.FC = () => {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png"
+              accept="image/jpeg,image/png,image/webp"
               style={{ display: 'none' }}
               onChange={handleFileSelect}
             />
@@ -328,6 +342,55 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     textAlign: 'center',
     lineHeight: 1.5,
+  },
+
+  importPatternCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 14,
+    width: '100%',
+    padding: '14px 16px',
+    background: colors.bg.card,
+    border: `1px solid ${colors.border.soft}`,
+    borderRadius: radius.card,
+    color: colors.text.primary,
+    cursor: 'pointer',
+    boxShadow: shadows.sm,
+    transition: animation.transition.fast,
+  },
+
+  importPatternIconBox: {
+    width: 52,
+    height: 52,
+    minWidth: 52,
+    borderRadius: 16,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: colors.bead.yellow,
+    background: `${colors.bead.yellow}18`,
+  },
+
+  importPatternBody: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 4,
+    textAlign: 'left',
+  },
+
+  importPatternTitle: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.semibold,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.text.primary,
+  },
+
+  importPatternHint: {
+    fontSize: typography.fontSize.xs,
+    lineHeight: 1.5,
+    fontFamily: typography.fontFamilyAlt,
+    color: colors.text.secondary,
   },
 
   cameraBtn: {

@@ -7,6 +7,7 @@ const MobileLayout = lazy(() => import('../pages/mobile/MobileLayout'));
 const HomePage = lazy(() => import('../pages/mobile/HomePage'));
 const CreatePage = lazy(() => import('../pages/mobile/CreatePage'));
 const EditorPage = lazy(() => import('../pages/mobile/EditorPage'));
+const ImportPatternPage = lazy(() => import('../pages/mobile/ImportPatternPage'));
 const ProfilePage = lazy(() => import('../pages/mobile/ProfilePage'));
 const LoginPage = lazy(() => import('../pages/mobile/LoginPage'));
 const SettingsPage = lazy(() => import('../pages/mobile/SettingsPage'));
@@ -84,6 +85,7 @@ const AppRouter: React.FC = () => {
 
           {/* Editor page（独立页面，不带底部导航） */}
           <Route path="/mobile/editor" element={<EditorPage />} />
+          <Route path="/mobile/import-pattern" element={<ImportPatternPage />} />
 
           {/* Making page（制作辅助模式，独立页面） */}
           <Route path="/mobile/making" element={<MakingPage />} />

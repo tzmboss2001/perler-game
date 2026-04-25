@@ -16,6 +16,7 @@ interface InteractiveCanvasProps {
   currentColor: BeadColor | null;
   isEditMode: boolean; // 鏄惁澶勪簬缂栬緫妯″紡
   highlightedColorId: string | null; // 楂樹寒鏄剧ず鐨勯鑹睮D
+  reviewHighlightedIndices?: number[];
   onBeadClick: (x: number, y: number) => void;
   onBeadDrag: (x: number, y: number) => void;
   onDragEnd: () => void;
@@ -45,6 +46,7 @@ export interface InteractiveCanvasHandle {
   fitToViewport: () => void;
   resetToActualSize: () => void;
   setZoomPercent: (value: number) => void;
+  focusCell: (index: number) => void;
 }
 
 const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveCanvasProps>(({
@@ -54,6 +56,7 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
   currentColor,
   isEditMode,
   highlightedColorId,
+  reviewHighlightedIndices = [],
   onBeadClick,
   onBeadDrag,
   onDragEnd,
@@ -180,13 +183,36 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
     setScale(clampScale(value / 100));
   }, [clampScale]);
 
+  const focusCell = useCallback((index: number) => {
+    if (!containerRef.current || !Number.isInteger(index) || index < 0 || index >= beadData.beads.length) {
+      return;
+    }
+
+    const { fitScale, maxScale } = getScaleBounds();
+    const targetScale = Math.min(maxScale, Math.max(scale, fitScale * 1.6));
+    const targetX = index % beadData.width;
+    const targetY = Math.floor(index / beadData.width);
+    const nextScaledCellSize = Math.max(0.5, cellSize * targetScale);
+    const nextCanvasWidth = beadData.width * nextScaledCellSize;
+    const nextCanvasHeight = beadData.height * nextScaledCellSize;
+    const cellCenterX = (targetX + 0.5) * nextScaledCellSize;
+    const cellCenterY = (targetY + 0.5) * nextScaledCellSize;
+
+    setScale(targetScale);
+    setOffset({
+      x: nextCanvasWidth / 2 - cellCenterX,
+      y: nextCanvasHeight / 2 - cellCenterY,
+    });
+  }, [beadData.beads.length, beadData.height, beadData.width, cellSize, getScaleBounds, scale]);
+
   useImperativeHandle(ref, () => ({
     zoomOut,
     zoomIn,
     fitToViewport,
     resetToActualSize,
     setZoomPercent,
-  }), [fitToViewport, resetToActualSize, setZoomPercent, zoomIn, zoomOut]);
+    focusCell,
+  }), [fitToViewport, focusCell, resetToActualSize, setZoomPercent, zoomIn, zoomOut]);
 
   const syncScaleToViewport = useCallback((options?: { forceFit?: boolean; patternChanged?: boolean }) => {
     if (!beadData || !containerRef.current) return;
@@ -410,6 +436,25 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
             }
           }
         }
+      } else if (reviewHighlightedIndices.length > 0) {
+        const reviewSet = new Set(reviewHighlightedIndices);
+        reviewSet.forEach((index) => {
+          const x = index % beadData.width;
+          const y = Math.floor(index / beadData.width);
+          const px = x * scaledCellSize;
+          const py = y * scaledCellSize;
+
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 107, 107, 0.96)';
+          ctx.lineWidth = Math.max(2, scale * 1.1);
+          ctx.setLineDash([4, 2]);
+          ctx.strokeRect(px + 1.5, py + 1.5, Math.max(2, scaledCellSize - 3), Math.max(2, scaledCellSize - 3));
+          ctx.setLineDash([]);
+          ctx.fillStyle = 'rgba(255, 107, 107, 0.88)';
+          const markerSize = Math.max(4, Math.min(10, scaledCellSize * 0.28));
+          ctx.fillRect(px + 2, py + 2, markerSize, markerSize);
+          ctx.restore();
+        });
       } else if (highlightedColorId) {
         // 鏅€氭ā寮忕殑楂樹寒鏁堟灉
         // 閬嶅巻鎵€鏈夌彔瀛愶紝涓哄尮閰嶇殑棰滆壊缁樺埗楂樹寒杈规
@@ -429,7 +474,7 @@ const InteractiveCanvas = React.forwardRef<InteractiveCanvasHandle, InteractiveC
         }
       }
     }
-  }, [beadData, cellSize, scale, scaledCellSize, highlightedColorId, isBackgroundMode, bgModeHighlightedIndices, bgModeExcludedIndices, bgModeRecoverableIndices, bgCandidateOnly, pixelRatio, showMajorGrid]);
+  }, [beadData, cellSize, scale, scaledCellSize, highlightedColorId, reviewHighlightedIndices, isBackgroundMode, bgModeHighlightedIndices, bgModeExcludedIndices, bgModeRecoverableIndices, bgCandidateOnly, pixelRatio, showMajorGrid]);
 
   // 鑾峰彇Canvas鐩稿鍧愭爣锛堣€冭檻缂╂斁锛?
   const getCanvasCoords = useCallback((clientX: number, clientY: number) => {
@@ -906,4 +951,3 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 export default InteractiveCanvas;
-

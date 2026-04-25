@@ -42,6 +42,12 @@ import { localStorageService } from '../../services/localStorageService';
 
 import { myColorsService } from '../../services/myColorsService';
 import { applyTransparentIndices, suggestQuickBackgroundRemoval } from '../../services/backgroundRemovalService';
+import {
+  collectLowConfidenceIndices,
+  getNextLowConfidenceReviewIndex,
+  mergeImportReviewDraftFields,
+  summarizeLowConfidenceCells,
+} from '../../utils/patternImport.js';
 
 
 
@@ -70,6 +76,8 @@ interface EditorResumeDraft extends EditorStateData {
   vibrancyPreference?: number;
   isHorizontallyMirrored?: boolean;
   pendingAction?: 'startMaking';
+  importSource?: 'external-pattern-import';
+  lowConfidenceCells?: Array<{ row: number; col: number; reason?: string }>;
 }
 
 type RemovedBackgroundCell = {
@@ -524,6 +532,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const savedScrollPosition = useRef<number>(0);
 
   const initializedImageDataRef = useRef<string | undefined>(undefined);
+  const restoredImportNoticeRef = useRef(false);
 
 
 
@@ -571,6 +580,32 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const { imageData, colorCount: initialColorCount, gridWidth: initialGridWidth, customColorIds } = mergedStateData;
 
+  const importReviewSummary = React.useMemo(() => summarizeLowConfidenceCells(pendingResumeDraft?.lowConfidenceCells || []), [pendingResumeDraft]);
+  const shouldShowImportReviewNotice = pendingResumeDraft?.importSource === 'external-pattern-import';
+  const importReviewIndices = React.useMemo(() => {
+    if (!pendingResumeDraft?.beadData) {
+      return [];
+    }
+
+    return collectLowConfidenceIndices(
+      pendingResumeDraft.lowConfidenceCells || [],
+      pendingResumeDraft.beadData.width,
+      pendingResumeDraft.beadData.height
+    );
+  }, [pendingResumeDraft]);
+  const activeImportReviewPosition = React.useMemo(() => (
+    activeImportReviewIndex === null ? -1 : importReviewIndices.indexOf(activeImportReviewIndex)
+  ), [activeImportReviewIndex, importReviewIndices]);
+  const activeImportReviewCellLabel = React.useMemo(() => {
+    if (activeImportReviewIndex === null || !pendingResumeDraft?.beadData) {
+      return null;
+    }
+
+    const row = Math.floor(activeImportReviewIndex / pendingResumeDraft.beadData.width);
+    const col = activeImportReviewIndex % pendingResumeDraft.beadData.width;
+    return `${row + 1}行${col + 1}列`;
+  }, [activeImportReviewIndex, pendingResumeDraft]);
+
 
 
   const [gridSize, setGridSize] = useState(normalizeGridSize(initialGridWidth || 52));
@@ -611,6 +646,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const [activeCustomColorIds, setActiveCustomColorIds] = useState<string[] | undefined>(customColorIds);
 
   const [cellSize, setCellSize] = useState(12);
+  const [showImportRiskOverlay, setShowImportRiskOverlay] = useState(true);
+  const [activeImportReviewIndex, setActiveImportReviewIndex] = useState<number | null>(null);
 
   const [recentColors, setRecentColors] = useState<BeadColor[]>([]);
 
@@ -1016,6 +1053,58 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   }, [beadData, initializeBeadData, pendingResumeDraft]);
 
 
+
+  useEffect(() => {
+
+    if (
+      restoredImportNoticeRef.current ||
+      !shouldShowImportReviewNotice ||
+      !pendingResumeDraft?.beadData ||
+      !beadData
+    ) {
+
+      return;
+
+    }
+
+    restoredImportNoticeRef.current = true;
+    if (importReviewSummary.count > 0) {
+      const suffix = importReviewSummary.preview ? `\uFF0C\u5EFA\u8BAE\u5148\u68C0\u67E5 ${importReviewSummary.preview}` : '';
+      toast.warning(`\u8FD9\u662F\u4ECE\u5916\u90E8\u56FE\u7EB8\u8BC6\u522B\u5BFC\u5165\u7684\u7ED3\u679C\uFF0C\u68C0\u6D4B\u5230 ${importReviewSummary.count} \u683C\u9AD8\u98CE\u9669\u4F4D\u7F6E${suffix}`);
+      return;
+    }
+
+    toast.info('\u8FD9\u662F\u4ECE\u5916\u90E8\u56FE\u7EB8\u8BC6\u522B\u5BFC\u5165\u7684\u7ED3\u679C\uFF0C\u5EFA\u8BAE\u5148\u5FEB\u901F\u68C0\u67E5\u5173\u952E\u533A\u57DF\u540E\u518D\u5F00\u59CB\u5236\u4F5C\u3002');
+
+  }, [beadData, importReviewSummary, pendingResumeDraft, shouldShowImportReviewNotice, toast]);
+
+  useEffect(() => {
+    if (importReviewIndices.length === 0) {
+      setActiveImportReviewIndex(null);
+      return;
+    }
+
+    setActiveImportReviewIndex((current) => (
+      current !== null && importReviewIndices.includes(current)
+        ? current
+        : importReviewIndices[0]
+    ));
+  }, [importReviewIndices]);
+
+  const focusImportReviewIndex = useCallback((index: number | null) => {
+    if (index === null) {
+      return;
+    }
+
+    setShowImportRiskOverlay(true);
+    setActiveImportReviewIndex(index);
+    interactiveCanvasRef.current?.focusCell(index);
+  }, []);
+
+  const handleCycleImportReview = useCallback((direction: 1 | -1) => {
+    const nextIndex = getNextLowConfidenceReviewIndex(importReviewIndices, activeImportReviewIndex, direction);
+    focusImportReviewIndex(nextIndex);
+  }, [activeImportReviewIndex, focusImportReviewIndex, importReviewIndices]);
 
   useEffect(() => {
 
@@ -1874,7 +1963,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     try {
 
-      const draft: EditorResumeDraft = {
+      const draft: EditorResumeDraft = mergeImportReviewDraftFields(pendingResumeDraft, {
 
         imageData: currentImageData,
 
@@ -1898,7 +1987,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
         pendingAction,
 
-      };
+      }) as EditorResumeDraft;
 
       sessionStorage.setItem(EDITOR_RESUME_DRAFT_KEY, JSON.stringify(draft));
 
@@ -1908,9 +1997,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [activeCustomColorIds, beadData, colorCount, currentImageData, gridSize, initialBeadData, isHorizontallyMirrored, regeneratedBaseData, saturationBoost, vibrancyPreference]);
-
-
+  }, [activeCustomColorIds, beadData, colorCount, currentImageData, gridSize, initialBeadData, isHorizontallyMirrored, pendingResumeDraft, regeneratedBaseData, saturationBoost, vibrancyPreference]);
 
   const handleStartMakingClick = (e?: React.MouseEvent) => {
 
@@ -2122,9 +2209,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
           });
 
         } else {
-
           console.error('创建方案失败:', response.msg);
-
           saveToLocal(name, thumbnail, originalImage, { fromCloudFallback: true });
 
         }
@@ -2665,6 +2750,56 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       <div style={styles.headerSpacer} />
 
+      {shouldShowImportReviewNotice && (
+        <div style={styles.importReviewBanner}>
+          <div style={styles.importReviewBannerHeader}>
+            <div style={styles.importReviewBannerTitle}>\u5916\u90E8\u56FE\u7EB8\u5BFC\u5165\u7ED3\u679C</div>
+            <div style={styles.importReviewBannerActions}>
+              {importReviewIndices.length > 0 && (
+                <button
+                  style={styles.importReviewToggleBtn}
+                  onClick={() => setShowImportRiskOverlay((current) => !current)}
+                >
+                  {showImportRiskOverlay ? '\u9690\u85CF\u98CE\u9669\u9AD8\u4EAE' : '\u663E\u793A\u98CE\u9669\u9AD8\u4EAE'}
+                </button>
+              )}
+            </div>
+          </div>
+          <div style={styles.importReviewBannerText}>
+            {importReviewSummary.count > 0
+              ? `\u5EFA\u8BAE\u5148\u68C0\u67E5 ${importReviewSummary.count} \u683C\u9AD8\u98CE\u9669\u4F4D\u7F6E${importReviewSummary.preview ? `\uFF1A${importReviewSummary.preview}` : ''}`
+              : '\u5EFA\u8BAE\u5148\u5FEB\u901F\u68C0\u67E5\u5173\u952E\u533A\u57DF\uFF0C\u518D\u5F00\u59CB\u5236\u4F5C\u3002'}
+          </div>
+          {importReviewIndices.length > 0 && (
+            <div style={styles.importReviewNavigator}>
+              <button
+                type="button"
+                style={styles.importReviewNavBtn}
+                onClick={() => handleCycleImportReview(-1)}
+              >
+                上一个风险格
+              </button>
+              <button
+                type="button"
+                style={styles.importReviewNavBtnPrimary}
+                onClick={() => focusImportReviewIndex(activeImportReviewIndex ?? importReviewIndices[0])}
+              >
+                {activeImportReviewPosition >= 0
+                  ? `定位第 ${activeImportReviewPosition + 1} / ${importReviewIndices.length} 格${activeImportReviewCellLabel ? ` · ${activeImportReviewCellLabel}` : ''}`
+                  : `定位风险格（共 ${importReviewIndices.length} 处）`}
+              </button>
+              <button
+                type="button"
+                style={styles.importReviewNavBtn}
+                onClick={() => handleCycleImportReview(1)}
+              >
+                下一个风险格
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
 
 
       {/* 闂傚倸鍊搁崐鐑芥倿閿曞倸绠栭柛顐ｆ礀绾惧潡鏌ｉ姀銏℃毄濞戞挸绉归弻鈥愁吋鎼粹€崇闂佸搫顑勭欢姘跺蓟閻旂厧绠查柟浼存涧濞堫厼鈹戦埥鍡椾簼闁挎洏鍨藉濠氬即閵忕娀鍞跺┑鐘绘涧濞村倸螞閻愬樊娓婚柕鍫濇噽缁犵儤绻涙径瀣灱闁诲繐顑夊娲传閸曞灚笑闂佽绻戠换鍫ャ€侀弮鍫晣闁靛骏绱曢崢鍛婄箾鏉堝墽绉い顐㈩槸閻ｅ嘲鐣濋埀顒勫焵椤掍緡鍟忛柛锝庡櫍瀹曟粓鎮㈤梹鎰畾闂佸壊鍋呭ú鏍嵁閵忊€茬箚闁靛牆鎷戝妤冪磼??- 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜夐弸鏍煛閸ャ儱鐏╃紒鎰殜閺岀喖鎮ч崼鐔哄嚒濠殿喛顫夐悡锟犲蓟瀹ュ牜妾ㄩ梺鍛婃尵閸犳牠鐛崘顏呭枂闁告洦鍓欓鎾剁磽娴ｅ湱鈽夋い鎴濇缁辩偤宕奸妷锔惧幗闁瑰吋鐣崹鍏肩珶濡偐纾界€广儱鎷戦煬顒傗偓娈垮枛椤攱淇婇幖浣哥厸闁稿本鐭花濠氭⒑閼姐倕孝婵炲眰鍊曢锝夘敆閳ь剟鍩為幋鐘亾閿濆骸浜滃ù鐙€鍨辩换娑欐綇閸撗勫仹闂佺儵鍓濋弻銊┾€﹂崶顒€绠涢柣妤€鐗嗛埀??*/}
@@ -2695,6 +2830,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               currentColor={currentColor}
 
               isEditMode={isEditMode}
+              reviewHighlightedIndices={showImportRiskOverlay ? importReviewIndices : []}
 
 
               onBeadClick={handleBeadClick}
@@ -3393,6 +3529,160 @@ const styles: Record<string, React.CSSProperties> = {
   headerSpacer: {
 
     height: '50px',
+
+  },
+
+  importReviewBanner: {
+
+    margin: '0 16px 12px',
+
+    padding: '12px 14px',
+
+    borderRadius: radius.button,
+
+    background: 'rgba(255, 191, 71, 0.14)',
+
+    border: '1px solid rgba(255, 191, 71, 0.28)',
+
+    display: 'flex',
+
+    flexDirection: 'column',
+
+    gap: '6px',
+
+  },
+
+  importReviewBannerHeader: {
+
+    display: 'flex',
+
+    alignItems: 'center',
+
+    justifyContent: 'space-between',
+
+    gap: '12px',
+
+  },
+
+  importReviewBannerActions: {
+
+    display: 'flex',
+
+    alignItems: 'center',
+
+    gap: '8px',
+
+    flexWrap: 'wrap',
+
+    justifyContent: 'flex-end',
+
+  },
+
+  importReviewBannerTitle: {
+
+    fontSize: typography.fontSize.sm,
+
+    fontWeight: typography.fontWeight.bold,
+
+    fontFamily: typography.fontFamilyAlt,
+
+    color: colors.bead.orange,
+
+  },
+
+  importReviewToggleBtn: {
+
+    padding: '6px 10px',
+
+    borderRadius: radius.full,
+
+    border: '1px solid rgba(255, 107, 107, 0.28)',
+
+    background: 'rgba(255, 255, 255, 0.72)',
+
+    color: colors.bead.red,
+
+    fontSize: typography.fontSize.xs,
+
+    fontWeight: typography.fontWeight.semibold,
+
+    fontFamily: typography.fontFamilyAlt,
+
+    cursor: 'pointer',
+
+    flexShrink: 0,
+
+  },
+
+  importReviewBannerText: {
+
+    fontSize: typography.fontSize.xs,
+
+    lineHeight: 1.6,
+
+    color: colors.text.secondary,
+
+    fontFamily: typography.fontFamilyAlt,
+
+  },
+
+  importReviewNavigator: {
+
+    display: 'grid',
+
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+
+    gap: '8px',
+
+  },
+
+  importReviewNavBtn: {
+
+    minHeight: '36px',
+
+    padding: '8px 10px',
+
+    borderRadius: radius.button,
+
+    border: '1px solid rgba(255, 191, 71, 0.36)',
+
+    background: 'rgba(255, 255, 255, 0.82)',
+
+    color: colors.text.primary,
+
+    fontSize: typography.fontSize.xs,
+
+    fontWeight: typography.fontWeight.semibold,
+
+    fontFamily: typography.fontFamilyAlt,
+
+    cursor: 'pointer',
+
+  },
+
+  importReviewNavBtnPrimary: {
+
+    minHeight: '36px',
+
+    padding: '8px 10px',
+
+    borderRadius: radius.button,
+
+    border: '1px solid rgba(255, 107, 107, 0.28)',
+
+    background: 'linear-gradient(145deg, rgba(255, 142, 122, 0.92), rgba(255, 107, 107, 0.92))',
+
+    color: '#ffffff',
+
+    fontSize: typography.fontSize.xs,
+
+    fontWeight: typography.fontWeight.semibold,
+
+    fontFamily: typography.fontFamilyAlt,
+
+    cursor: 'pointer',
+
+    boxShadow: shadows.sm,
 
   },
 
@@ -6408,5 +6698,3 @@ if (!document.querySelector('#editor-styles')) {
 
 
 export default EditorPage;
-
-
