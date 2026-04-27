@@ -55,6 +55,7 @@ import {
   getSingleBoardLayoutFlags,
   getMakingDesktopSidebarLayout,
   getSingleBoardMobileOverviewLayout,
+  SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET,
   getSingleBoardMobileTopChromeOffset,
   getSingleBoardOverviewTitle,
   getTextOverlayTransitionTransform,
@@ -353,6 +354,8 @@ const MakingPage: React.FC = () => {
     singleBoardMobileMiniMapExpanded,
     setSingleBoardMobileMiniMapExpanded,
   ] = useState(false);
+  const [singleBoardMobileToolbarExpanded, setSingleBoardMobileToolbarExpanded] =
+    useState(true);
   const [singleBoardMobileOverviewOffset, setSingleBoardMobileOverviewOffset] =
     useState({ x: 0, y: 0 });
   const [singleBoardMobileOverviewWidth, setSingleBoardMobileOverviewWidth] =
@@ -401,12 +404,6 @@ const MakingPage: React.FC = () => {
     startWidth: 220,
     resizing: false,
   });
-  const singleBoardChromeBaseOffset = getSingleBoardMobileTopChromeOffset({
-    isSingleBoardMobile: true,
-    summaryHeight: 0,
-    toolbarHeight: 0,
-    swipeStatusHeight: 0,
-  })!;
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
   const [pointerFine, setPointerFine] = useState(() => {
@@ -883,14 +880,16 @@ const MakingPage: React.FC = () => {
         : nextHeights,
     );
   }, [
+    isSingleBoardMobile,
+    singleBoardAllDone,
+    singleBoardMobileToolbarExpanded,
+    showSingleBoardMobileOverviewButton,
+    totalBoardCount,
     activeBoardDone,
     activeBoardNumber,
     autoAdvanceOnBoardDone,
-    isSingleBoardMobile,
     nextPendingBoardNumber,
     resumeBoardNumber,
-    showSingleBoardMobileOverviewButton,
-    singleBoardAllDone,
     singleBoardProgress.doneCount,
     singleBoardProgress.remainingCount,
     singleBoardProgress.totalCount,
@@ -4040,7 +4039,9 @@ const MakingPage: React.FC = () => {
     ...(active ? styles.modeSwitchBtnActive : {}),
   });
   const singleBoardChromeOffset =
-    viewMode === "singleBoard" ? singleBoardChromeBaseOffset : 50;
+    viewMode === "singleBoard"
+      ? SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET
+      : 50;
   const singleBoardMobileTopChromeOffset = useMemo(
     () =>
       getSingleBoardMobileTopChromeOffset({
@@ -4290,23 +4291,9 @@ const MakingPage: React.FC = () => {
                               }
                             >
                               继续未完成
-                            </button>
-                          )}
+                          </button>
+                        )}
                       </div>
-                      <button
-                        style={{
-                          ...styles.singleBoardQuickToggle,
-                          ...styles.singleBoardMobileQuickToggle,
-                          ...(autoAdvanceOnBoardDone
-                            ? styles.singleBoardQuickToggleActive
-                            : {}),
-                        }}
-                        onClick={() =>
-                          setAutoAdvanceOnBoardDone((prev) => !prev)
-                        }
-                      >
-                        {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
-                      </button>
                     </div>
                     {totalBoardCount > 1 && (
                       <div
@@ -4324,11 +4311,11 @@ const MakingPage: React.FC = () => {
                         </span>
                       </div>
                     )}
-                    {(showSingleBoardMobileOverviewButton || activeBoardRect) && (
-                      <div
-                        ref={singleBoardMobileToolbarRef}
-                        style={styles.singleBoardMobileNavRow}
-                      >
+                    <div
+                      ref={singleBoardMobileToolbarRef}
+                      style={styles.singleBoardMobileToolbarShell}
+                    >
+                      <div style={styles.singleBoardMobileNavRow}>
                         {showSingleBoardMobileOverviewButton && (
                           <button
                             style={{
@@ -4374,8 +4361,56 @@ const MakingPage: React.FC = () => {
                             ? "下一块"
                             : "完成"}
                         </button>
+                        <button
+                          style={{
+                            ...styles.singleBoardMobileToolToggleBtn,
+                            ...(singleBoardMobileToolbarExpanded
+                              ? styles.singleBoardMobileToolToggleBtnActive
+                              : {}),
+                          }}
+                          onClick={() =>
+                            setSingleBoardMobileToolbarExpanded((prev) => !prev)
+                          }
+                          title={
+                            singleBoardMobileToolbarExpanded
+                              ? "收起工具"
+                              : "展开工具"
+                          }
+                        >
+                          {singleBoardMobileToolbarExpanded ? "收起" : "工具"}
+                        </button>
                       </div>
-                    )}
+                      {singleBoardMobileToolbarExpanded && (
+                        <div style={styles.singleBoardMobileToolRow}>
+                          <button
+                            style={{
+                              ...styles.singleBoardQuickToggle,
+                              ...styles.singleBoardMobileQuickToggle,
+                              ...(autoAdvanceOnBoardDone
+                                ? styles.singleBoardQuickToggleActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setAutoAdvanceOnBoardDone((prev) => !prev)
+                            }
+                          >
+                            {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
+                          </button>
+                          <button
+                            style={{
+                              ...styles.singleBoardMobileToolChip,
+                              ...(showSettings
+                                ? styles.singleBoardMobileToolChipActive
+                                : {}),
+                            }}
+                            onClick={() => setShowSettings((prev) => !prev)}
+                            title={showSettings ? "收起辅助" : "展开辅助"}
+                          >
+                            辅助
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     {showSingleBoardMobileOverviewButton &&
                       singleBoardMobileMiniMapExpanded && (
                         <div style={styles.singleBoardMobileOverviewOverlay}>
@@ -6882,7 +6917,12 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: "4px",
-    padding: "0",
+    padding: "4px 6px",
+    borderRadius: "16px",
+    background: "rgba(255,255,255,0.82)",
+    border: `1px solid rgba(255,255,255,0.72)`,
+    boxShadow: "0 8px 18px rgba(120,93,45,0.08)",
+    backdropFilter: "blur(8px)",
   },
 
   singleBoardMobileSummaryMain: {
@@ -6912,15 +6952,31 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
+  singleBoardMobileToolbarShell: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "4px",
+    padding: "5px 6px 6px",
+    borderRadius: "18px",
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.86), rgba(255,248,240,0.9))",
+    border: `1px solid rgba(255,255,255,0.74)`,
+    boxShadow: "0 10px 22px rgba(120,93,45,0.1)",
+    backdropFilter: "blur(10px)",
+  },
+
   singleBoardSwipeStatus: {
     display: "flex",
     alignItems: "center",
     gap: "6px",
-    padding: "7px 10px",
-    borderRadius: "12px",
-    border: `1px solid ${makingCandy.border}`,
-    marginTop: "6px",
+    padding: "6px 9px",
+    borderRadius: "14px",
+    border: `1px solid rgba(255,255,255,0.72)`,
+    background: "rgba(255,255,255,0.8)",
+    marginTop: "4px",
     flexWrap: "wrap" as const,
+    boxShadow: "0 8px 18px rgba(120,93,45,0.08)",
+    backdropFilter: "blur(8px)",
   },
 
   singleBoardSwipeStatusInline: {
@@ -6963,7 +7019,62 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: "4px",
+    flexWrap: "wrap" as const,
     minWidth: 0,
+  },
+
+  singleBoardMobileToolRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    flexWrap: "wrap" as const,
+    paddingTop: "2px",
+    borderTop: `1px solid rgba(255,255,255,0.65)`,
+  },
+
+  singleBoardMobileToolToggleBtn: {
+    minWidth: "52px",
+    height: "28px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.borderStrong}`,
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.16), rgba(244,114,182,0.12))",
+    color: makingCandy.text,
+    fontSize: "11px",
+    fontWeight: 800,
+    cursor: "pointer",
+    flexShrink: 0,
+    boxShadow: makingCandy.shadowSoft,
+  },
+
+  singleBoardMobileToolToggleBtnActive: {
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.98), rgba(255,248,240,0.96))",
+    borderColor: makingCandy.borderStrong,
+  },
+
+  singleBoardMobileToolChip: {
+    minWidth: "58px",
+    height: "20px",
+    padding: "0 8px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.9)",
+    color: makingCandy.textSoft,
+    fontSize: "9px",
+    fontWeight: 700,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  singleBoardMobileToolChipActive: {
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.18), rgba(244,114,182,0.16))",
+    color: makingCandy.text,
+    borderColor: makingCandy.borderStrong,
   },
 
   singleBoardMobileOverviewBtn: {
