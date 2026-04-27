@@ -10,15 +10,17 @@ import { pixelizeImage, PixelData } from '../../services/pixelizeService';
 import { matchPixelsToBead, calculateBeadStatistics, renderBeadsToCanvas, BeadPixelData, BeadStatistics, reduceColors } from '../../services/colorMatchService';
 
 import {
-  colorLimitOptions,
   defaultColorCount,
   allBeadColors,
   BeadColor,
   PaletteMode,
+  SimplifyPreset,
   normalizePaletteSelection,
-  clampColorLimitByPaletteSize,
   getPaletteColorsForMode,
   officialPaletteOptions,
+  simplifyPresetOptions,
+  normalizeSimplifyPresetFromLegacy,
+  resolveSimplifyColorLimit,
 } from '../../data/beadColors';
 
 import { useEditorStore, EditorTool } from '../../store/editorStore';
@@ -72,6 +74,7 @@ export interface EditorStateData {
   imageData?: string;
 
   colorCount?: number;
+  simplifyPreset?: SimplifyPreset;
 
   paletteMode?: PaletteMode;
 
@@ -594,6 +597,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const {
     imageData,
     colorCount: initialColorCount,
+    simplifyPreset: initialSimplifyPresetFromState,
     paletteMode: initialPaletteMode,
     gridWidth: initialGridWidth,
     customColorIds,
@@ -607,6 +611,11 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       myColorCount: customColorIds?.length,
     })
   ), [customColorIds, initialColorCount, initialPaletteMode]);
+
+  const initialSimplifyPreset = React.useMemo(() => (
+    initialSimplifyPresetFromState
+      ?? normalizeSimplifyPresetFromLegacy(normalizedPaletteSelection.colorLimit)
+  ), [initialSimplifyPresetFromState, normalizedPaletteSelection.colorLimit]);
 
   const importReviewSummary = React.useMemo(() => summarizeLowConfidenceCells(pendingResumeDraft?.lowConfidenceCells || []), [pendingResumeDraft]);
   const shouldShowImportReviewNotice = pendingResumeDraft?.importSource === 'external-pattern-import';
@@ -651,7 +660,12 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
   const [gridSizeInput, setGridSizeInput] = useState(String(normalizeGridSize(initialGridWidth || 52)));
 
   const [paletteMode, setPaletteMode] = useState<PaletteMode>(normalizedPaletteSelection.paletteMode);
-  const [colorCount, setColorCount] = useState<number>(normalizedPaletteSelection.colorLimit);
+  const [simplifyPreset, setSimplifyPreset] = useState<SimplifyPreset>(initialSimplifyPreset);
+  const [colorCount, setColorCount] = useState<number>(() => resolveSimplifyColorLimit(
+    initialSimplifyPreset,
+    normalizedPaletteSelection.paletteMode,
+    customColorIds?.length || 0,
+  ));
 
   const [simplifyLevel, setSimplifyLevel] = useState<number>(0);
 
@@ -678,9 +692,19 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     [activeCustomColorIds, paletteMode]
   );
   const effectiveColorLimit = React.useMemo(
-    () => clampColorLimitByPaletteSize(paletteMode, colorCount, myColorCount),
-    [colorCount, myColorCount, paletteMode]
+    () => resolveSimplifyColorLimit(simplifyPreset, paletteMode, myColorCount),
+    [myColorCount, paletteMode, simplifyPreset]
   );
+  const activeSimplifyOption = React.useMemo(
+    () => simplifyPresetOptions.find((item) => item.id === simplifyPreset),
+    [simplifyPreset]
+  );
+
+  useEffect(() => {
+    if (colorCount !== effectiveColorLimit) {
+      setColorCount(effectiveColorLimit);
+    }
+  }, [colorCount, effectiveColorLimit]);
 
   const [cellSize, setCellSize] = useState(12);
   const [showImportRiskOverlay, setShowImportRiskOverlay] = useState(true);
@@ -792,6 +816,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       vibrancyPreference?: number;
 
       colorCount?: number;
+      simplifyPreset?: SimplifyPreset;
 
       paletteMode?: PaletteMode;
 
@@ -825,14 +850,14 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       const nextVibrancyPreference = overrides?.vibrancyPreference ?? vibrancyPreference;
 
-      const nextColorCount = overrides?.colorCount ?? colorCount;
+      const nextSimplifyPreset = overrides?.simplifyPreset ?? simplifyPreset;
       const nextPaletteMode = overrides?.paletteMode ?? paletteMode;
 
       const nextCustomColorIds = overrides?.customColorIds ?? activeCustomColorIds;
       const nextPaletteColors = getPaletteColorsForMode(nextPaletteMode, nextCustomColorIds || []);
-      const nextColorLimit = clampColorLimitByPaletteSize(
+      const nextColorLimit = resolveSimplifyColorLimit(
+        nextSimplifyPreset,
         nextPaletteMode,
-        nextColorCount,
         nextCustomColorIds?.length || 0
       );
 
@@ -967,7 +992,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [activeCustomColorIds, colorCount, currentColor, currentImageData, gridSize, initializeBeadData, isHorizontallyMirrored, paletteMode, setCurrentColor, simplifyLevel, saturationBoost, vibrancyPreference, beadData, regeneratedBaseData]);
+  }, [activeCustomColorIds, colorCount, currentColor, currentImageData, gridSize, initializeBeadData, isHorizontallyMirrored, paletteMode, setCurrentColor, simplifyLevel, simplifyPreset, saturationBoost, vibrancyPreference, beadData, regeneratedBaseData]);
 
   const buildBackgroundDetectionData = useCallback(async (): Promise<BeadPixelData | null> => {
     if (!currentImageData || !beadData) {
@@ -1958,6 +1983,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
         imageData: currentImageData,
 
         colorCount,
+        simplifyPreset,
 
         paletteMode,
 
@@ -1975,7 +2001,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [activeCustomColorIds, colorCount, currentImageData, gridSize, paletteMode]);
+  }, [activeCustomColorIds, colorCount, currentImageData, gridSize, paletteMode, simplifyPreset]);
 
   const serializeBeadDataForSave = useCallback((data: BeadPixelData) => {
 
@@ -2016,6 +2042,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
         imageData: currentImageData,
 
         colorCount,
+        simplifyPreset,
 
         paletteMode,
 
@@ -2047,7 +2074,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-  }, [activeCustomColorIds, beadData, colorCount, currentImageData, gridSize, initialBeadData, isHorizontallyMirrored, paletteMode, pendingResumeDraft, regeneratedBaseData, saturationBoost, vibrancyPreference]);
+  }, [activeCustomColorIds, beadData, colorCount, currentImageData, gridSize, initialBeadData, isHorizontallyMirrored, paletteMode, pendingResumeDraft, regeneratedBaseData, saturationBoost, simplifyPreset, vibrancyPreference]);
 
   const handleReauthAndResumeCloudSave = useCallback((message?: string) => {
     setShowSaveModal(false);
@@ -2395,7 +2422,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
 
 
-  const lastAppliedParamsRef = useRef({ gridSize, saturationBoost, vibrancyPreference, colorCount });
+  const lastAppliedParamsRef = useRef({ gridSize, saturationBoost, vibrancyPreference, colorCount, simplifyPreset });
 
 
 
@@ -2413,6 +2440,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
         setVibrancyPreference(lastAppliedParamsRef.current.vibrancyPreference);
 
         setColorCount(lastAppliedParamsRef.current.colorCount);
+        setSimplifyPreset(lastAppliedParamsRef.current.simplifyPreset);
 
         return;
 
@@ -2421,7 +2449,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     }
 
 
-    lastAppliedParamsRef.current = { gridSize, saturationBoost, vibrancyPreference, colorCount };
+    lastAppliedParamsRef.current = { gridSize, saturationBoost, vibrancyPreference, colorCount, simplifyPreset };
 
     if (containerRef.current) {
 
@@ -2476,6 +2504,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
       vibrancyPreference,
 
+      colorCount,
+
+      simplifyPreset,
+
     };
 
     if (containerRef.current) {
@@ -2504,8 +2536,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     handleRegenerateWithGridSize(gridSize + delta);
   };
 
-  const handleApplyColorCount = (nextValue: number) => {
-    if (nextValue === colorCount) {
+  const handleApplySimplifyPreset = (nextPreset: SimplifyPreset) => {
+    if (nextPreset === simplifyPreset) {
 
       return;
 
@@ -2521,6 +2553,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
+    const nextValue = resolveSimplifyColorLimit(nextPreset, paletteMode, myColorCount);
+    setSimplifyPreset(nextPreset);
     setColorCount(nextValue);
 
     lastAppliedParamsRef.current = {
@@ -2528,6 +2562,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       saturationBoost,
       vibrancyPreference,
       colorCount: nextValue,
+      simplifyPreset: nextPreset,
     };
 
     if (containerRef.current) {
@@ -2536,7 +2571,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
     }
 
-    processImage(true, { colorCount: nextValue });
+    processImage(true, {
+      simplifyPreset: nextPreset,
+      colorCount: nextValue,
+    });
 
   };
 
@@ -2565,15 +2603,25 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     const nextCustomColorIds = nextMode === 'my-colors'
       ? myColorsService.getSelectedIds()
       : undefined;
+    const nextMyColorCount = nextMode === 'my-colors'
+      ? nextCustomColorIds.length
+      : nextCustomColorIds?.length || myColorCount;
+    const nextColorLimit = resolveSimplifyColorLimit(
+      simplifyPreset,
+      nextMode,
+      nextMyColorCount,
+    );
 
     setPaletteMode(nextMode);
     setActiveCustomColorIds(nextCustomColorIds);
+    setColorCount(nextColorLimit);
 
     lastAppliedParamsRef.current = {
       gridSize,
       saturationBoost,
       vibrancyPreference,
-      colorCount,
+      colorCount: nextColorLimit,
+      simplifyPreset,
     };
 
     if (containerRef.current) {
@@ -2581,7 +2629,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     }
 
     processImage(true, {
-      colorCount,
+      simplifyPreset,
+      colorCount: nextColorLimit,
       paletteMode: nextMode,
       customColorIds: nextCustomColorIds,
     });
@@ -2636,6 +2685,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
       saturationBoost: normalizedValue,
 
       vibrancyPreference,
+
+      colorCount,
+
+      simplifyPreset,
 
     };
 
@@ -3007,7 +3060,7 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                         <span style={styles.drawerPanelSummary}>
                           {useMyColors
                             ? <>当前仅使用我的颜色{myColorCount > 0 && <>，共 {myColorCount} 色</>}</>
-                            : <>{officialPaletteOptions.find((item) => item.id === paletteMode)?.label || 'MARD 291 全色'} / 当前上限 {effectiveColorLimit} 色</>}
+                            : <>{officialPaletteOptions.find((item) => item.id === paletteMode)?.label || 'MARD 291 全色'} / 精简程度 {activeSimplifyOption?.label || '适中'}</>}
                         </span>
                       </div>
                     </div>
@@ -3068,24 +3121,25 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
                   <div style={styles.paletteSection}>
                     <div style={styles.paletteSectionHeader}>
-                      <span style={styles.paletteSectionTitle}>颜色精简</span>
+                      <span style={styles.paletteSectionTitle}>精简程度</span>
                     </div>
                     <div style={styles.colorCountTabs}>
-                      {colorLimitOptions.map((opt) => (
+                      {simplifyPresetOptions.map((opt) => (
                         <button
                           key={opt.id}
                           style={{
                             ...styles.colorCountTab,
-                            ...(colorCount === opt.count ? styles.colorCountTabActive : {}),
+                            ...(simplifyPreset === opt.id ? styles.colorCountTabActive : {}),
                           }}
-                          onClick={() => handleApplyColorCount(opt.count)}
+                          onClick={() => handleApplySimplifyPreset(opt.id)}
                         >
                           <span>{opt.label}</span>
+                          <span style={styles.colorCountDesc}>{opt.description}</span>
                         </button>
                       ))}
                     </div>
                     <div style={styles.paletteModeHint}>
-                      在当前基础色库范围内限制最终使用的颜色数量。
+                      在当前色库范围内控制图案复杂度，不代表官方色板方案。
                     </div>
                   </div>
                 </div>
@@ -3310,8 +3364,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               saturationBoost,
               vibrancyPreference,
               colorCount,
+              simplifyPreset,
             };
             processImage(true, {
+              simplifyPreset,
               colorCount,
               paletteMode: useMyColors ? 'mard-291' : paletteMode,
               customColorIds: undefined,
@@ -3325,8 +3381,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
               saturationBoost,
               vibrancyPreference,
               colorCount,
+              simplifyPreset,
             };
             processImage(true, {
+              simplifyPreset,
               colorCount,
               paletteMode: 'my-colors',
               customColorIds: selectedIds,
@@ -5253,7 +5311,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     flex: 1,
 
-    padding: '6px 2px',
+    padding: '8px 6px',
 
     background: 'rgba(255,255,255,0.88)',
 
@@ -5271,7 +5329,33 @@ const styles: Record<string, React.CSSProperties> = {
 
     color: editorCandy.textSoft,
 
+    display: 'flex',
+
+    flexDirection: 'column',
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    gap: '4px',
+
+    textAlign: 'center',
+
     transition: animation.transition.fast,
+
+  },
+
+
+
+  colorCountDesc: {
+
+    fontSize: '10px',
+
+    lineHeight: 1.3,
+
+    fontWeight: typography.fontWeight.regular,
+
+    color: editorCandy.textMuted,
 
   },
 

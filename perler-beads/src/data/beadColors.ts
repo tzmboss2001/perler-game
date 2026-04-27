@@ -768,6 +768,20 @@ export interface ColorLimitOption {
   recommended?: boolean;
 }
 
+export type SimplifyPreset =
+  | 'faithful'
+  | 'light'
+  | 'balanced'
+  | 'strong'
+  | 'minimal';
+
+export interface SimplifyPresetOption {
+  id: SimplifyPreset;
+  label: string;
+  description: string;
+  colorLimit: number;
+}
+
 export interface PaletteSelectionInput {
   paletteMode?: PaletteMode | string | null;
   colorLimit?: number | null;
@@ -787,6 +801,32 @@ const normalizeColorLimit = (value: number | null | undefined, fallback: number)
   }
 
   return Math.max(0, Math.round(value));
+};
+
+export const simplifyPresetToColorLimit = (preset: SimplifyPreset): number => {
+  const match = simplifyPresetOptions.find((item) => item.id === preset);
+  return match?.colorLimit ?? defaultColorCount;
+};
+
+export const mapLegacyColorCountToSimplifyPreset = (
+  colorCount?: number | null,
+): SimplifyPreset => {
+  const next = Math.max(0, Math.round(colorCount || 0));
+  if (next >= 240) return 'faithful';
+  if (next >= 175) return 'light';
+  if (next >= 120) return 'balanced';
+  if (next >= 84) return 'strong';
+  return 'minimal';
+};
+
+export const normalizeSimplifyPresetFromLegacy = (
+  colorCount?: number | null,
+): SimplifyPreset => {
+  if (typeof colorCount !== 'number' || Number.isNaN(colorCount)) {
+    return 'balanced';
+  }
+
+  return mapLegacyColorCountToSimplifyPreset(colorCount);
 };
 
 export const officialPaletteOptions: OfficialPaletteOption[] = [
@@ -811,6 +851,14 @@ export const colorLimitOptions: ColorLimitOption[] = [
   { id: 'limit-150', count: 150, label: '最多 150 色', description: '精细还原', detailDesc: '人物、照片', icon: '✅', recommended: true },
   { id: 'limit-200', count: 200, label: '最多 200 色', description: '色彩丰富', detailDesc: '高精度还原', icon: '🧵' },
   { id: 'limit-291', count: 291, label: '不限制', description: '使用当前基础色库全部颜色', detailDesc: '', icon: '🏳' },
+];
+
+export const simplifyPresetOptions: SimplifyPresetOption[] = [
+  { id: 'faithful', label: '保真', description: '更接近原图，颜色更多', colorLimit: 291 },
+  { id: 'light', label: '轻度', description: '略微简化，保留大部分细节', colorLimit: 200 },
+  { id: 'balanced', label: '适中', description: '复杂度与效果较平衡', colorLimit: 150 },
+  { id: 'strong', label: '明显', description: '颜色更少，更容易制作', colorLimit: 96 },
+  { id: 'minimal', label: '极简', description: '最容易制作，但细节损失更多', colorLimit: 72 },
 ];
 
 export const normalizePaletteSelection = (
@@ -860,6 +908,16 @@ export const clampColorLimitByPaletteSize = (
 
   return Math.min(nextColorLimit, nextMyColorCount);
 };
+
+export const resolveSimplifyColorLimit = (
+  preset: SimplifyPreset,
+  paletteMode: PaletteMode,
+  myColorCount: number,
+): number => clampColorLimitByPaletteSize(
+  paletteMode,
+  simplifyPresetToColorLimit(preset),
+  myColorCount,
+);
 
 export const getPaletteColorsForMode = (
   paletteMode: PaletteMode,
