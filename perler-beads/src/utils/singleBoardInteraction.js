@@ -440,6 +440,8 @@ export function getSingleBoardSwipeStatus({
   };
 }
 
+export const SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET = 46;
+
 /**
  * @param {{
  *   isSingleBoardMobile: boolean;
@@ -458,7 +460,12 @@ export function getSingleBoardMobileTopChromeOffset({
     return null;
   }
 
-  return 46 + summaryHeight + toolbarHeight + swipeStatusHeight;
+  return (
+    SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET +
+    summaryHeight +
+    toolbarHeight +
+    swipeStatusHeight
+  );
 }
 
 /**
