@@ -55,6 +55,7 @@ import { localStorageService } from '../../services/localStorageService';
 import { myColorsService } from '../../services/myColorsService';
 import { applyTransparentIndices, suggestQuickBackgroundRemoval } from '../../services/backgroundRemovalService';
 import { normalizeProjectSaveFailure } from '../../utils/projectSaveAuthFlow';
+import { getEditorControlLayout } from '../../utils/editorControlLayout';
 import {
   collectLowConfidenceIndices,
   getNextLowConfidenceReviewIndex,
@@ -2753,29 +2754,54 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
 
   const isNarrowEditorControls = viewportWidth <= 420;
   const isCompactEditorControls = viewportWidth <= 360;
+  const editorControlLayout = getEditorControlLayout(viewportWidth);
+  const isHorizontalEditorControls = editorControlLayout.isHorizontal;
+  const editorControlPanelStyle: React.CSSProperties = {
+    ...styles.controlPanel,
+    display: 'grid',
+    gridTemplateColumns: editorControlLayout.containerColumns,
+    gap: isHorizontalEditorControls ? '10px' : '0',
+    alignItems: 'start',
+  };
+  const editorControlItemStyle: React.CSSProperties = {
+    ...styles.controlItem,
+    marginBottom: isHorizontalEditorControls ? 0 : styles.controlItem.marginBottom,
+    minWidth: 0,
+    flex: isHorizontalEditorControls ? editorControlLayout.previewColumnFlex : undefined,
+  };
+  const editorWidthControlItemStyle: React.CSSProperties = {
+    ...editorControlItemStyle,
+    flex: isHorizontalEditorControls ? editorControlLayout.widthColumnFlex : undefined,
+    paddingTop: isHorizontalEditorControls ? 0 : '4px',
+  };
+  const editorControlHeaderStyle: React.CSSProperties = {
+    ...styles.controlHeader,
+    marginBottom: isHorizontalEditorControls ? '4px' : styles.controlHeader.marginBottom,
+  };
   const editorControlRowStyle: React.CSSProperties = {
     ...styles.previewZoomRow,
-    gap: isNarrowEditorControls ? '6px' : '8px',
+    gap: isHorizontalEditorControls ? '6px' : isNarrowEditorControls ? '6px' : '8px',
+    flexWrap: isHorizontalEditorControls ? 'nowrap' : styles.previewZoomRow.flexWrap,
   };
   const editorSliderStyle: React.CSSProperties = {
     ...styles.previewZoomSlider,
-    minWidth: isNarrowEditorControls ? '100%' : styles.previewZoomSlider.minWidth,
-    flexBasis: isNarrowEditorControls ? '100%' : undefined,
-    order: isNarrowEditorControls ? 3 : 0,
+    minWidth: isHorizontalEditorControls ? '0' : isNarrowEditorControls ? '100%' : styles.previewZoomSlider.minWidth,
+    flexBasis: isHorizontalEditorControls ? 'auto' : isNarrowEditorControls ? '100%' : undefined,
+    order: isHorizontalEditorControls ? 0 : isNarrowEditorControls ? 3 : 0,
   };
   const editorStepButtonStyle: React.CSSProperties = {
     ...styles.previewZoomButton,
-    width: isCompactEditorControls ? '28px' : isNarrowEditorControls ? '30px' : styles.previewZoomButton.width,
-    height: isCompactEditorControls ? '28px' : isNarrowEditorControls ? '30px' : styles.previewZoomButton.height,
+    width: isHorizontalEditorControls ? '28px' : isCompactEditorControls ? '28px' : isNarrowEditorControls ? '30px' : styles.previewZoomButton.width,
+    height: isHorizontalEditorControls ? '28px' : isCompactEditorControls ? '28px' : isNarrowEditorControls ? '30px' : styles.previewZoomButton.height,
     fontSize: isCompactEditorControls ? '16px' : undefined,
   };
   const editorChipStyle: React.CSSProperties = {
     ...styles.previewZoomChip,
-    padding: isCompactEditorControls ? '6px 8px' : isNarrowEditorControls ? '6px 9px' : styles.previewZoomChip.padding,
+    padding: isHorizontalEditorControls ? '6px 8px' : isCompactEditorControls ? '6px 8px' : isNarrowEditorControls ? '6px 9px' : styles.previewZoomChip.padding,
   };
   const editorGridInputStyle: React.CSSProperties = {
     ...styles.gridSizeNumberInput,
-    width: isNarrowEditorControls ? '56px' : '64px',
+    width: isHorizontalEditorControls ? '52px' : isNarrowEditorControls ? '56px' : '64px',
     marginLeft: isNarrowEditorControls ? 'auto' : 0,
     border: 'none',
     borderRadius: 0,
@@ -2790,15 +2816,15 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
     ...styles.gridSizeControlRow,
     display: 'flex',
     alignItems: 'center',
-    gap: isNarrowEditorControls ? '6px' : '8px',
+    gap: isHorizontalEditorControls ? '6px' : isNarrowEditorControls ? '6px' : '8px',
     width: '100%',
   };
   const gridSliderMarkerAreaStyle: React.CSSProperties = {
     ...styles.gridSliderMarkerArea,
     flex: 1,
     minWidth: 0,
-    paddingTop: isCompactEditorControls ? '16px' : isNarrowEditorControls ? '17px' : styles.gridSliderMarkerArea.paddingTop,
-    paddingBottom: isCompactEditorControls ? '16px' : isNarrowEditorControls ? '17px' : styles.gridSliderMarkerArea.paddingBottom,
+    paddingTop: isHorizontalEditorControls ? '14px' : isCompactEditorControls ? '16px' : isNarrowEditorControls ? '17px' : styles.gridSliderMarkerArea.paddingTop,
+    paddingBottom: isHorizontalEditorControls ? '14px' : isCompactEditorControls ? '16px' : isNarrowEditorControls ? '17px' : styles.gridSliderMarkerArea.paddingBottom,
   };
   const gridSliderTrackStyle: React.CSSProperties = {
     ...styles.gridSizeSlider,
@@ -3202,9 +3228,9 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
           )}
         {!isBackgroundMode && (
         <>
-        <div style={styles.controlPanel}>
-          <div style={styles.controlItem}>
-            <div style={styles.controlHeader}>
+        <div style={editorControlPanelStyle}>
+          <div style={editorControlItemStyle}>
+            <div style={editorControlHeaderStyle}>
               <span style={styles.controlLabel}>预览缩放</span>
               <span style={styles.controlValue}>{Math.round(previewZoom.scale * 100)}%</span>
             </div>
@@ -3225,8 +3251,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
             </div>
           </div>
 
-          <div style={{ ...styles.controlItem, paddingTop: '4px' }}>
-            <div style={styles.controlHeader}>
+          <div style={editorWidthControlItemStyle}>
+            <div style={editorControlHeaderStyle}>
               <span style={styles.controlLabel}>宽度</span>
               <input
                 type="text"
@@ -3265,10 +3291,10 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                         type="button"
                         style={{
                           ...styles.gridSliderMarkerBtn,
-                          minWidth: isNarrowEditorControls ? '28px' : styles.gridSliderMarkerBtn.minWidth,
-                          height: isNarrowEditorControls ? '18px' : styles.gridSliderMarkerBtn.height,
-                          padding: isNarrowEditorControls ? '0 4px' : styles.gridSliderMarkerBtn.padding,
-                          fontSize: isNarrowEditorControls ? '9px' : styles.gridSliderMarkerBtn.fontSize,
+                          minWidth: isHorizontalEditorControls ? '28px' : isNarrowEditorControls ? '28px' : styles.gridSliderMarkerBtn.minWidth,
+                          height: isHorizontalEditorControls ? '18px' : isNarrowEditorControls ? '18px' : styles.gridSliderMarkerBtn.height,
+                          padding: isHorizontalEditorControls ? '0 4px' : isNarrowEditorControls ? '0 4px' : styles.gridSliderMarkerBtn.padding,
+                          fontSize: isHorizontalEditorControls ? '9px' : isNarrowEditorControls ? '9px' : styles.gridSliderMarkerBtn.fontSize,
                           top: isTop ? '0' : 'auto',
                           bottom: isTop ? 'auto' : '0',
                           ...(gridSize === preset ? styles.gridSliderMarkerBtnActive : {}),
@@ -3282,8 +3308,8 @@ const EditorPage: React.FC<EditorPageProps> = ({ embeddedStateData, onBack }) =>
                       <div
                         style={{
                           ...styles.gridSliderMarkerLine,
-                          top: isTop ? (isNarrowEditorControls ? '16px' : '18px') : 'auto',
-                          bottom: isTop ? 'auto' : (isNarrowEditorControls ? '16px' : '18px'),
+                          top: isTop ? (isHorizontalEditorControls ? '16px' : isNarrowEditorControls ? '16px' : '18px') : 'auto',
+                          bottom: isTop ? 'auto' : (isHorizontalEditorControls ? '16px' : isNarrowEditorControls ? '16px' : '18px'),
                         }}
                       />
                     </div>
