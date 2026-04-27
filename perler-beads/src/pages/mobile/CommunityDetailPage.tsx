@@ -6,15 +6,12 @@ import { communityApi, CommunityPostDetail, CommunityPostListItem } from '../../
 import { allBeadColors, BeadColor } from '../../data/beadColors';
 import { BeadPixelData } from '../../services/colorMatchService';
 import { clearToken, getToken } from '../../services/api/authApi';
+import { isAuthExpiredApiResponse } from '../../services/api/authExpiry';
 import Modal, { useModal } from '../../components/Modal';
 import { sanitizeDisplayTitle } from '../../utils/textUtils';
 import { formatAbsoluteTime } from '../../utils/timeUtils';
 
 const COMMUNITY_MAKING_DRAFT_KEY = 'community_making_bead_data';
-const isAuthExpiredResponse = (code?: number | string, msg?: string) => {
-  const numericCode = Number(code);
-  return numericCode === 7 || numericCode === 401 || /token|登录|鉴权|未授权|未登录/i.test(msg || '');
-};
 
 const CommunityDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -276,7 +273,7 @@ const CommunityDetailPage: React.FC = () => {
         const nextLikeCount = typeof res?.data?.like_count === 'number' ? res.data.like_count : likeCount;
         setLiked(nextLiked);
         setLikeCount(nextLikeCount);
-      } else if (isAuthExpiredResponse(res.code, res.msg)) {
+      } else if (isAuthExpiredApiResponse(res)) {
         clearToken();
         showAlert('登录状态已失效，请重新登录', {
           type: 'warning',
@@ -336,7 +333,7 @@ const CommunityDetailPage: React.FC = () => {
                     });
                     if (res.code === 0) {
                       showAlert('举报已提交，我们会尽快处理。', { type: 'success', title: '提交成功' });
-                    } else if (isAuthExpiredResponse(res.code, res.msg)) {
+                    } else if (isAuthExpiredApiResponse(res)) {
                       clearToken();
                       showAlert('登录状态已失效，请重新登录', {
                         type: 'warning',

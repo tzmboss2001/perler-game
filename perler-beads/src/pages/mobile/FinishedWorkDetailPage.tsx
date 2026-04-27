@@ -5,6 +5,7 @@ import { finishedWorkApi, FinishedWorkItem } from '../../services/api/finishedWo
 import { colors, typography, radius, shadows } from '../../styles/designSystem';
 import { useUserStore } from '../../store/userStore';
 import { clearToken } from '../../services/api/authApi';
+import { isAuthExpiredApiResponse } from '../../services/api/authExpiry';
 import Modal, { useModal } from '../../components/Modal';
 
 const FinishedWorkDetailPage: React.FC = () => {
@@ -22,11 +23,6 @@ const FinishedWorkDetailPage: React.FC = () => {
 
   const workId = Number(id || 0);
   const isOwner = useMemo(() => !!item?.user?.id && !!userInfo?.id && item.user.id === userInfo.id, [item?.user?.id, userInfo?.id]);
-  const isAuthExpiredResponse = (code?: number | string, msg?: string) => {
-    const numericCode = Number(code);
-    return numericCode === 7 || numericCode === 401 || /token|登录|鉴权|未授权|未登录/i.test(msg || '');
-  };
-
   useEffect(() => {
     const load = async () => {
       if (!workId) {
@@ -92,7 +88,7 @@ const FinishedWorkDetailPage: React.FC = () => {
         const nextLiked = typeof res?.data?.liked === 'boolean' ? res.data.liked : !!item.liked;
         const nextLikeCount = typeof res?.data?.like_count === 'number' ? res.data.like_count : (item.like_count || 0);
         setItem(prev => (prev ? { ...prev, liked: nextLiked, like_count: nextLikeCount } : prev));
-      } else if (isAuthExpiredResponse(res.code, res.msg)) {
+      } else if (isAuthExpiredApiResponse(res)) {
         clearToken();
         logout();
         showAlert('登录状态已失效，请重新登录', { type: 'warning', title: '请先登录' });
@@ -118,7 +114,7 @@ const FinishedWorkDetailPage: React.FC = () => {
       const res = await finishedWorkApi.report(item.id, reason, detail);
       if (res.code === 0) {
         showAlert('举报已提交，感谢反馈', { type: 'success', title: '提交成功' });
-      } else if (isAuthExpiredResponse(res.code, res.msg)) {
+      } else if (isAuthExpiredApiResponse(res)) {
         clearToken();
         logout();
         showAlert('登录状态已失效，请重新登录', { type: 'warning', title: '请先登录' });

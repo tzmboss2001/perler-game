@@ -1,6 +1,9 @@
-/**
+﻿/**
  * 图片上传 API 服务
  */
+
+import { clearToken } from './authApi';
+import { handleAuthExpiredApiResponse } from './authExpiry';
 
 // API 响应类型
 interface ApiResponse<T> {
@@ -33,7 +36,9 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<ApiRe
     throw new Error(`HTTP error! status: ${response.status}`);
   }
 
-  return response.json();
+  const result = await response.json();
+  handleAuthExpiredApiResponse(result, clearToken);
+  return result;
 }
 
 // 上传 API

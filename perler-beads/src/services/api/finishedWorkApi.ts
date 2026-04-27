@@ -1,4 +1,5 @@
-﻿import { getToken } from "./authApi";
+﻿import { clearToken, getToken } from "./authApi";
+import { handleAuthExpiredApiResponse } from "./authExpiry";
 
 interface ApiResponse<T> {
   code: number;
@@ -95,7 +96,9 @@ async function request<T>(
     if (!res.ok) {
       throw new Error(`request failed: ${res.status}`);
     }
-    return res.json();
+    const result = await res.json();
+    handleAuthExpiredApiResponse(result, clearToken);
+    return result;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("请求超时，请检查网络后重试");

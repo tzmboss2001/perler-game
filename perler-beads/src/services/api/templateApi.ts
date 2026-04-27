@@ -1,8 +1,9 @@
-/**
+﻿/**
  * 模板 API 服务
  */
 
-import { getToken } from './authApi';
+import { clearToken, getToken } from './authApi';
+import { handleAuthExpiredApiResponse } from './authExpiry';
 
 // API 响应类型
 interface ApiResponse<T> {
@@ -92,7 +93,9 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<ApiRe
     throw new Error(`请求失败: ${response.status}`);
   }
 
-  return response.json();
+  const result = await response.json();
+  handleAuthExpiredApiResponse(result, clearToken);
+  return result;
 }
 
 // 模板 API

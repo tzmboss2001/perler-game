@@ -2,7 +2,8 @@
  * 绀惧尯 API 鏈嶅姟
  */
 
-import { getToken } from './authApi';
+import { clearToken, getToken } from './authApi';
+import { handleAuthExpiredApiResponse } from './authExpiry';
 
 // API 鍝嶅簲绫诲瀷
 interface ApiResponse<T> {
@@ -254,7 +255,9 @@ async function request<T>(url: string, options: RequestInit = {}, timeout = 3000
       throw new Error(`请求失败: ${response.status}`);
     }
 
-    return response.json();
+    const result = await response.json();
+    handleAuthExpiredApiResponse(result, clearToken);
+    return result;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error('请求超时，请检查网络后重试');

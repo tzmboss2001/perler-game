@@ -50,7 +50,13 @@ export const useUserStore = create<UserState>((set, get) => ({
       myColorsService.syncFromCloud().catch((err) => {
         console.warn('[userStore] myColors sync failed:', err);
       });
+      return;
     }
+
+    set({
+      isLoggedIn: false,
+      userInfo: null,
+    });
   },
 
   login: async (data: LoginReq) => {

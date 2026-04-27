@@ -3,8 +3,11 @@
  */
 
 // Token 存储键
+import { isAuthExpiredApiResponse } from './authExpiry';
+
 const TOKEN_KEY = 'perler_beads_token';
 const USER_INFO_KEY = 'perler_beads_user_info';
+export const AUTH_CLEARED_EVENT = 'perler-auth-cleared';
 
 // API 响应类型
 interface ApiResponse<T> {
@@ -83,12 +86,28 @@ export function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
+function emitAuthClearedEvent(): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') {
+    return;
+  }
+  if (typeof CustomEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(AUTH_CLEARED_EVENT));
+    return;
+  }
+  if (typeof document !== 'undefined' && typeof document.createEvent === 'function') {
+    const event = document.createEvent('Event');
+    event.initEvent(AUTH_CLEARED_EVENT, false, false);
+    window.dispatchEvent(event);
+  }
+}
+
 /**
  * 清除 Token
  */
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_INFO_KEY);
+  emitAuthClearedEvent();
 }
 
 /**
@@ -157,7 +176,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<ApiRe
   const result = await response.json();
 
   // 如果返回未授权状态，清除本地登录状态
-  if (result.code === 401) {
+  if (isAuthExpiredApiResponse(result)) {
     clearToken();
   }
 

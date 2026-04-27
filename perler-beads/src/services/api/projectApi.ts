@@ -2,7 +2,8 @@
  * 项目/方案 API 服务
  */
 
-import { getToken } from './authApi';
+import { clearToken, getToken } from './authApi';
+import { handleAuthExpiredApiResponse } from './authExpiry';
 import { allBeadColors, BeadColor } from '../../data/beadColors';
 
 // 设备ID存储键
@@ -178,7 +179,9 @@ async function request<T>(url: string, options: RequestInit = {}, timeout = 1200
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    return response.json();
+    const result = await response.json();
+    handleAuthExpiredApiResponse(result, clearToken);
+    return result;
   } catch (error) {
     clearTimeout(timeoutId);
     if (error instanceof Error && error.name === 'AbortError') {
