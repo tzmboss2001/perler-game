@@ -4,6 +4,7 @@ import {
   buildCompletedSingleBoardOnboardingState,
   clampSingleBoardMobileOverviewOffset,
   clampSingleBoardMobileOverviewWidth,
+  getMakingDesktopSingleBoardUiFlags,
   getMakingDesktopLayoutFlags,
   getMakingDesktopSidebarLayout,
   getTextOverlayTransitionTransform,
@@ -144,6 +145,38 @@ test("making desktop sidebar layout stays compact when collapsed", () => {
     {
       width: 40,
       contentPadding: 0,
+    },
+  );
+});
+
+test("desktop sidebar single-board mode moves workflow actions out of the main work area", () => {
+  assert.deepEqual(
+    getMakingDesktopSingleBoardUiFlags({
+      viewMode: "singleBoard",
+      useDesktopSidebarLayout: true,
+      hasSelectedColor: true,
+    }),
+    {
+      isDesktopSidebarSingleBoard: true,
+      showMainWorkflowCard: false,
+      showToolbarReplaceAction: false,
+      showSidebarWorkflowActions: true,
+      showSidebarReplaceAction: true,
+    },
+  );
+
+  assert.deepEqual(
+    getMakingDesktopSingleBoardUiFlags({
+      viewMode: "singleBoard",
+      useDesktopSidebarLayout: false,
+      hasSelectedColor: true,
+    }),
+    {
+      isDesktopSidebarSingleBoard: false,
+      showMainWorkflowCard: true,
+      showToolbarReplaceAction: true,
+      showSidebarWorkflowActions: false,
+      showSidebarReplaceAction: false,
     },
   );
 });

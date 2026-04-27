@@ -62,6 +62,32 @@ export function getMakingDesktopSidebarLayout({ viewportWidth, collapsed }) {
 /**
  * @param {{
  *   viewMode: string;
+ *   useDesktopSidebarLayout: boolean;
+ *   hasSelectedColor: boolean;
+ * }} input
+ */
+export function getMakingDesktopSingleBoardUiFlags({
+  viewMode,
+  useDesktopSidebarLayout,
+  hasSelectedColor,
+}) {
+  const isDesktopSidebarSingleBoard = Boolean(
+    viewMode === "singleBoard" && useDesktopSidebarLayout,
+  );
+  return {
+    isDesktopSidebarSingleBoard,
+    showMainWorkflowCard: !isDesktopSidebarSingleBoard,
+    showToolbarReplaceAction: !isDesktopSidebarSingleBoard,
+    showSidebarWorkflowActions: isDesktopSidebarSingleBoard,
+    showSidebarReplaceAction: Boolean(
+      isDesktopSidebarSingleBoard && hasSelectedColor,
+    ),
+  };
+}
+
+/**
+ * @param {{
+ *   viewMode: string;
  *   isSingleBoardMobile: boolean;
  *   isSingleBoardDesktop: boolean;
  *   singleBoardAllDone: boolean;

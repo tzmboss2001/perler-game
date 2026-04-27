@@ -48,6 +48,7 @@ import {
   clampSingleBoardMobileOverviewOffset,
   clampSingleBoardMobileOverviewWidth,
   getColorIdTextStyle,
+  getMakingDesktopSingleBoardUiFlags,
   getRenderScaleAnchorDelayMs,
   getSafeRenderMetricsBudget,
   getMakingDesktopLayoutFlags,
@@ -1342,6 +1343,27 @@ const MakingPage: React.FC = () => {
     if (!selection.colorId) return null;
     return allBeadColors.find((c) => c.id === selection.colorId) || null;
   }, [selection.colorId]);
+  const {
+    isDesktopSidebarSingleBoard,
+    showMainWorkflowCard,
+    showSidebarReplaceAction,
+    showSidebarWorkflowActions,
+    showToolbarReplaceAction,
+  } = useMemo(
+    () =>
+      getMakingDesktopSingleBoardUiFlags({
+        viewMode,
+        useDesktopSidebarLayout,
+        hasSelectedColor:
+          selection.type === "color" && Boolean(selectedBeadColor),
+      }),
+    [
+      selectedBeadColor,
+      selection.type,
+      useDesktopSidebarLayout,
+      viewMode,
+    ],
+  );
 
   const visionBoardRecommendation = useMemo(
     () => (beadData ? recommendBoard(beadData.width, beadData.height) : null),
@@ -4581,7 +4603,7 @@ const MakingPage: React.FC = () => {
                           )}
                       </div>
                     )}
-                    {!singleBoardOverviewCollapsed && (
+                    {!singleBoardOverviewCollapsed && showMainWorkflowCard && (
                       useDesktopSidebarLayout ? (
                         <div style={styles.singleBoardDesktopWorkflowCard}>
                           <div style={styles.singleBoardDesktopMetaRow}>
@@ -5008,7 +5030,7 @@ const MakingPage: React.FC = () => {
                 </button>
               )}
               {!(viewMode === "singleBoard" && singleBoardAllDone) &&
-                !(useDesktopSidebarLayout && viewMode === "singleBoard") && (
+                !isDesktopSidebarSingleBoard && (
                 <button
                   style={
                     viewMode === "singleBoard"
@@ -5028,7 +5050,7 @@ const MakingPage: React.FC = () => {
                   )}
                 </button>
               )}
-              {!(useDesktopSidebarLayout && viewMode === "singleBoard") && (
+              {!isDesktopSidebarSingleBoard && (
                 <button
                   style={
                     viewMode === "singleBoard"
@@ -5054,6 +5076,7 @@ const MakingPage: React.FC = () => {
                 </button>
               )}
               {viewMode === "singleBoard" &&
+                showToolbarReplaceAction &&
                 selection.type === "color" &&
                 selectedBeadColor && (
                   <button
@@ -5371,6 +5394,41 @@ const MakingPage: React.FC = () => {
                           点击总览可直接跳转
                         </div>
                       </div>
+                      {showSidebarWorkflowActions && (
+                        <div style={styles.makingDesktopSidebarWorkflowRow}>
+                          <button
+                            style={styles.makingDesktopSidebarWorkflowPrimaryBtn}
+                            onClick={handleToggleBoardDone}
+                            disabled={!activeBoardRect}
+                          >
+                            {activeBoardRect &&
+                            boardStatusMap[activeBoardRect.boardNumber]
+                              ? "取消完成"
+                              : "标记本板完成"}
+                          </button>
+                          {resumeBoardNumber &&
+                            resumeBoardNumber !== activeBoardNumber && (
+                              <button
+                                style={styles.makingDesktopSidebarWorkflowBtn}
+                                onClick={() =>
+                                  activateBoard(resumeBoardNumber, true)
+                                }
+                              >
+                                继续板{resumeBoardNumber}
+                              </button>
+                            )}
+                          <button
+                            style={styles.makingDesktopSidebarWorkflowBtn}
+                            onClick={() =>
+                              setSingleBoardOverviewCollapsed((prev) => !prev)
+                            }
+                          >
+                            {singleBoardOverviewCollapsed
+                              ? "展开总览"
+                              : "收起总览"}
+                          </button>
+                        </div>
+                      )}
 
                       {singleBoardOverviewCollapsed ? (
                         <div
@@ -5529,7 +5587,7 @@ const MakingPage: React.FC = () => {
                             图纸导出、视觉辅助和常用开关
                           </span>
                         </div>
-                        {selection.type === "color" && selectedBeadColor && (
+                        {showSidebarReplaceAction && (
                           <button
                             style={styles.makingDesktopSidebarMinorBtn}
                             onClick={() => setShowReplaceModal(true)}
@@ -6373,6 +6431,39 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "10px",
     fontWeight: 700,
     color: makingCandy.textSoft,
+  },
+
+  makingDesktopSidebarWorkflowRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flexWrap: "wrap" as const,
+  },
+
+  makingDesktopSidebarWorkflowPrimaryBtn: {
+    flex: "1 1 100%",
+    height: "30px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.borderStrong}`,
+    background:
+      "linear-gradient(145deg, rgba(125,211,252,0.22), rgba(244,114,182,0.18))",
+    color: makingCandy.text,
+    fontSize: "11px",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+
+  makingDesktopSidebarWorkflowBtn: {
+    flex: "1 1 0",
+    minWidth: "104px",
+    height: "28px",
+    borderRadius: radius.full,
+    border: `1px solid ${makingCandy.border}`,
+    background: "rgba(255,255,255,0.92)",
+    color: makingCandy.textSoft,
+    fontSize: "10px",
+    fontWeight: 700,
+    cursor: "pointer",
   },
 
   makingDesktopSidebarSection: {
