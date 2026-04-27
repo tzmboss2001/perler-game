@@ -58,7 +58,6 @@ import {
   getMakingDesktopSidebarLayout,
   getSingleBoardMobileOverviewLayout,
   SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET,
-  getSingleBoardMobileTopChromeOffset,
   getSingleBoardOverviewTitle,
   getTextOverlayTransitionTransform,
   getTextOverlayVisualState,
@@ -157,6 +156,7 @@ const MakingPage: React.FC = () => {
   const textOverlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const singleBoardMiniMapCanvasRef = useRef<HTMLCanvasElement>(null);
   const singleBoardMobileOverviewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const singleBoardMobileModeSwitchRef = useRef<HTMLDivElement>(null);
   const singleBoardMobileChromeRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasStageRef = useRef<HTMLDivElement>(null);
@@ -859,11 +859,14 @@ const MakingPage: React.FC = () => {
       return;
     }
 
+    const modeSwitchHeight = Math.ceil(
+      singleBoardMobileModeSwitchRef.current?.getBoundingClientRect().height ?? 0,
+    );
     const chromeHeight = Math.ceil(
       singleBoardMobileChromeRef.current?.getBoundingClientRect().height ?? 0,
     );
     const nextHeights = {
-      summary: chromeHeight,
+      summary: modeSwitchHeight + chromeHeight,
       toolbar: 0,
       swipeStatus: 0,
     };
@@ -882,6 +885,7 @@ const MakingPage: React.FC = () => {
     showSingleBoardMobileOverviewButton,
     totalBoardCount,
     activeBoardDone,
+    activeBoardNumber,
     nextPendingBoardNumber,
     resumeBoardNumber,
     singleBoardProgress.doneCount,
@@ -4075,21 +4079,10 @@ const MakingPage: React.FC = () => {
     viewMode === "singleBoard"
       ? SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET
       : 50;
-  const singleBoardMobileTopChromeOffset = useMemo(
-    () =>
-      getSingleBoardMobileTopChromeOffset({
-        isSingleBoardMobile,
-        summaryHeight: singleBoardMobileChromeHeights.summary,
-        toolbarHeight: singleBoardMobileChromeHeights.toolbar,
-        swipeStatusHeight: singleBoardMobileChromeHeights.swipeStatus,
-      }),
-    [
-      isSingleBoardMobile,
-      singleBoardMobileChromeHeights.summary,
-      singleBoardMobileChromeHeights.swipeStatus,
-      singleBoardMobileChromeHeights.toolbar,
-    ],
-  );
+  const singleBoardMobileTopChromeOffset = isSingleBoardMobile
+    ? singleBoardMobileChromeHeights.summary ||
+      SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET
+    : null;
   const singleBoardCanvasTopOffset =
     singleBoardMobileTopChromeOffset ?? singleBoardChromeOffset;
   const shouldShowStatusHint =
@@ -4165,7 +4158,7 @@ const MakingPage: React.FC = () => {
       {/* 预览区 */}
       <div style={previewSectionStyle}>
         {!(viewMode === "singleBoard" && singleBoardAllDone) && (
-          <div style={modeSwitchBarStyle}>
+          <div ref={singleBoardMobileModeSwitchRef} style={modeSwitchBarStyle}>
             <button
               style={modeSwitchBtnStyle(viewMode === "traditional")}
               onClick={() => setViewMode("traditional")}
