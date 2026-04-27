@@ -19,6 +19,8 @@ import {
   getSingleBoardAutoFocusScaleDecision,
   getSingleBoardCanvasMinHeight,
   getSingleBoardLayoutFlags,
+  getSingleBoardMobileTopChromeOffset,
+  getSingleBoardMobileToolbarState,
   getNeighborBoardNumber,
   getSingleBoardMinScale,
   getSingleBoardSwipeStatus,
@@ -351,6 +353,63 @@ test("swipe status enters edge ready state near fit scale with adjacent board", 
     {
       state: "swipe_edge_ready",
       swipeThresholdScale: 0.6615,
+    },
+  );
+});
+
+test("mobile single-board top chrome offset includes summary, toolbar, and swipe status heights", () => {
+  assert.equal(
+    getSingleBoardMobileTopChromeOffset({
+      isSingleBoardMobile: true,
+      summaryHeight: 18,
+      toolbarHeight: 56,
+      swipeStatusHeight: 24,
+    }),
+    144,
+  );
+});
+
+test("desktop single-board top chrome offset stays disabled", () => {
+  assert.equal(
+    getSingleBoardMobileTopChromeOffset({
+      isSingleBoardMobile: false,
+      summaryHeight: 18,
+      toolbarHeight: 56,
+      swipeStatusHeight: 24,
+    }),
+    null,
+  );
+});
+
+test("mobile single-board toolbar state starts expanded and collapses after canvas interaction", () => {
+  assert.deepEqual(
+    getSingleBoardMobileToolbarState({
+      isSingleBoardMobile: true,
+      hasInteractedWithCanvas: false,
+    }),
+    {
+      collapsed: false,
+    },
+  );
+  assert.deepEqual(
+    getSingleBoardMobileToolbarState({
+      isSingleBoardMobile: true,
+      hasInteractedWithCanvas: true,
+    }),
+    {
+      collapsed: true,
+    },
+  );
+});
+
+test("desktop single-board toolbar state does not collapse", () => {
+  assert.deepEqual(
+    getSingleBoardMobileToolbarState({
+      isSingleBoardMobile: false,
+      hasInteractedWithCanvas: true,
+    }),
+    {
+      collapsed: false,
     },
   );
 });
