@@ -374,6 +374,42 @@ export function getSingleBoardSwipeStatus({
 }
 
 /**
+ * @param {{
+ *   isSingleBoardMobile: boolean;
+ *   summaryHeight: number;
+ *   toolbarHeight: number;
+ *   swipeStatusHeight: number;
+ * }} input
+ */
+export function getSingleBoardMobileTopChromeOffset({
+  isSingleBoardMobile,
+  summaryHeight,
+  toolbarHeight,
+  swipeStatusHeight,
+}) {
+  if (!isSingleBoardMobile) {
+    return null;
+  }
+
+  return 46 + summaryHeight + toolbarHeight + swipeStatusHeight;
+}
+
+/**
+ * @param {{
+ *   isSingleBoardMobile: boolean;
+ *   hasInteractedWithCanvas: boolean;
+ * }} input
+ */
+export function getSingleBoardMobileToolbarState({
+  isSingleBoardMobile,
+  hasInteractedWithCanvas,
+}) {
+  return {
+    collapsed: Boolean(isSingleBoardMobile && hasInteractedWithCanvas),
+  };
+}
+
+/**
  * @param {string | null} raw
  */
 export function parseSingleBoardOnboardingState(raw) {
