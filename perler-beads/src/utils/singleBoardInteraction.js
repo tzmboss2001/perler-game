@@ -23,6 +23,47 @@ export function getSingleBoardLayoutFlags({ viewMode, viewportWidth }) {
 /**
  * @param {{
  *   viewMode: string;
+ *   isSingleBoardMobile: boolean;
+ *   hasSelectedColor: boolean;
+ * }} input
+ */
+export function getSingleBoardMobileUiFlags({
+  viewMode,
+  isSingleBoardMobile,
+  hasSelectedColor,
+}) {
+  const isMobileSingleBoard = Boolean(
+    viewMode === "singleBoard" && isSingleBoardMobile,
+  );
+
+  if (!isMobileSingleBoard) {
+    return {
+      showToolbarOverview: false,
+      showToolbarReset: false,
+      showToolbarPrimaryComplete: false,
+      showToolbarTools: false,
+      showToolbarExport: true,
+      showToolbarAssist: true,
+      showToolbarAutoAdvance: true,
+      showToolsReplaceAction: false,
+    };
+  }
+
+  return {
+    showToolbarOverview: true,
+    showToolbarReset: true,
+    showToolbarPrimaryComplete: true,
+    showToolbarTools: true,
+    showToolbarExport: false,
+    showToolbarAssist: false,
+    showToolbarAutoAdvance: false,
+    showToolsReplaceAction: Boolean(hasSelectedColor),
+  };
+}
+
+/**
+ * @param {{
+ *   viewMode: string;
  *   viewportWidth: number;
  *   pointerFine: boolean;
  * }} input

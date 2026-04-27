@@ -12,6 +12,7 @@ import {
   getSafeRenderMetricsBudget,
   getColorIdTextStyle,
   getRenderScaleAnchorDelayMs,
+  getSingleBoardMobileUiFlags,
   getSingleBoardMobileOverviewLayout,
   getSingleBoardOverviewTitle,
   getTextOverlayStabilizationFrames,
@@ -177,6 +178,44 @@ test("desktop sidebar single-board mode moves workflow actions out of the main w
       showToolbarReplaceAction: true,
       showSidebarWorkflowActions: false,
       showSidebarReplaceAction: false,
+    },
+  );
+});
+
+test("mobile single-board mode keeps only core controls in the main toolbar", () => {
+  assert.deepEqual(
+    getSingleBoardMobileUiFlags({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      hasSelectedColor: true,
+    }),
+    {
+      showToolbarOverview: true,
+      showToolbarReset: true,
+      showToolbarPrimaryComplete: true,
+      showToolbarTools: true,
+      showToolbarExport: false,
+      showToolbarAssist: false,
+      showToolbarAutoAdvance: false,
+      showToolsReplaceAction: true,
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardMobileUiFlags({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      hasSelectedColor: false,
+    }),
+    {
+      showToolbarOverview: true,
+      showToolbarReset: true,
+      showToolbarPrimaryComplete: true,
+      showToolbarTools: true,
+      showToolbarExport: false,
+      showToolbarAssist: false,
+      showToolbarAutoAdvance: false,
+      showToolsReplaceAction: false,
     },
   );
 });

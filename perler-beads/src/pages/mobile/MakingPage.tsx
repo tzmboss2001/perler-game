@@ -54,6 +54,7 @@ import {
   getMakingDesktopLayoutFlags,
   getSingleBoardCanvasMinHeight,
   getSingleBoardLayoutFlags,
+  getSingleBoardMobileUiFlags,
   getMakingDesktopSidebarLayout,
   getSingleBoardMobileOverviewLayout,
   getSingleBoardOverviewTitle,
@@ -1363,6 +1364,24 @@ const MakingPage: React.FC = () => {
       useDesktopSidebarLayout,
       viewMode,
     ],
+  );
+  const {
+    showToolbarOverview,
+    showToolbarReset,
+    showToolbarPrimaryComplete,
+    showToolbarTools,
+    showToolbarExport,
+    showToolbarAssist,
+    showToolsReplaceAction,
+  } = useMemo(
+    () =>
+      getSingleBoardMobileUiFlags({
+        viewMode,
+        isSingleBoardMobile,
+        hasSelectedColor:
+          selection.type === "color" && Boolean(selectedBeadColor),
+      }),
+    [isSingleBoardMobile, selectedBeadColor, selection.type, viewMode],
   );
 
   const visionBoardRecommendation = useMemo(
@@ -4216,32 +4235,12 @@ const MakingPage: React.FC = () => {
                         <span style={styles.singleBoardMobileSummaryText}>
                           剩余 {singleBoardProgress.remainingCount} 块
                         </span>
-                        {resumeBoardNumber &&
-                          resumeBoardNumber !== activeBoardNumber && (
-                            <button
-                              style={styles.singleBoardResumeBtn}
-                              onClick={() =>
-                                activateBoard(resumeBoardNumber, true)
-                              }
-                            >
-                              继续未完成
-                            </button>
-                          )}
+                        <span style={styles.singleBoardMobileSummaryHint}>
+                          {autoAdvanceOnBoardDone
+                            ? "完成后自动切换"
+                            : "完成后停留当前板"}
+                        </span>
                       </div>
-                      <button
-                        style={{
-                          ...styles.singleBoardQuickToggle,
-                          ...styles.singleBoardMobileQuickToggle,
-                          ...(autoAdvanceOnBoardDone
-                            ? styles.singleBoardQuickToggleActive
-                            : {}),
-                        }}
-                        onClick={() =>
-                          setAutoAdvanceOnBoardDone((prev) => !prev)
-                        }
-                      >
-                        {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
-                      </button>
                     </div>
                     {totalBoardCount > 1 && (
                       <div
@@ -4256,55 +4255,6 @@ const MakingPage: React.FC = () => {
                         <span style={styles.singleBoardSwipeStatusText}>
                           {singleBoardSwipeUi.text}
                         </span>
-                      </div>
-                    )}
-                    {(showSingleBoardMobileOverviewButton || activeBoardRect) && (
-                      <div style={styles.singleBoardMobileNavRow}>
-                        {showSingleBoardMobileOverviewButton && (
-                          <button
-                            style={{
-                              ...styles.singleBoardMobileOverviewBtn,
-                              width: "auto",
-                              minWidth: "64px",
-                              padding: "0 12px",
-                              fontSize: "11px",
-                            }}
-                            onClick={() =>
-                              setSingleBoardMobileMiniMapExpanded(
-                                (prev) => !prev,
-                              )
-                            }
-                            title={
-                              singleBoardMobileMiniMapExpanded
-                                ? "收起总览"
-                                : "展开总览"
-                            }
-                          >
-                            {singleBoardMobileMiniMapExpanded ? "收起总览" : "总览"}
-                          </button>
-                        )}
-                        <button
-                          style={styles.singleBoardMobileSecondaryBtn}
-                          onClick={resetCurrentView}
-                          disabled={!activeBoardRect}
-                        >
-                          复位
-                        </button>
-                        <button
-                          style={styles.singleBoardMobilePrimaryBtn}
-                          onClick={() => {
-                            if (activeBoardDone && nextPendingBoardNumber) {
-                              activateBoard(nextPendingBoardNumber, true);
-                              return;
-                            }
-                            handleToggleBoardDone();
-                          }}
-                          disabled={!activeBoardRect}
-                        >
-                          {activeBoardDone && nextPendingBoardNumber
-                            ? "下一块"
-                            : "完成"}
-                        </button>
                       </div>
                     )}
                     {showSingleBoardMobileOverviewButton &&
@@ -4999,7 +4949,37 @@ const MakingPage: React.FC = () => {
 
             {/* 右侧：功能按钮 */}
             <div style={controlBtnsStyle}>
-              {viewMode === "singleBoard" && !singleBoardAllDone && (
+              {viewMode === "singleBoard" &&
+                isSingleBoardMobile &&
+                showToolbarOverview &&
+                showSingleBoardMobileOverviewButton && (
+                  <button
+                    style={singleBoardToolbarBtnStyle}
+                    onClick={() =>
+                      setSingleBoardMobileMiniMapExpanded((prev) => !prev)
+                    }
+                    title={
+                      singleBoardMobileMiniMapExpanded ? "收起总览" : "展开总览"
+                    }
+                  >
+                    {singleBoardMobileMiniMapExpanded ? "收起总览" : "总览"}
+                  </button>
+                )}
+              {viewMode === "singleBoard" &&
+                isSingleBoardMobile &&
+                showToolbarReset && (
+                  <button
+                    style={singleBoardToolbarBtnStyle}
+                    onClick={resetCurrentView}
+                    disabled={!activeBoardRect}
+                    title="复位当前板"
+                  >
+                    复位
+                  </button>
+                )}
+              {viewMode === "singleBoard" &&
+                !singleBoardAllDone &&
+                showToolbarPrimaryComplete && (
                 <button
                   style={{
                     ...singleBoardToolbarBtnStyle,
@@ -5029,7 +5009,8 @@ const MakingPage: React.FC = () => {
                         : `完成板${activeBoardNumber}`}
                 </button>
               )}
-              {!(viewMode === "singleBoard" && singleBoardAllDone) &&
+              {showToolbarExport &&
+                !(viewMode === "singleBoard" && singleBoardAllDone) &&
                 !isDesktopSidebarSingleBoard && (
                 <button
                   style={
@@ -5050,7 +5031,8 @@ const MakingPage: React.FC = () => {
                   )}
                 </button>
               )}
-              {!isDesktopSidebarSingleBoard && (
+              {(showToolbarAssist || showToolbarTools) &&
+                !isDesktopSidebarSingleBoard && (
                 <button
                   style={
                     viewMode === "singleBoard"
@@ -5063,12 +5045,12 @@ const MakingPage: React.FC = () => {
                       : styles.miniBtn
                   }
                   onClick={() => setShowSettings(!showSettings)}
-                  title="设置"
+                  title={showToolbarTools ? "工具" : "设置"}
                 >
                   {viewMode === "singleBoard" ? (
                     <>
                       <Gear size={13} />
-                      辅助
+                      {showToolbarTools ? "工具" : "辅助"}
                     </>
                   ) : (
                     <Gear size={14} />
@@ -5076,6 +5058,7 @@ const MakingPage: React.FC = () => {
                 </button>
               )}
               {viewMode === "singleBoard" &&
+                !isSingleBoardMobile &&
                 showToolbarReplaceAction &&
                 selection.type === "color" &&
                 selectedBeadColor && (
@@ -5105,7 +5088,11 @@ const MakingPage: React.FC = () => {
           {showSettings && (
             <div style={styles.settingsPanel}>
               <div style={styles.settingsHeader}>
-                <span style={styles.settingsTitle}>设置</span>
+                <span style={styles.settingsTitle}>
+                  {isSingleBoardMobile && viewMode === "singleBoard"
+                    ? "工具"
+                    : "设置"}
+                </span>
                 <button
                   style={styles.closeBtn}
                   onClick={() => setShowSettings(false)}
@@ -5114,6 +5101,102 @@ const MakingPage: React.FC = () => {
                 </button>
               </div>
               <div style={styles.settingsContent}>
+                {isSingleBoardMobile && viewMode === "singleBoard" && (
+                  <>
+                    {resumeBoardNumber &&
+                      resumeBoardNumber !== activeBoardNumber && (
+                        <div style={styles.settingRow}>
+                          <span style={styles.settingLabel}>继续未完成</span>
+                          <button
+                            style={{
+                              ...styles.actionBtn,
+                              padding: "8px 12px",
+                              fontSize: "12px",
+                            }}
+                            onClick={() => {
+                              setShowSettings(false);
+                              activateBoard(resumeBoardNumber, true);
+                            }}
+                          >
+                            继续
+                          </button>
+                        </div>
+                      )}
+                    <div style={styles.settingRow}>
+                      <span style={styles.settingLabel}>图纸</span>
+                      <button
+                        style={{
+                          ...styles.actionBtn,
+                          padding: "8px 12px",
+                          fontSize: "12px",
+                        }}
+                        onClick={() => {
+                          setShowSettings(false);
+                          handleOpenExport();
+                        }}
+                      >
+                        下载
+                      </button>
+                    </div>
+                    <div style={styles.settingRow}>
+                      <span style={styles.settingLabel}>辅助</span>
+                      <button
+                        style={{
+                          ...styles.actionBtn,
+                          padding: "8px 12px",
+                          fontSize: "12px",
+                        }}
+                        onClick={() => {
+                          setShowSettings(false);
+                          setShowVisionAssist(true);
+                        }}
+                      >
+                        打开
+                      </button>
+                    </div>
+                    <div style={styles.settingRow}>
+                      <span style={styles.settingLabel}>自动切换</span>
+                      <button
+                        style={{
+                          ...styles.toggleBtn,
+                          ...(autoAdvanceOnBoardDone
+                            ? styles.toggleBtnActive
+                            : {}),
+                        }}
+                        onClick={() =>
+                          setAutoAdvanceOnBoardDone((prev) => !prev)
+                        }
+                      >
+                        {autoAdvanceOnBoardDone ? (
+                          <CheckCircle size={16} weight="fill" />
+                        ) : (
+                          <CheckCircle size={16} />
+                        )}
+                      </button>
+                    </div>
+                    {showToolsReplaceAction &&
+                      selection.type === "color" &&
+                      selectedBeadColor && (
+                        <div style={styles.settingRow}>
+                          <span style={styles.settingLabel}>换色</span>
+                          <button
+                            style={{
+                              ...styles.actionBtn,
+                              padding: "8px 12px",
+                              fontSize: "12px",
+                            }}
+                            onClick={() => {
+                              setShowSettings(false);
+                              setShowReplaceModal(true);
+                            }}
+                          >
+                            打开
+                          </button>
+                        </div>
+                      )}
+                    <div style={styles.settingDivider} />
+                  </>
+                )}
                 <div style={styles.settingRow}>
                   <span style={styles.settingLabel}>显示色号</span>
                   <button
@@ -6902,6 +6985,12 @@ const styles: Record<string, React.CSSProperties> = {
   singleBoardMobileSummaryText: {
     fontSize: "9px",
     color: makingCandy.textSoft,
+    fontWeight: 800,
+  },
+
+  singleBoardMobileSummaryHint: {
+    fontSize: "9px",
+    color: "#0f766e",
     fontWeight: 800,
   },
 
