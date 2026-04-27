@@ -57,6 +57,7 @@ import {
   getSingleBoardMobileUiFlags,
   getMakingDesktopSidebarLayout,
   getSingleBoardMobileOverviewLayout,
+  getSingleBoardMobileTopChromeOffset,
   getSingleBoardOverviewTitle,
   getTextOverlayTransitionTransform,
   getTextOverlayVisualState,
@@ -155,6 +156,9 @@ const MakingPage: React.FC = () => {
   const textOverlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const singleBoardMiniMapCanvasRef = useRef<HTMLCanvasElement>(null);
   const singleBoardMobileOverviewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const singleBoardMobileSummaryRef = useRef<HTMLDivElement>(null);
+  const singleBoardMobileToolbarRef = useRef<HTMLDivElement>(null);
+  const singleBoardMobileSwipeStatusRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasStageRef = useRef<HTMLDivElement>(null);
 
@@ -355,6 +359,12 @@ const MakingPage: React.FC = () => {
     useState({ x: 0, y: 0 });
   const [singleBoardMobileOverviewWidth, setSingleBoardMobileOverviewWidth] =
     useState(220);
+  const [singleBoardMobileChromeHeights, setSingleBoardMobileChromeHeights] =
+    useState({
+      summary: 0,
+      toolbar: 0,
+      swipeStatus: 0,
+    });
   const [autoAdvanceOnBoardDone, setAutoAdvanceOnBoardDone] = useState(true);
   const [singleBoardHydrated, setSingleBoardHydrated] = useState(false);
   const [showSingleBoardOnboarding, setShowSingleBoardOnboarding] =
@@ -837,6 +847,33 @@ const MakingPage: React.FC = () => {
     viewportHeight,
     viewportWidth,
   ]);
+
+  useLayoutEffect(() => {
+    if (!isSingleBoardMobile) {
+      return;
+    }
+
+    const nextHeights = {
+      summary: Math.ceil(
+        singleBoardMobileSummaryRef.current?.getBoundingClientRect().height ?? 0,
+      ),
+      toolbar: Math.ceil(
+        singleBoardMobileToolbarRef.current?.getBoundingClientRect().height ?? 0,
+      ),
+      swipeStatus: Math.ceil(
+        singleBoardMobileSwipeStatusRef.current?.getBoundingClientRect().height ??
+          0,
+      ),
+    };
+
+    setSingleBoardMobileChromeHeights((prev) =>
+      prev.summary === nextHeights.summary &&
+      prev.toolbar === nextHeights.toolbar &&
+      prev.swipeStatus === nextHeights.swipeStatus
+        ? prev
+        : nextHeights,
+    );
+  });
 
   const displayBoardRect = useMemo(() => {
     if (!beadData) return null;
@@ -4018,15 +4055,35 @@ const MakingPage: React.FC = () => {
     ...(active ? styles.modeSwitchBtnActive : {}),
   });
   const singleBoardChromeOffset = viewMode === "singleBoard" ? 46 : 50;
+  const singleBoardMobileTopChromeOffset = useMemo(
+    () =>
+      getSingleBoardMobileTopChromeOffset({
+        isSingleBoardMobile,
+        summaryHeight: singleBoardMobileChromeHeights.summary,
+        toolbarHeight: singleBoardMobileChromeHeights.toolbar,
+        swipeStatusHeight: singleBoardMobileChromeHeights.swipeStatus,
+      }),
+    [
+      isSingleBoardMobile,
+      singleBoardMobileChromeHeights.summary,
+      singleBoardMobileChromeHeights.swipeStatus,
+      singleBoardMobileChromeHeights.toolbar,
+    ],
+  );
+  const singleBoardCanvasTopOffset =
+    singleBoardMobileTopChromeOffset ?? singleBoardChromeOffset;
   const shouldShowStatusHint =
     !isSingleBoardMobile &&
     (viewMode !== "singleBoard" ||
       (!singleBoardAllDone && (selection.type !== null || showSettings)));
   const statusHintStyle: React.CSSProperties = {
     ...styles.statusHint,
-    top: isNarrowToolbar
-      ? `${singleBoardChromeOffset + 38}px`
-      : `${singleBoardChromeOffset}px`,
+    top:
+      isSingleBoardMobile && singleBoardMobileTopChromeOffset !== null
+        ? `${singleBoardMobileTopChromeOffset}px`
+        : isNarrowToolbar
+          ? `${singleBoardChromeOffset + 38}px`
+          : `${singleBoardChromeOffset}px`,
     maxWidth: isNarrowToolbar ? "calc(100vw - 32px)" : undefined,
     ...(viewMode === "singleBoard"
       ? {
@@ -4037,7 +4094,7 @@ const MakingPage: React.FC = () => {
   };
   const canvasWrapperStyle: React.CSSProperties = {
     ...styles.canvasWrapper,
-    top: `${singleBoardChromeOffset}px`,
+    top: `${singleBoardCanvasTopOffset}px`,
   };
   const canvasContainerStyle: React.CSSProperties = {
     ...styles.canvasContainer,
@@ -4226,7 +4283,10 @@ const MakingPage: React.FC = () => {
               <>
                 {isSingleBoardMobile ? (
                   <>
-                    <div style={styles.singleBoardMobileSummaryRow}>
+                    <div
+                      ref={singleBoardMobileSummaryRef}
+                      style={styles.singleBoardMobileSummaryRow}
+                    >
                       <div style={styles.singleBoardMobileSummaryMain}>
                         <span style={styles.singleBoardMobileSummaryText}>
                           进度 {singleBoardProgress.doneCount}/
@@ -4244,6 +4304,7 @@ const MakingPage: React.FC = () => {
                     </div>
                     {totalBoardCount > 1 && (
                       <div
+                        ref={singleBoardMobileSwipeStatusRef}
                         style={{
                           ...styles.singleBoardSwipeStatus,
                           ...singleBoardSwipeUi.style,
@@ -4255,6 +4316,58 @@ const MakingPage: React.FC = () => {
                         <span style={styles.singleBoardSwipeStatusText}>
                           {singleBoardSwipeUi.text}
                         </span>
+                      </div>
+                    )}
+                    {(showSingleBoardMobileOverviewButton || activeBoardRect) && (
+                      <div
+                        ref={singleBoardMobileToolbarRef}
+                        style={styles.singleBoardMobileNavRow}
+                      >
+                        {showSingleBoardMobileOverviewButton && (
+                          <button
+                            style={{
+                              ...styles.singleBoardMobileOverviewBtn,
+                              width: "auto",
+                              minWidth: "64px",
+                              padding: "0 12px",
+                              fontSize: "11px",
+                            }}
+                            onClick={() =>
+                              setSingleBoardMobileMiniMapExpanded(
+                                (prev) => !prev,
+                              )
+                            }
+                            title={
+                              singleBoardMobileMiniMapExpanded
+                                ? "收起总览"
+                                : "展开总览"
+                            }
+                          >
+                            {singleBoardMobileMiniMapExpanded ? "收起总览" : "总览"}
+                          </button>
+                        )}
+                        <button
+                          style={styles.singleBoardMobileSecondaryBtn}
+                          onClick={resetCurrentView}
+                          disabled={!activeBoardRect}
+                        >
+                          复位
+                        </button>
+                        <button
+                          style={styles.singleBoardMobilePrimaryBtn}
+                          onClick={() => {
+                            if (activeBoardDone && nextPendingBoardNumber) {
+                              activateBoard(nextPendingBoardNumber, true);
+                              return;
+                            }
+                            handleToggleBoardDone();
+                          }}
+                          disabled={!activeBoardRect}
+                        >
+                          {activeBoardDone && nextPendingBoardNumber
+                            ? "下一块"
+                            : "完成"}
+                        </button>
                       </div>
                     )}
                     {showSingleBoardMobileOverviewButton &&
