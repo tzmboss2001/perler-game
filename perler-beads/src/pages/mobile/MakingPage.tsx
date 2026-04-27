@@ -4039,8 +4039,8 @@ const MakingPage: React.FC = () => {
       ? SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET
       : 50;
   const singleBoardMobileTopChromeOffset = isSingleBoardMobile
-    ? singleBoardMobileChromeHeights.summary ||
-      SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET
+    ? SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET +
+      singleBoardMobileChromeHeights.summary
     : null;
   const singleBoardCanvasTopOffset =
     singleBoardMobileTopChromeOffset ?? singleBoardChromeOffset;
