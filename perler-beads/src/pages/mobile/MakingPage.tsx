@@ -57,6 +57,7 @@ import {
   getSingleBoardMobileUiFlags,
   getMakingDesktopSidebarLayout,
   getSingleBoardMobileOverviewLayout,
+  getSingleBoardMobileToolbarState,
   SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET,
   getSingleBoardOverviewTitle,
   getTextOverlayTransitionTransform,
@@ -356,6 +357,8 @@ const MakingPage: React.FC = () => {
   ] = useState(false);
   const [singleBoardMobileToolbarExpanded, setSingleBoardMobileToolbarExpanded] =
     useState(true);
+  const [singleBoardMobileCanvasInteracted, setSingleBoardMobileCanvasInteracted] =
+    useState(false);
   const [singleBoardMobileOverviewOffset, setSingleBoardMobileOverviewOffset] =
     useState({ x: 0, y: 0 });
   const [singleBoardMobileOverviewWidth, setSingleBoardMobileOverviewWidth] =
@@ -450,6 +453,14 @@ const MakingPage: React.FC = () => {
         isIOSWebKit,
       }),
     [pointerFine, isIOSWebKit],
+  );
+  const singleBoardMobileToolbarState = useMemo(
+    () =>
+      getSingleBoardMobileToolbarState({
+        isSingleBoardMobile,
+        hasInteractedWithCanvas: singleBoardMobileCanvasInteracted,
+      }),
+    [isSingleBoardMobile, singleBoardMobileCanvasInteracted],
   );
 
   // 坐标提示框状态
@@ -879,6 +890,7 @@ const MakingPage: React.FC = () => {
         : nextHeights,
     );
   }, [
+    activeBoardNumber,
     isSingleBoardMobile,
     singleBoardAllDone,
     singleBoardMobileToolbarExpanded,
@@ -894,6 +906,21 @@ const MakingPage: React.FC = () => {
     singleBoardSwipeUi.text,
     singleBoardSwipeUi.title,
     viewportWidth,
+  ]);
+
+  useEffect(() => {
+    if (!isSingleBoardMobile || viewMode !== "singleBoard") {
+      setSingleBoardMobileCanvasInteracted(false);
+      return;
+    }
+
+    if (singleBoardMobileToolbarState.collapsed) {
+      setSingleBoardMobileToolbarExpanded((prev) => (prev ? false : prev));
+    }
+  }, [
+    isSingleBoardMobile,
+    singleBoardMobileToolbarState.collapsed,
+    viewMode,
   ]);
 
   const displayBoardRect = useMemo(() => {
@@ -1679,6 +1706,21 @@ const MakingPage: React.FC = () => {
     selection.type,
     viewMode,
   ]);
+
+  const markSingleBoardMobileCanvasInteraction = useCallback(() => {
+    if (!isSingleBoardMobile || viewMode !== "singleBoard") {
+      return;
+    }
+    setSingleBoardMobileCanvasInteracted(true);
+  }, [isSingleBoardMobile, viewMode]);
+
+  const handleSingleBoardMobileToolbarToggle = useCallback(() => {
+    const nextExpanded = !singleBoardMobileToolbarExpanded;
+    if (nextExpanded) {
+      setSingleBoardMobileCanvasInteracted(false);
+    }
+    setSingleBoardMobileToolbarExpanded(nextExpanded);
+  }, [singleBoardMobileToolbarExpanded]);
 
   const activateBoard = useCallback(
     (boardNumber: number, shouldCenter = true) => {
@@ -2778,6 +2820,8 @@ const MakingPage: React.FC = () => {
       )
         return;
 
+      markSingleBoardMobileCanvasInteraction();
+
       // 防止触摸事件后的 click 二次触发（touchEnd 已处理）
       if (Date.now() - lastTapProcessedRef.current < 500) return;
 
@@ -2921,11 +2965,13 @@ const MakingPage: React.FC = () => {
       selection,
       voiceEnabled,
       toast,
+      markSingleBoardMobileCanvasInteraction,
     ],
   );
 
   // 触摸拖动处理
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    markSingleBoardMobileCanvasInteraction();
     if (e.touches.length === 1) {
       setIsDragging(true);
       const touch = e.touches[0];
@@ -2960,11 +3006,12 @@ const MakingPage: React.FC = () => {
         focalY,
       };
     }
-  }, []);
+  }, [markSingleBoardMobileCanvasInteraction]);
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
       if (e.touches.length === 1 && isDragging && lastTouchRef.current) {
+        markSingleBoardMobileCanvasInteraction();
         const touch = e.touches[0];
         const deltaX = touch.clientX - lastTouchRef.current.x;
         const deltaY = touch.clientY - lastTouchRef.current.y;
@@ -3039,6 +3086,7 @@ const MakingPage: React.FC = () => {
         const wrapperRect = wrapperRef.current?.getBoundingClientRect();
         const start = pinchStartRef.current;
         if (!wrapperRect || start.distance <= 0) return;
+        markSingleBoardMobileCanvasInteraction();
 
         const currentFocalX =
           (e.touches[0].clientX + e.touches[1].clientX) / 2 - wrapperRect.left;
@@ -3081,6 +3129,7 @@ const MakingPage: React.FC = () => {
       physicalBoardCols,
       physicalBoardRows,
       renderMaxScale,
+      markSingleBoardMobileCanvasInteraction,
       singleBoardFitScale,
       toast,
       viewMode,
@@ -3092,6 +3141,7 @@ const MakingPage: React.FC = () => {
       // 检查是否为点击（非拖动）
       if (e.changedTouches.length === 1 && dragStartPosRef.current) {
         const touch = e.changedTouches[0];
+        markSingleBoardMobileCanvasInteraction();
         const dx = touch.clientX - dragStartPosRef.current.x;
         const dy = touch.clientY - dragStartPosRef.current.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
@@ -3232,6 +3282,7 @@ const MakingPage: React.FC = () => {
       physicalBoardSize,
       scale,
       selection,
+      markSingleBoardMobileCanvasInteraction,
       voiceEnabled,
       toast,
     ],
@@ -3239,12 +3290,13 @@ const MakingPage: React.FC = () => {
 
   // 鼠标拖动处理
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    markSingleBoardMobileCanvasInteraction();
     setIsDragging(true);
     lastTouchRef.current = { x: e.clientX, y: e.clientY };
     dragStartTimeRef.current = Date.now();
     dragStartPosRef.current = { x: e.clientX, y: e.clientY };
     // 注意：不要调用 preventDefault()，否则会阻止 click 事件
-  }, []);
+  }, [markSingleBoardMobileCanvasInteraction]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -3278,6 +3330,7 @@ const MakingPage: React.FC = () => {
     if (!wrapper) return;
 
     const handleWheelNative = (e: WheelEvent) => {
+      markSingleBoardMobileCanvasInteraction();
       e.preventDefault();
       e.stopPropagation();
       const delta = e.deltaY > 0 ? -0.2 : 0.2;
@@ -3289,7 +3342,7 @@ const MakingPage: React.FC = () => {
 
     wrapper.addEventListener("wheel", handleWheelNative, { passive: false });
     return () => wrapper.removeEventListener("wheel", handleWheelNative);
-  }, []);
+  }, [applyScaleAtPoint, markSingleBoardMobileCanvasInteraction]);
 
   // 阻止页面滚动
   useEffect(() => {
@@ -4393,9 +4446,7 @@ const MakingPage: React.FC = () => {
                                 ? styles.singleBoardMobileToolToggleBtnActive
                                 : {}),
                             }}
-                            onClick={() =>
-                              setSingleBoardMobileToolbarExpanded((prev) => !prev)
-                            }
+                            onClick={handleSingleBoardMobileToolbarToggle}
                             title={
                               singleBoardMobileToolbarExpanded
                                 ? "收起工具"
