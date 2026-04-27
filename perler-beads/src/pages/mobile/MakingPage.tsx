@@ -403,6 +403,12 @@ const MakingPage: React.FC = () => {
     startWidth: 220,
     resizing: false,
   });
+  const singleBoardChromeBaseOffset = getSingleBoardMobileTopChromeOffset({
+    isSingleBoardMobile: true,
+    summaryHeight: 0,
+    toolbarHeight: 0,
+    swipeStatusHeight: 0,
+  })!;
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
   const [pointerFine, setPointerFine] = useState(() => {
@@ -849,7 +855,12 @@ const MakingPage: React.FC = () => {
   ]);
 
   useLayoutEffect(() => {
-    if (!isSingleBoardMobile) {
+    if (!isSingleBoardMobile || singleBoardAllDone) {
+      setSingleBoardMobileChromeHeights((prev) =>
+        prev.summary === 0 && prev.toolbar === 0 && prev.swipeStatus === 0
+          ? prev
+          : { summary: 0, toolbar: 0, swipeStatus: 0 },
+      );
       return;
     }
 
@@ -873,7 +884,22 @@ const MakingPage: React.FC = () => {
         ? prev
         : nextHeights,
     );
-  });
+  }, [
+    activeBoardDone,
+    activeBoardNumber,
+    autoAdvanceOnBoardDone,
+    isSingleBoardMobile,
+    nextPendingBoardNumber,
+    resumeBoardNumber,
+    showSingleBoardMobileOverviewButton,
+    singleBoardAllDone,
+    singleBoardProgress.doneCount,
+    singleBoardProgress.remainingCount,
+    singleBoardProgress.totalCount,
+    singleBoardSwipeUi.text,
+    singleBoardSwipeUi.title,
+    viewportWidth,
+  ]);
 
   const displayBoardRect = useMemo(() => {
     if (!beadData) return null;
@@ -4054,7 +4080,8 @@ const MakingPage: React.FC = () => {
       : {}),
     ...(active ? styles.modeSwitchBtnActive : {}),
   });
-  const singleBoardChromeOffset = viewMode === "singleBoard" ? 46 : 50;
+  const singleBoardChromeOffset =
+    viewMode === "singleBoard" ? singleBoardChromeBaseOffset : 50;
   const singleBoardMobileTopChromeOffset = useMemo(
     () =>
       getSingleBoardMobileTopChromeOffset({
