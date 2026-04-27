@@ -600,8 +600,10 @@ export function getSingleBoardOverviewTitle({
   activeBoardNumber,
   totalBoardCount,
 }) {
-  const current = Math.max(1, Number(activeBoardNumber || 1));
-  const total = Math.max(1, Number(totalBoardCount || 1));
+  const currentValue = Number(activeBoardNumber);
+  const totalValue = Number(totalBoardCount);
+  const current = Number.isFinite(currentValue) && currentValue > 0 ? Math.floor(currentValue) : 1;
+  const total = Number.isFinite(totalValue) && totalValue > 0 ? Math.floor(totalValue) : 1;
   return `整图总览 · 当前板 ${current}/${total}`;
 }
 

@@ -769,3 +769,20 @@ test("single-board mobile overview title explicitly tracks the active board", ()
     "整图总览 · 当前板 1/1",
   );
 });
+
+test("single-board mobile overview title falls back safely for zero null and invalid values", () => {
+  assert.equal(
+    getSingleBoardOverviewTitle({
+      activeBoardNumber: 0,
+      totalBoardCount: null,
+    }),
+    "整图总览 · 当前板 1/1",
+  );
+  assert.equal(
+    getSingleBoardOverviewTitle({
+      activeBoardNumber: "abc",
+      totalBoardCount: "NaN",
+    }),
+    "整图总览 · 当前板 1/1",
+  );
+});
