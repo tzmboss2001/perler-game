@@ -155,9 +155,7 @@ const MakingPage: React.FC = () => {
   const textOverlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const singleBoardMiniMapCanvasRef = useRef<HTMLCanvasElement>(null);
   const singleBoardMobileOverviewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const singleBoardMobileSummaryRef = useRef<HTMLDivElement>(null);
-  const singleBoardMobileToolbarRef = useRef<HTMLDivElement>(null);
-  const singleBoardMobileSwipeStatusRef = useRef<HTMLDivElement>(null);
+  const singleBoardMobileChromeRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasStageRef = useRef<HTMLDivElement>(null);
 
@@ -859,17 +857,13 @@ const MakingPage: React.FC = () => {
       return;
     }
 
+    const chromeHeight = Math.ceil(
+      singleBoardMobileChromeRef.current?.getBoundingClientRect().height ?? 0,
+    );
     const nextHeights = {
-      summary: Math.ceil(
-        singleBoardMobileSummaryRef.current?.getBoundingClientRect().height ?? 0,
-      ),
-      toolbar: Math.ceil(
-        singleBoardMobileToolbarRef.current?.getBoundingClientRect().height ?? 0,
-      ),
-      swipeStatus: Math.ceil(
-        singleBoardMobileSwipeStatusRef.current?.getBoundingClientRect().height ??
-          0,
-      ),
+      summary: chromeHeight,
+      toolbar: 0,
+      swipeStatus: 0,
     };
 
     setSingleBoardMobileChromeHeights((prev) =>
@@ -886,8 +880,6 @@ const MakingPage: React.FC = () => {
     showSingleBoardMobileOverviewButton,
     totalBoardCount,
     activeBoardDone,
-    activeBoardNumber,
-    autoAdvanceOnBoardDone,
     nextPendingBoardNumber,
     resumeBoardNumber,
     singleBoardProgress.doneCount,
@@ -4271,145 +4263,145 @@ const MakingPage: React.FC = () => {
                 {isSingleBoardMobile ? (
                   <>
                     <div
-                      ref={singleBoardMobileSummaryRef}
-                      style={styles.singleBoardMobileSummaryRow}
+                      ref={singleBoardMobileChromeRef}
+                      style={styles.singleBoardMobileChromeStack}
                     >
-                      <div style={styles.singleBoardMobileSummaryMain}>
-                        <span style={styles.singleBoardMobileSummaryText}>
-                          进度 {singleBoardProgress.doneCount}/
-                          {singleBoardProgress.totalCount}
-                        </span>
-                        <span style={styles.singleBoardMobileSummaryText}>
-                          剩余 {singleBoardProgress.remainingCount} 块
-                        </span>
-                        {resumeBoardNumber &&
-                          resumeBoardNumber !== activeBoardNumber && (
-                            <button
-                              style={styles.singleBoardResumeBtn}
-                              onClick={() =>
-                                activateBoard(resumeBoardNumber, true)
-                              }
-                            >
-                              继续未完成
-                          </button>
-                        )}
+                      <div style={styles.singleBoardMobileSummaryRow}>
+                        <div style={styles.singleBoardMobileSummaryMain}>
+                          <span style={styles.singleBoardMobileSummaryText}>
+                            进度 {singleBoardProgress.doneCount}/
+                            {singleBoardProgress.totalCount}
+                          </span>
+                          <span style={styles.singleBoardMobileSummaryText}>
+                            剩余 {singleBoardProgress.remainingCount} 块
+                          </span>
+                          {resumeBoardNumber &&
+                            resumeBoardNumber !== activeBoardNumber && (
+                              <button
+                                style={styles.singleBoardResumeBtn}
+                                onClick={() =>
+                                  activateBoard(resumeBoardNumber, true)
+                                }
+                              >
+                                继续未完成
+                              </button>
+                            )}
+                        </div>
                       </div>
-                    </div>
-                    {totalBoardCount > 1 && (
-                      <div
-                        ref={singleBoardMobileSwipeStatusRef}
-                        style={{
-                          ...styles.singleBoardSwipeStatus,
-                          ...singleBoardSwipeUi.style,
-                        }}
-                      >
-                        <span style={styles.singleBoardSwipeStatusTitle}>
-                          {singleBoardSwipeUi.title}
-                        </span>
-                        <span style={styles.singleBoardSwipeStatusText}>
-                          {singleBoardSwipeUi.text}
-                        </span>
-                      </div>
-                    )}
-                    <div
-                      ref={singleBoardMobileToolbarRef}
-                      style={styles.singleBoardMobileToolbarShell}
-                    >
-                      <div style={styles.singleBoardMobileNavRow}>
-                        {showSingleBoardMobileOverviewButton && (
-                          <button
-                            style={{
-                              ...styles.singleBoardMobileOverviewBtn,
-                              width: "auto",
-                              minWidth: "64px",
-                              padding: "0 12px",
-                              fontSize: "11px",
-                            }}
-                            onClick={() =>
-                              setSingleBoardMobileMiniMapExpanded(
-                                (prev) => !prev,
-                              )
-                            }
-                            title={
-                              singleBoardMobileMiniMapExpanded
-                                ? "收起总览"
-                                : "展开总览"
-                            }
-                          >
-                            {singleBoardMobileMiniMapExpanded ? "收起总览" : "总览"}
-                          </button>
-                        )}
-                        <button
-                          style={styles.singleBoardMobileSecondaryBtn}
-                          onClick={resetCurrentView}
-                          disabled={!activeBoardRect}
-                        >
-                          复位
-                        </button>
-                        <button
-                          style={styles.singleBoardMobilePrimaryBtn}
-                          onClick={() => {
-                            if (activeBoardDone && nextPendingBoardNumber) {
-                              activateBoard(nextPendingBoardNumber, true);
-                              return;
-                            }
-                            handleToggleBoardDone();
-                          }}
-                          disabled={!activeBoardRect}
-                        >
-                          {activeBoardDone && nextPendingBoardNumber
-                            ? "下一块"
-                            : "完成"}
-                        </button>
-                        <button
+                      {totalBoardCount > 1 && (
+                        <div
                           style={{
-                            ...styles.singleBoardMobileToolToggleBtn,
-                            ...(singleBoardMobileToolbarExpanded
-                              ? styles.singleBoardMobileToolToggleBtnActive
-                              : {}),
+                            ...styles.singleBoardSwipeStatus,
+                            ...singleBoardSwipeUi.style,
                           }}
-                          onClick={() =>
-                            setSingleBoardMobileToolbarExpanded((prev) => !prev)
-                          }
-                          title={
-                            singleBoardMobileToolbarExpanded
-                              ? "收起工具"
-                              : "展开工具"
-                          }
                         >
-                          {singleBoardMobileToolbarExpanded ? "收起" : "工具"}
-                        </button>
-                      </div>
-                      {singleBoardMobileToolbarExpanded && (
-                        <div style={styles.singleBoardMobileToolRow}>
-                          <button
-                            style={{
-                              ...styles.singleBoardQuickToggle,
-                              ...styles.singleBoardMobileQuickToggle,
-                              ...(autoAdvanceOnBoardDone
-                                ? styles.singleBoardQuickToggleActive
-                                : {}),
-                            }}
-                            onClick={() =>
-                              setAutoAdvanceOnBoardDone((prev) => !prev)
-                            }
-                          >
-                            {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
-                          </button>
-                          <button
-                            style={{
-                              ...styles.singleBoardMobileToolChip,
-                              ...(showSettings
-                                ? styles.singleBoardMobileToolChipActive
-                                : {}),
-                            }}
-                            onClick={() => setShowSettings((prev) => !prev)}
-                            title={showSettings ? "收起辅助" : "展开辅助"}
-                          >
-                            辅助
-                          </button>
+                          <span style={styles.singleBoardSwipeStatusTitle}>
+                            {singleBoardSwipeUi.title}
+                          </span>
+                          <span style={styles.singleBoardSwipeStatusText}>
+                            {singleBoardSwipeUi.text}
+                          </span>
                         </div>
                       )}
+                      <div style={styles.singleBoardMobileToolbarShell}>
+                        <div style={styles.singleBoardMobileNavRow}>
+                          {showSingleBoardMobileOverviewButton && (
+                            <button
+                              style={{
+                                ...styles.singleBoardMobileOverviewBtn,
+                                width: "auto",
+                                minWidth: "64px",
+                                padding: "0 12px",
+                                fontSize: "11px",
+                              }}
+                              onClick={() =>
+                                setSingleBoardMobileMiniMapExpanded(
+                                  (prev) => !prev,
+                                )
+                              }
+                              title={
+                                singleBoardMobileMiniMapExpanded
+                                  ? "收起总览"
+                                  : "展开总览"
+                              }
+                            >
+                              {singleBoardMobileMiniMapExpanded
+                                ? "收起总览"
+                                : "总览"}
+                            </button>
+                          )}
+                          <button
+                            style={styles.singleBoardMobileSecondaryBtn}
+                            onClick={resetCurrentView}
+                            disabled={!activeBoardRect}
+                          >
+                            复位
+                          </button>
+                          <button
+                            style={styles.singleBoardMobilePrimaryBtn}
+                            onClick={() => {
+                              if (activeBoardDone && nextPendingBoardNumber) {
+                                activateBoard(nextPendingBoardNumber, true);
+                                return;
+                              }
+                              handleToggleBoardDone();
+                            }}
+                            disabled={!activeBoardRect}
+                          >
+                            {activeBoardDone && nextPendingBoardNumber
+                              ? "下一块"
+                              : "完成"}
+                          </button>
+                          <button
+                            style={{
+                              ...styles.singleBoardMobileToolToggleBtn,
+                              ...(singleBoardMobileToolbarExpanded
+                                ? styles.singleBoardMobileToolToggleBtnActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setSingleBoardMobileToolbarExpanded((prev) => !prev)
+                            }
+                            title={
+                              singleBoardMobileToolbarExpanded
+                                ? "收起工具"
+                                : "展开工具"
+                            }
+                          >
+                            {singleBoardMobileToolbarExpanded ? "收起" : "工具"}
+                          </button>
+                        </div>
+                        {singleBoardMobileToolbarExpanded && (
+                          <div style={styles.singleBoardMobileToolRow}>
+                            <button
+                              style={{
+                                ...styles.singleBoardQuickToggle,
+                                ...styles.singleBoardMobileQuickToggle,
+                                ...(autoAdvanceOnBoardDone
+                                  ? styles.singleBoardQuickToggleActive
+                                  : {}),
+                              }}
+                              onClick={() =>
+                                setAutoAdvanceOnBoardDone((prev) => !prev)
+                              }
+                            >
+                              {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
+                            </button>
+                            <button
+                              style={{
+                                ...styles.singleBoardMobileToolChip,
+                                ...(showSettings
+                                  ? styles.singleBoardMobileToolChipActive
+                                  : {}),
+                              }}
+                              onClick={() => setShowSettings((prev) => !prev)}
+                              title={showSettings ? "收起辅助" : "展开辅助"}
+                            >
+                              辅助
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     {showSingleBoardMobileOverviewButton &&
                       singleBoardMobileMiniMapExpanded && (
@@ -6952,6 +6944,12 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
+  singleBoardMobileChromeStack: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "4px",
+  },
+
   singleBoardMobileToolbarShell: {
     display: "flex",
     flexDirection: "column" as const,
@@ -6973,7 +6971,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "14px",
     border: `1px solid rgba(255,255,255,0.72)`,
     background: "rgba(255,255,255,0.8)",
-    marginTop: "4px",
     flexWrap: "wrap" as const,
     boxShadow: "0 8px 18px rgba(120,93,45,0.08)",
     backdropFilter: "blur(8px)",
