@@ -4458,32 +4458,48 @@ const MakingPage: React.FC = () => {
                         </div>
                         {singleBoardMobileToolbarExpanded && (
                           <div style={styles.singleBoardMobileToolRow}>
+                          <button
+                            style={{
+                              ...styles.singleBoardQuickToggle,
+                              ...styles.singleBoardMobileQuickToggle,
+                              ...(autoAdvanceOnBoardDone
+                                ? styles.singleBoardQuickToggleActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setAutoAdvanceOnBoardDone((prev) => !prev)
+                            }
+                          >
+                            {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
+                          </button>
+                          <button
+                            style={styles.singleBoardMobileToolChip}
+                            onClick={handleOpenExport}
+                            title="下载图纸"
+                          >
+                            图纸
+                          </button>
+                          <button
+                            style={{
+                              ...styles.singleBoardMobileToolChip,
+                              ...(showSettings
+                                ? styles.singleBoardMobileToolChipActive
+                                : {}),
+                            }}
+                            onClick={() => setShowSettings((prev) => !prev)}
+                            title={showSettings ? "收起辅助" : "展开辅助"}
+                          >
+                            辅助
+                          </button>
+                          {selection.type === "color" && selectedBeadColor && (
                             <button
-                              style={{
-                                ...styles.singleBoardQuickToggle,
-                                ...styles.singleBoardMobileQuickToggle,
-                                ...(autoAdvanceOnBoardDone
-                                  ? styles.singleBoardQuickToggleActive
-                                  : {}),
-                              }}
-                              onClick={() =>
-                                setAutoAdvanceOnBoardDone((prev) => !prev)
-                              }
+                              style={styles.singleBoardMobileToolChip}
+                              onClick={() => setShowReplaceModal(true)}
+                              title="替换当前选中颜色"
                             >
-                              {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
+                              换色
                             </button>
-                            <button
-                              style={{
-                                ...styles.singleBoardMobileToolChip,
-                                ...(showSettings
-                                  ? styles.singleBoardMobileToolChipActive
-                                  : {}),
-                              }}
-                              onClick={() => setShowSettings((prev) => !prev)}
-                              title={showSettings ? "收起辅助" : "展开辅助"}
-                            >
-                              辅助
-                            </button>
+                          )}
                           </div>
                         )}
                       </div>
@@ -5179,38 +5195,15 @@ const MakingPage: React.FC = () => {
             </div>
 
             {/* 右侧：功能按钮 */}
-            <div style={controlBtnsStyle}>
-              {viewMode === "singleBoard" &&
-                isSingleBoardMobile &&
-                showToolbarOverview &&
-                showSingleBoardMobileOverviewButton && (
-                  <button
-                    style={singleBoardToolbarBtnStyle}
-                    onClick={() =>
-                      setSingleBoardMobileMiniMapExpanded((prev) => !prev)
-                    }
-                    title={
-                      singleBoardMobileMiniMapExpanded ? "收起总览" : "展开总览"
-                    }
-                  >
-                    {singleBoardMobileMiniMapExpanded ? "收起总览" : "总览"}
-                  </button>
-                )}
-              {viewMode === "singleBoard" &&
-                isSingleBoardMobile &&
-                showToolbarReset && (
-                  <button
-                    style={singleBoardToolbarBtnStyle}
-                    onClick={resetCurrentView}
-                    disabled={!activeBoardRect}
-                    title="复位当前板"
-                  >
-                    复位
-                  </button>
-                )}
-              {viewMode === "singleBoard" &&
-                !singleBoardAllDone &&
-                showToolbarPrimaryComplete && (
+            <div
+              style={{
+                ...controlBtnsStyle,
+                ...(isSingleBoardMobile && viewMode === "singleBoard"
+                  ? { display: "none" }
+                  : {}),
+              }}
+            >
+              {viewMode === "singleBoard" && !singleBoardAllDone && (
                 <button
                   style={{
                     ...singleBoardToolbarBtnStyle,
