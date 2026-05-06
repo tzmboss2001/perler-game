@@ -860,69 +860,6 @@ const MakingPage: React.FC = () => {
     viewportWidth,
   ]);
 
-  useLayoutEffect(() => {
-    if (!isSingleBoardMobile || singleBoardAllDone) {
-      setSingleBoardMobileChromeHeights((prev) =>
-        prev.summary === 0 && prev.toolbar === 0 && prev.swipeStatus === 0
-          ? prev
-          : { summary: 0, toolbar: 0, swipeStatus: 0 },
-      );
-      return;
-    }
-
-    const modeSwitchHeight = Math.ceil(
-      singleBoardMobileModeSwitchRef.current?.getBoundingClientRect().height ?? 0,
-    );
-    const chromeHeight = Math.ceil(
-      singleBoardMobileChromeRef.current?.getBoundingClientRect().height ?? 0,
-    );
-    const nextHeights = {
-      summary: modeSwitchHeight + chromeHeight,
-      toolbar: 0,
-      swipeStatus: 0,
-    };
-
-    setSingleBoardMobileChromeHeights((prev) =>
-      prev.summary === nextHeights.summary &&
-      prev.toolbar === nextHeights.toolbar &&
-      prev.swipeStatus === nextHeights.swipeStatus
-        ? prev
-        : nextHeights,
-    );
-  }, [
-    activeBoardNumber,
-    isSingleBoardMobile,
-    singleBoardAllDone,
-    singleBoardMobileToolbarExpanded,
-    showSingleBoardMobileOverviewButton,
-    totalBoardCount,
-    activeBoardDone,
-    activeBoardNumber,
-    nextPendingBoardNumber,
-    resumeBoardNumber,
-    singleBoardProgress.doneCount,
-    singleBoardProgress.remainingCount,
-    singleBoardProgress.totalCount,
-    singleBoardSwipeUi.text,
-    singleBoardSwipeUi.title,
-    viewportWidth,
-  ]);
-
-  useEffect(() => {
-    if (!isSingleBoardMobile || viewMode !== "singleBoard") {
-      setSingleBoardMobileCanvasInteracted(false);
-      return;
-    }
-
-    if (singleBoardMobileToolbarState.collapsed) {
-      setSingleBoardMobileToolbarExpanded((prev) => (prev ? false : prev));
-    }
-  }, [
-    isSingleBoardMobile,
-    singleBoardMobileToolbarState.collapsed,
-    viewMode,
-  ]);
-
   const displayBoardRect = useMemo(() => {
     if (!beadData) return null;
     if (viewMode === "singleBoard" && activeBoardRect) {
@@ -2127,6 +2064,68 @@ const MakingPage: React.FC = () => {
     if (!activeBoardRect) return false;
     return Boolean(boardStatusMap[activeBoardRect.boardNumber]);
   }, [activeBoardRect, boardStatusMap]);
+
+  useLayoutEffect(() => {
+    if (!isSingleBoardMobile || singleBoardAllDone) {
+      setSingleBoardMobileChromeHeights((prev) =>
+        prev.summary === 0 && prev.toolbar === 0 && prev.swipeStatus === 0
+          ? prev
+          : { summary: 0, toolbar: 0, swipeStatus: 0 },
+      );
+      return;
+    }
+
+    const modeSwitchHeight = Math.ceil(
+      singleBoardMobileModeSwitchRef.current?.getBoundingClientRect().height ?? 0,
+    );
+    const chromeHeight = Math.ceil(
+      singleBoardMobileChromeRef.current?.getBoundingClientRect().height ?? 0,
+    );
+    const nextHeights = {
+      summary: modeSwitchHeight + chromeHeight,
+      toolbar: 0,
+      swipeStatus: 0,
+    };
+
+    setSingleBoardMobileChromeHeights((prev) =>
+      prev.summary === nextHeights.summary &&
+      prev.toolbar === nextHeights.toolbar &&
+      prev.swipeStatus === nextHeights.swipeStatus
+        ? prev
+        : nextHeights,
+    );
+  }, [
+    activeBoardDone,
+    activeBoardNumber,
+    isSingleBoardMobile,
+    nextPendingBoardNumber,
+    resumeBoardNumber,
+    showSingleBoardMobileOverviewButton,
+    singleBoardAllDone,
+    singleBoardMobileToolbarExpanded,
+    singleBoardProgress.doneCount,
+    singleBoardProgress.remainingCount,
+    singleBoardProgress.totalCount,
+    singleBoardSwipeUi.text,
+    singleBoardSwipeUi.title,
+    totalBoardCount,
+    viewportWidth,
+  ]);
+
+  useEffect(() => {
+    if (!isSingleBoardMobile || viewMode !== "singleBoard") {
+      setSingleBoardMobileCanvasInteracted(false);
+      return;
+    }
+
+    if (singleBoardMobileToolbarState.collapsed) {
+      setSingleBoardMobileToolbarExpanded((prev) => (prev ? false : prev));
+    }
+  }, [
+    isSingleBoardMobile,
+    singleBoardMobileToolbarState.collapsed,
+    viewMode,
+  ]);
 
   useEffect(() => {
     if (!singleBoardStorageKey) return;
