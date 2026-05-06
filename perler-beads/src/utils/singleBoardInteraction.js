@@ -470,6 +470,27 @@ export function getSingleBoardMobileTopChromeOffset({
 
 /**
  * @param {{
+ *   viewMode: string;
+ *   isSingleBoardMobile: boolean;
+ *   baseOffset: number;
+ *   pageChromeOffset: number;
+ * }} input
+ */
+export function getSingleBoardCanvasWrapperTopOffset({
+  viewMode,
+  isSingleBoardMobile,
+  baseOffset,
+  pageChromeOffset,
+}) {
+  if (viewMode === "singleBoard" && isSingleBoardMobile) {
+    return baseOffset;
+  }
+
+  return pageChromeOffset;
+}
+
+/**
+ * @param {{
  *   isSingleBoardMobile: boolean;
  *   hasInteractedWithCanvas: boolean;
  * }} input

@@ -37,3 +37,16 @@
   - `docs/superpowers/specs/2026-04-27-mobile-single-board-toolbar-overlay-design.md`
 - 计划：
   - `docs/superpowers/plans/2026-04-27-mobile-single-board-toolbar-overlay-fix.md`
+
+## 2026-05-06 追加修正：工作区高度未充分利用
+- 真机反馈：单板模式下，图纸工作区域约一半高度未显示图纸。
+- 根因：`canvasWrapper` 位于 `canvasContainer` 内部，而 `canvasContainer` 本身已经排在顶部工具条和缩放条下方；上一轮把完整页面顶部 chrome 高度再次作为 `canvasWrapper.top`，导致顶部高度被重复避让。
+- 修正：
+  - 新增 `getSingleBoardCanvasWrapperTopOffset`。
+  - 手机端单板模式下，`canvasWrapper.top` 只保留容器内本地避让值 `46px`，不再叠加模式切换、摘要、工具条等页面外部高度。
+- 验证：
+  - 修复前 MCP 实测：`canvasWrapper.topStyle = 173px`，画布容器从 `y=356.3` 才开始。
+  - 修复后 MCP 实测：`canvasWrapper.topStyle = 46px`，画布容器从 `y=233.3` 开始。
+  - `cmd /c node --test TEST\single_board_interaction.test.mjs`：40/40 通过。
+  - `cmd /c npm.cmd run build`：通过。
+  - 截图：`TEMP/mobile_single_board_workarea_after_top_fix.png`。

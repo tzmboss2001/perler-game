@@ -53,6 +53,7 @@ import {
   getSafeRenderMetricsBudget,
   getMakingDesktopLayoutFlags,
   getSingleBoardCanvasMinHeight,
+  getSingleBoardCanvasWrapperTopOffset,
   getSingleBoardLayoutFlags,
   getSingleBoardMobileUiFlags,
   getMakingDesktopSidebarLayout,
@@ -4135,8 +4136,12 @@ const MakingPage: React.FC = () => {
     ? SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET +
       singleBoardMobileChromeHeights.summary
     : null;
-  const singleBoardCanvasTopOffset =
-    singleBoardMobileTopChromeOffset ?? singleBoardChromeOffset;
+  const singleBoardCanvasTopOffset = getSingleBoardCanvasWrapperTopOffset({
+    viewMode,
+    isSingleBoardMobile,
+    baseOffset: singleBoardChromeOffset,
+    pageChromeOffset: singleBoardMobileTopChromeOffset ?? singleBoardChromeOffset,
+  });
   const shouldShowStatusHint =
     !isSingleBoardMobile &&
     (viewMode !== "singleBoard" ||

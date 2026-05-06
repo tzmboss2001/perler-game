@@ -18,6 +18,7 @@ import {
   getTextOverlayStabilizationFrames,
   getSingleBoardAutoFocusScaleDecision,
   getSingleBoardCanvasMinHeight,
+  getSingleBoardCanvasWrapperTopOffset,
   getSingleBoardLayoutFlags,
   getSingleBoardMobileTopChromeOffset,
   getSingleBoardMobileToolbarState,
@@ -366,6 +367,18 @@ test("mobile single-board top chrome offset includes summary, toolbar, and swipe
       swipeStatusHeight: 24,
     }),
     144,
+  );
+});
+
+test("mobile single-board canvas wrapper keeps local top offset inside canvas container", () => {
+  assert.equal(
+    getSingleBoardCanvasWrapperTopOffset({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      baseOffset: 46,
+      pageChromeOffset: 173,
+    }),
+    46,
   );
 });
 
