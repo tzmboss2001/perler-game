@@ -153,6 +153,61 @@ export function getSingleBoardCanvasMinHeight({
 
 /**
  * @param {{
+ *   viewMode: string;
+ *   isSingleBoardMobile: boolean;
+ *   singleBoardAllDone: boolean;
+ * }} input
+ */
+export function getSingleBoardMobileImmersiveLayout({
+  viewMode,
+  isSingleBoardMobile,
+  singleBoardAllDone,
+}) {
+  const enabled = Boolean(
+    viewMode === "singleBoard" &&
+      isSingleBoardMobile &&
+      !singleBoardAllDone,
+  );
+
+  return {
+    enabled,
+    showBottomNav: !enabled,
+    showModeSwitch: !enabled,
+    canvasWrapperTopOffset: enabled ? 0 : null,
+    overlayChrome: enabled,
+  };
+}
+
+/**
+ * @param {{ viewportWidth: number }} input
+ */
+export function getSingleBoardMobileImmersiveControlLayout({
+  viewportWidth,
+}) {
+  const zoomBottomPx = 10;
+  const zoomHeightPx = 38;
+  const gapPx = 10;
+  const toolbarBottomPx = zoomBottomPx + zoomHeightPx + gapPx;
+  const safeViewportWidth = Number.isFinite(viewportWidth)
+    ? Math.max(viewportWidth, 0)
+    : 0;
+  const zoomMaxWidthPx = Math.max(
+    220,
+    Math.min(320, safeViewportWidth - 16),
+  );
+
+  return {
+    zoomBottomPx,
+    zoomHeightPx,
+    gapPx,
+    toolbarBottomPx,
+    zoomMaxWidthPx,
+    zoomButtonMinWidthPx: 28,
+  };
+}
+
+/**
+ * @param {{
  *   currentScale: number;
  *   minScale: number;
  *   maxScale: number;

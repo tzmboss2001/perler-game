@@ -54,6 +54,8 @@ import {
   getMakingDesktopLayoutFlags,
   getSingleBoardCanvasMinHeight,
   getSingleBoardCanvasWrapperTopOffset,
+  getSingleBoardMobileImmersiveControlLayout,
+  getSingleBoardMobileImmersiveLayout,
   getLiveStageDisplayScale,
   getSingleBoardLayoutFlags,
   getSingleBoardMobileUiFlags,
@@ -358,7 +360,7 @@ const MakingPage: React.FC = () => {
     setSingleBoardMobileMiniMapExpanded,
   ] = useState(false);
   const [singleBoardMobileToolbarExpanded, setSingleBoardMobileToolbarExpanded] =
-    useState(true);
+    useState(false);
   const [singleBoardMobileCanvasInteracted, setSingleBoardMobileCanvasInteracted] =
     useState(false);
   const [singleBoardMobileOverviewOffset, setSingleBoardMobileOverviewOffset] =
@@ -1978,6 +1980,20 @@ const MakingPage: React.FC = () => {
     [singleBoardProgress.doneCount, singleBoardProgress.totalCount],
   );
 
+  const singleBoardMobileImmersiveLayout =
+    getSingleBoardMobileImmersiveLayout({
+      viewMode,
+      isSingleBoardMobile,
+      singleBoardAllDone,
+    });
+  const isSingleBoardMobileImmersive =
+    singleBoardMobileImmersiveLayout.enabled;
+  const isSingleBoardInteractionLocked =
+    isSingleBoardMobileImmersive &&
+    (singleBoardMobileToolbarExpanded ||
+      showSettings ||
+      singleBoardMobileMiniMapExpanded);
+
   const nextPendingBoardNumber = useMemo(() => {
     const nextPending = boardRects.find(
       (item) => !boardStatusMap[item.boardNumber],
@@ -2811,6 +2827,7 @@ const MakingPage: React.FC = () => {
   // ===== 点击处理（交互核心）=====
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (isSingleBoardInteractionLocked) return;
       if (
         !beadData ||
         !canvasRef.current ||
@@ -2965,11 +2982,16 @@ const MakingPage: React.FC = () => {
       voiceEnabled,
       toast,
       markSingleBoardMobileCanvasInteraction,
+      isSingleBoardInteractionLocked,
     ],
   );
 
   // 触摸拖动处理
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (isSingleBoardInteractionLocked) {
+      e.preventDefault();
+      return;
+    }
     markSingleBoardMobileCanvasInteraction();
     if (e.touches.length === 1) {
       setIsDragging(true);
@@ -3005,10 +3027,14 @@ const MakingPage: React.FC = () => {
         focalY,
       };
     }
-  }, [markSingleBoardMobileCanvasInteraction]);
+  }, [isSingleBoardInteractionLocked, markSingleBoardMobileCanvasInteraction]);
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
+      if (isSingleBoardInteractionLocked) {
+        e.preventDefault();
+        return;
+      }
       if (e.touches.length === 1 && isDragging && lastTouchRef.current) {
         markSingleBoardMobileCanvasInteraction();
         const touch = e.touches[0];
@@ -3132,11 +3158,20 @@ const MakingPage: React.FC = () => {
       singleBoardFitScale,
       toast,
       viewMode,
+      isSingleBoardInteractionLocked,
     ],
   );
 
   const handleTouchEnd = useCallback(
     (e: React.TouchEvent) => {
+      if (isSingleBoardInteractionLocked) {
+        e.preventDefault();
+        setIsDragging(false);
+        lastTouchRef.current = null;
+        pinchStartRef.current = null;
+        dragStartPosRef.current = null;
+        return;
+      }
       // 检查是否为点击（非拖动）
       if (e.changedTouches.length === 1 && dragStartPosRef.current) {
         const touch = e.changedTouches[0];
@@ -3284,21 +3319,24 @@ const MakingPage: React.FC = () => {
       markSingleBoardMobileCanvasInteraction,
       voiceEnabled,
       toast,
+      isSingleBoardInteractionLocked,
     ],
   );
 
   // 鼠标拖动处理
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isSingleBoardInteractionLocked) return;
     markSingleBoardMobileCanvasInteraction();
     setIsDragging(true);
     lastTouchRef.current = { x: e.clientX, y: e.clientY };
     dragStartTimeRef.current = Date.now();
     dragStartPosRef.current = { x: e.clientX, y: e.clientY };
     // 注意：不要调用 preventDefault()，否则会阻止 click 事件
-  }, [markSingleBoardMobileCanvasInteraction]);
+  }, [isSingleBoardInteractionLocked, markSingleBoardMobileCanvasInteraction]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
+      if (isSingleBoardInteractionLocked) return;
       if (!isDragging || !lastTouchRef.current) return;
 
       const deltaX = e.clientX - lastTouchRef.current.x;
@@ -3308,7 +3346,7 @@ const MakingPage: React.FC = () => {
 
       lastTouchRef.current = { x: e.clientX, y: e.clientY };
     },
-    [isDragging, shiftTranslate],
+    [isDragging, shiftTranslate, isSingleBoardInteractionLocked],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -3329,6 +3367,11 @@ const MakingPage: React.FC = () => {
     if (!wrapper) return;
 
     const handleWheelNative = (e: WheelEvent) => {
+      if (isSingleBoardInteractionLocked) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       markSingleBoardMobileCanvasInteraction();
       e.preventDefault();
       e.stopPropagation();
@@ -3341,7 +3384,11 @@ const MakingPage: React.FC = () => {
 
     wrapper.addEventListener("wheel", handleWheelNative, { passive: false });
     return () => wrapper.removeEventListener("wheel", handleWheelNative);
-  }, [applyScaleAtPoint, markSingleBoardMobileCanvasInteraction]);
+  }, [
+    applyScaleAtPoint,
+    markSingleBoardMobileCanvasInteraction,
+    isSingleBoardInteractionLocked,
+  ]);
 
   // 阻止页面滚动
   useEffect(() => {
@@ -4056,11 +4103,21 @@ const MakingPage: React.FC = () => {
     }
   }, [isSingleBoardMobile, totalBoardCount, singleBoardAllDone]);
 
+  const singleBoardMobileImmersiveControlLayout =
+    getSingleBoardMobileImmersiveControlLayout({ viewportWidth });
   const floatingControlsStyle: React.CSSProperties = {
     ...styles.floatingControls,
     flexWrap: isNarrowToolbar ? "wrap" : "nowrap",
     alignItems: isNarrowToolbar ? "stretch" : "center",
     gap: isNarrowToolbar ? "6px" : "8px",
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveFloatingControls
+      : {}),
+    ...(isSingleBoardMobileImmersive
+      ? {
+          bottom: `max(${singleBoardMobileImmersiveControlLayout.zoomBottomPx}px, calc(env(safe-area-inset-bottom, 0px) + ${singleBoardMobileImmersiveControlLayout.zoomBottomPx}px))`,
+        }
+      : {}),
   };
   const zoomControlsStyle: React.CSSProperties = {
     ...styles.zoomControls,
@@ -4079,6 +4136,14 @@ const MakingPage: React.FC = () => {
         : isCompactToolbar
           ? "4px"
           : "6px",
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveZoomControls
+      : {}),
+    ...(isSingleBoardMobileImmersive
+      ? {
+          maxWidth: `${singleBoardMobileImmersiveControlLayout.zoomMaxWidthPx}px`,
+        }
+      : {}),
   };
   const zoomRangeStyle: React.CSSProperties = {
     ...styles.zoomRange,
@@ -4138,7 +4203,9 @@ const MakingPage: React.FC = () => {
   const singleBoardCanvasTopOffset = getSingleBoardCanvasWrapperTopOffset({
     viewMode,
     isSingleBoardMobile,
-    baseOffset: singleBoardChromeOffset,
+    baseOffset:
+      singleBoardMobileImmersiveLayout.canvasWrapperTopOffset ??
+      singleBoardChromeOffset,
     pageChromeOffset: singleBoardMobileTopChromeOffset ?? singleBoardChromeOffset,
   });
   const shouldShowStatusHint =
@@ -4167,20 +4234,63 @@ const MakingPage: React.FC = () => {
   };
   const canvasContainerStyle: React.CSSProperties = {
     ...styles.canvasContainer,
-    minHeight: getSingleBoardCanvasMinHeight({
-      viewMode,
-      isSingleBoardMobile,
-      isSingleBoardDesktop,
-      singleBoardAllDone,
-    }),
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveCanvasContainer
+      : {
+          minHeight: getSingleBoardCanvasMinHeight({
+            viewMode,
+            isSingleBoardMobile,
+            isSingleBoardDesktop,
+            singleBoardAllDone,
+          }),
+        }),
   };
   const singleBoardOverviewStyle: React.CSSProperties = {
     ...styles.singleBoardOverview,
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveOverviewLayer
+      : {}),
     ...(useDesktopSidebarLayout
       ? {
           gap: makingDesktopSidebarCollapsed ? "2px" : "6px",
           paddingTop: makingDesktopSidebarCollapsed ? "2px" : "4px",
         }
+      : {}),
+  };
+  const singleBoardOverviewBodyStyle: React.CSSProperties = {
+    ...styles.singleBoardOverview,
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveOverlay
+      : {}),
+  };
+  const singleBoardMobileChromeStackStyle: React.CSSProperties = {
+    ...styles.singleBoardMobileChromeStack,
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveChromeStack
+      : {}),
+  };
+  const singleBoardMobileSummaryRowStyle: React.CSSProperties = {
+    ...styles.singleBoardMobileSummaryRow,
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveSummaryPill
+      : {}),
+  };
+  const singleBoardMobileToolbarShellStyle: React.CSSProperties = {
+    ...styles.singleBoardMobileToolbarShell,
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveToolbarShell
+      : {}),
+    ...(isSingleBoardMobileImmersive
+      ? {
+          bottom: `max(${singleBoardMobileImmersiveControlLayout.toolbarBottomPx}px, calc(env(safe-area-inset-bottom, 0px) + ${singleBoardMobileImmersiveControlLayout.toolbarBottomPx}px))`,
+        }
+      : {}),
+  };
+  const singleBoardMobileSwipeStatusStyle: React.CSSProperties = {
+    ...styles.singleBoardSwipeStatus,
+    ...singleBoardSwipeUi.style,
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveSwipeStatus
       : {}),
   };
   const previewSectionStyle: React.CSSProperties = {
@@ -4213,7 +4323,8 @@ const MakingPage: React.FC = () => {
 
       {/* 预览区 */}
       <div style={previewSectionStyle}>
-        {!(viewMode === "singleBoard" && singleBoardAllDone) && (
+        {singleBoardMobileImmersiveLayout.showModeSwitch &&
+          !(viewMode === "singleBoard" && singleBoardAllDone) && (
           <div ref={singleBoardMobileModeSwitchRef} style={modeSwitchBarStyle}>
             <button
               style={modeSwitchBtnStyle(viewMode === "traditional")}
@@ -4253,7 +4364,7 @@ const MakingPage: React.FC = () => {
                 : undefined
             }
           >
-            <div style={styles.singleBoardOverview}>
+            <div style={singleBoardOverviewBodyStyle}>
             {singleBoardAllDone ? (
               <div style={styles.singleBoardCompletionEntry}>
                 <div style={styles.singleBoardResumeEntryMeta}>
@@ -4354,9 +4465,18 @@ const MakingPage: React.FC = () => {
                   <>
                     <div
                       ref={singleBoardMobileChromeRef}
-                      style={styles.singleBoardMobileChromeStack}
+                      style={singleBoardMobileChromeStackStyle}
                     >
-                      <div style={styles.singleBoardMobileSummaryRow}>
+                      {isSingleBoardMobileImmersive &&
+                        singleBoardMobileToolbarExpanded && (
+                          <div
+                            style={styles.singleBoardMobileImmersiveBackdrop}
+                            onClick={() =>
+                              setSingleBoardMobileToolbarExpanded(false)
+                            }
+                          />
+                        )}
+                      <div style={singleBoardMobileSummaryRowStyle}>
                         <div style={styles.singleBoardMobileSummaryMain}>
                           <span style={styles.singleBoardMobileSummaryText}>
                             进度 {singleBoardProgress.doneCount}/
@@ -4380,10 +4500,7 @@ const MakingPage: React.FC = () => {
                       </div>
                       {totalBoardCount > 1 && (
                         <div
-                          style={{
-                            ...styles.singleBoardSwipeStatus,
-                            ...singleBoardSwipeUi.style,
-                          }}
+                          style={singleBoardMobileSwipeStatusStyle}
                         >
                           <span style={styles.singleBoardSwipeStatusTitle}>
                             {singleBoardSwipeUi.title}
@@ -4393,7 +4510,7 @@ const MakingPage: React.FC = () => {
                           </span>
                         </div>
                       )}
-                      <div style={styles.singleBoardMobileToolbarShell}>
+                      <div style={singleBoardMobileToolbarShellStyle}>
                         <div style={styles.singleBoardMobileNavRow}>
                           {showSingleBoardMobileOverviewButton && (
                             <button
@@ -6532,7 +6649,9 @@ const MakingPage: React.FC = () => {
       )}
 
       {/* 底部导航栏 */}
-      <BottomNav transparent />
+      {singleBoardMobileImmersiveLayout.showBottomNav && (
+        <BottomNav transparent />
+      )}
     </div>
   );
 };
@@ -7237,6 +7356,81 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column" as const,
     gap: "4px",
+  },
+
+  singleBoardMobileImmersiveCanvasContainer: {
+    minHeight: 0,
+    height: "100%",
+  },
+
+  singleBoardMobileImmersiveOverviewLayer: {
+    position: "absolute" as const,
+    inset: 0,
+    padding: 0,
+    gap: 0,
+    zIndex: 45,
+    pointerEvents: "none" as const,
+  },
+
+  singleBoardMobileImmersiveOverlay: {
+    position: "absolute" as const,
+    inset: 0,
+    padding: 0,
+    gap: 0,
+    zIndex: 45,
+    pointerEvents: "none" as const,
+  },
+
+  singleBoardMobileImmersiveChromeStack: {
+    position: "absolute" as const,
+    inset: 0,
+    display: "block",
+    pointerEvents: "none" as const,
+  },
+
+  singleBoardMobileImmersiveBackdrop: {
+    position: "absolute" as const,
+    inset: 0,
+    zIndex: 1,
+    background: "rgba(255,255,255,0.03)",
+    pointerEvents: "auto" as const,
+    touchAction: "none",
+  },
+
+  singleBoardMobileImmersiveSummaryPill: {
+    position: "absolute" as const,
+    top: "8px",
+    left: "8px",
+    maxWidth: "calc(100vw - 96px)",
+    padding: "5px 8px",
+    borderRadius: radius.full,
+    background: "rgba(255,255,255,0.68)",
+    border: `1px solid rgba(255,255,255,0.72)`,
+    boxShadow: "0 8px 20px rgba(120,93,45,0.08)",
+    backdropFilter: "blur(10px)",
+    zIndex: 4,
+    pointerEvents: "auto" as const,
+  },
+
+  singleBoardMobileImmersiveSwipeStatus: {
+    position: "absolute" as const,
+    left: "8px",
+    right: "8px",
+    top: "42px",
+    opacity: 0.86,
+    zIndex: 3,
+    pointerEvents: "none" as const,
+  },
+
+  singleBoardMobileImmersiveToolbarShell: {
+    position: "absolute" as const,
+    right: "8px",
+    bottom: "max(10px, env(safe-area-inset-bottom, 0px))",
+    width: "min(186px, calc(100vw - 18px))",
+    padding: "5px",
+    opacity: 0.88,
+    zIndex: 5,
+    pointerEvents: "auto" as const,
   },
 
   singleBoardMobileToolbarShell: {
@@ -8048,6 +8242,16 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
   },
 
+  singleBoardMobileImmersiveFloatingControls: {
+    top: "auto",
+    left: "8px",
+    right: "8px",
+    bottom: "max(10px, env(safe-area-inset-bottom, 0px))",
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
+    zIndex: 32,
+  },
+
   zoomControls: {
     display: "flex",
     alignItems: "center",
@@ -8065,9 +8269,22 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "auto",
   },
 
+  singleBoardMobileImmersiveZoomControls: {
+    width: "auto",
+    flex: "0 1 auto",
+    flexBasis: "auto",
+    maxWidth: "min(320px, calc(100vw - 210px))",
+    minWidth: "154px",
+    opacity: 0.58,
+    padding: "4px 6px",
+    borderRadius: radius.full,
+  },
+
   miniBtn: {
     width: "28px",
+    minWidth: "28px",
     height: "28px",
+    flexShrink: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -8093,6 +8310,7 @@ const styles: Record<string, React.CSSProperties> = {
   fitBtn: {
     minWidth: "42px",
     height: "28px",
+    flexShrink: 0,
     padding: "0 8px",
     display: "flex",
     alignItems: "center",

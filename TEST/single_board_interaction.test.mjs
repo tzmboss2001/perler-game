@@ -19,6 +19,8 @@ import {
   getSingleBoardAutoFocusScaleDecision,
   getSingleBoardCanvasMinHeight,
   getSingleBoardCanvasWrapperTopOffset,
+  getSingleBoardMobileImmersiveControlLayout,
+  getSingleBoardMobileImmersiveLayout,
   getSingleBoardLayoutFlags,
   getLiveStageDisplayScale,
   getSingleBoardMobileTopChromeOffset,
@@ -381,6 +383,48 @@ test("mobile single-board canvas wrapper keeps local top offset inside canvas co
     }),
     46,
   );
+});
+
+test("mobile single-board immersive layout removes tool chrome from document flow", () => {
+  assert.deepEqual(
+    getSingleBoardMobileImmersiveLayout({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      singleBoardAllDone: false,
+    }),
+    {
+      enabled: true,
+      showBottomNav: false,
+      showModeSwitch: false,
+      canvasWrapperTopOffset: 0,
+      overlayChrome: true,
+    },
+  );
+});
+
+test("mobile single-board immersive layout stays off after all boards are done", () => {
+  assert.equal(
+    getSingleBoardMobileImmersiveLayout({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      singleBoardAllDone: true,
+    }).enabled,
+    false,
+  );
+});
+
+test("mobile single-board immersive tool controls stay above zoom controls", () => {
+  const layout = getSingleBoardMobileImmersiveControlLayout({
+    viewportWidth: 390,
+  });
+
+  assert.equal(layout.zoomBottomPx, 10);
+  assert.equal(layout.toolbarBottomPx, 58);
+  assert.ok(
+    layout.toolbarBottomPx >=
+      layout.zoomBottomPx + layout.zoomHeightPx + layout.gapPx,
+  );
+  assert.ok(layout.zoomMaxWidthPx >= 260);
 });
 
 test("desktop single-board top chrome offset stays disabled", () => {
