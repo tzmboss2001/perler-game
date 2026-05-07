@@ -54,6 +54,7 @@ import {
   getMakingDesktopLayoutFlags,
   getSingleBoardCanvasMinHeight,
   getSingleBoardCanvasWrapperTopOffset,
+  getLiveStageDisplayScale,
   getSingleBoardLayoutFlags,
   getSingleBoardMobileUiFlags,
   getMakingDesktopSidebarLayout,
@@ -987,7 +988,10 @@ const MakingPage: React.FC = () => {
         renderScaleOverride ?? renderScaleRef.current,
         0.0001,
       );
-      const nextDisplayScale = Math.max(1, nextScale / currentRenderScale);
+      const nextDisplayScale = getLiveStageDisplayScale({
+        targetScale: nextScale,
+        committedRenderScale: currentRenderScale,
+      });
       stage.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px) scale(${nextDisplayScale})`;
     },
     [],
@@ -1210,12 +1214,7 @@ const MakingPage: React.FC = () => {
           : null;
       const predictedRenderScale =
         predictedRenderMetrics?.renderScale ?? renderScaleRef.current;
-      applyStageTransformStyle(
-        nextScale,
-        clamped.x,
-        clamped.y,
-        predictedRenderScale,
-      );
+      applyStageTransformStyle(nextScale, clamped.x, clamped.y);
       if (
         textOverlayCanvasRef.current &&
         wrapperRef.current &&

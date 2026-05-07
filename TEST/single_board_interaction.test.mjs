@@ -20,6 +20,7 @@ import {
   getSingleBoardCanvasMinHeight,
   getSingleBoardCanvasWrapperTopOffset,
   getSingleBoardLayoutFlags,
+  getLiveStageDisplayScale,
   getSingleBoardMobileTopChromeOffset,
   getSingleBoardMobileToolbarState,
   getNeighborBoardNumber,
@@ -654,6 +655,16 @@ test("text overlay live transform keeps scaling continuous from current size", (
       translateX: -120,
       translateY: -100,
     },
+  );
+});
+
+test("live stage display scale uses committed render scale during delayed redraw", () => {
+  assert.equal(
+    getLiveStageDisplayScale({
+      targetScale: 1.5,
+      committedRenderScale: 1,
+    }),
+    1.5,
   );
 });
 

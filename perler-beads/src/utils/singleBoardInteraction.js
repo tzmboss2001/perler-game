@@ -212,6 +212,22 @@ export function getRenderScaleAnchorDelayMs({
 
 /**
  * @param {{
+ *   targetScale: number;
+ *   committedRenderScale: number;
+ * }} input
+ */
+export function getLiveStageDisplayScale({
+  targetScale,
+  committedRenderScale,
+}) {
+  return Math.max(
+    1,
+    targetScale / Math.max(committedRenderScale, 0.0001),
+  );
+}
+
+/**
+ * @param {{
  *   wrapperWidth: number;
  *   wrapperHeight: number;
  *   safeRenderCanvasWidth: number;
