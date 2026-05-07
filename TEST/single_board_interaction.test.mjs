@@ -22,6 +22,7 @@ import {
   getSingleBoardMobileImmersiveControlLayout,
   getSingleBoardMobileImmersiveLayout,
   getSingleBoardLayoutFlags,
+  clampMakingStageTranslate,
   getLiveStageDisplayScale,
   getSingleBoardMobileTopChromeOffset,
   getSingleBoardMobileToolbarState,
@@ -425,6 +426,49 @@ test("mobile single-board immersive tool controls stay above zoom controls", () 
       layout.zoomBottomPx + layout.zoomHeightPx + layout.gapPx,
   );
   assert.ok(layout.zoomMaxWidthPx >= 260);
+});
+
+test("mobile single-board immersive mode allows conservative pan slack when board is shorter than viewport", () => {
+  assert.deepEqual(
+    clampMakingStageTranslate({
+      x: 0,
+      y: 100,
+      canvasWidth: 570,
+      canvasHeight: 570,
+      wrapperWidth: 390,
+      wrapperHeight: 791,
+      isSingleBoardMobileImmersive: false,
+    }),
+    { x: 0, y: 0 },
+  );
+
+  assert.deepEqual(
+    clampMakingStageTranslate({
+      x: 0,
+      y: 200,
+      canvasWidth: 570,
+      canvasHeight: 570,
+      wrapperWidth: 390,
+      wrapperHeight: 791,
+      isSingleBoardMobileImmersive: true,
+    }),
+    { x: 0, y: 118.65 },
+  );
+});
+
+test("mobile single-board immersive mode keeps normal bounds once board exceeds viewport", () => {
+  assert.deepEqual(
+    clampMakingStageTranslate({
+      x: 240,
+      y: 120,
+      canvasWidth: 900,
+      canvasHeight: 900,
+      wrapperWidth: 390,
+      wrapperHeight: 791,
+      isSingleBoardMobileImmersive: true,
+    }),
+    { x: 240, y: 54.5 },
+  );
 });
 
 test("desktop single-board top chrome offset stays disabled", () => {

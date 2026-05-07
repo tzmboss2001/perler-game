@@ -45,6 +45,7 @@ import {
 } from "../../utils/colorUtils";
 import {
   buildCompletedSingleBoardOnboardingState,
+  clampMakingStageTranslate,
   clampSingleBoardMobileOverviewOffset,
   clampSingleBoardMobileOverviewWidth,
   getColorIdTextStyle,
@@ -325,6 +326,7 @@ const MakingPage: React.FC = () => {
   const scaleRef = useRef(1);
   const translateRef = useRef({ x: 0, y: 0 });
   const renderScaleRef = useRef(1);
+  const singleBoardMobileImmersiveRef = useRef(false);
   const viewportSyncFrameRef = useRef<number | null>(null);
   const textOverlayFrameRef = useRef<number | null>(null);
   const textOverlayDrawTokenRef = useRef(0);
@@ -960,7 +962,12 @@ const MakingPage: React.FC = () => {
   }, [renderScaleAnchorDelayMs, scale]);
 
   const clampTranslate = useCallback(
-    (nextScale: number, x: number, y: number) => {
+    (
+      nextScale: number,
+      x: number,
+      y: number,
+      options?: { ignoreImmersivePanSlack?: boolean },
+    ) => {
       if (
         !displayBoardRect ||
         !wrapperRef.current ||
@@ -972,14 +979,19 @@ const MakingPage: React.FC = () => {
       const wrapperRect = wrapperRef.current.getBoundingClientRect();
       const canvasWidth = displayWidth * baseCellSize * nextScale;
       const canvasHeight = displayHeight * baseCellSize * nextScale;
-      const maxOffsetX = Math.max(0, (canvasWidth - wrapperRect.width) / 2);
-      const maxOffsetY = Math.max(0, (canvasHeight - wrapperRect.height) / 2);
-      return {
-        x: Math.min(maxOffsetX, Math.max(-maxOffsetX, x)),
-        y: Math.min(maxOffsetY, Math.max(-maxOffsetY, y)),
-      };
+      return clampMakingStageTranslate({
+        x,
+        y,
+        canvasWidth,
+        canvasHeight,
+        wrapperWidth: wrapperRect.width,
+        wrapperHeight: wrapperRect.height,
+        isSingleBoardMobileImmersive:
+          singleBoardMobileImmersiveRef.current &&
+          !options?.ignoreImmersivePanSlack,
+      });
     },
-    [displayBoardRect, displayHeight, displayWidth],
+    [baseCellSize, displayBoardRect, displayHeight, displayWidth],
   );
 
   const applyStageTransformStyle = useCallback(
@@ -1988,6 +2000,7 @@ const MakingPage: React.FC = () => {
     });
   const isSingleBoardMobileImmersive =
     singleBoardMobileImmersiveLayout.enabled;
+  singleBoardMobileImmersiveRef.current = isSingleBoardMobileImmersive;
   const isSingleBoardInteractionLocked =
     isSingleBoardMobileImmersive &&
     (singleBoardMobileToolbarExpanded ||
@@ -3064,13 +3077,19 @@ const MakingPage: React.FC = () => {
           });
 
           if (swipeResult) {
+            const contentBoundsClamped = clampTranslate(
+              scaleRef.current,
+              nextX,
+              nextY,
+              { ignoreImmersivePanSlack: true },
+            );
             const directionEdgeMatched =
               (swipeResult.direction === "right" &&
                 nextX < prev.x &&
-                clamped.x === prev.x) ||
+                contentBoundsClamped.x === prev.x) ||
               (swipeResult.direction === "left" &&
                 nextX > prev.x &&
-                clamped.x === prev.x) ||
+                contentBoundsClamped.x === prev.x) ||
               (swipeResult.direction === "down" &&
                 nextY < prev.y &&
                 clamped.y === prev.y) ||

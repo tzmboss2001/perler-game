@@ -228,6 +228,41 @@ export function getSingleBoardAutoFocusScaleDecision({
 
 /**
  * @param {{
+ *   x: number;
+ *   y: number;
+ *   canvasWidth: number;
+ *   canvasHeight: number;
+ *   wrapperWidth: number;
+ *   wrapperHeight: number;
+ *   isSingleBoardMobileImmersive?: boolean;
+ * }} input
+ */
+export function clampMakingStageTranslate({
+  x,
+  y,
+  canvasWidth,
+  canvasHeight,
+  wrapperWidth,
+  wrapperHeight,
+  isSingleBoardMobileImmersive = false,
+}) {
+  const maxOffsetX = Math.max(0, (canvasWidth - wrapperWidth) / 2);
+  const overflowOffsetY = Math.max(0, (canvasHeight - wrapperHeight) / 2);
+  const immersiveVerticalSlack =
+    isSingleBoardMobileImmersive && overflowOffsetY <= 0
+      ? Math.min(120, wrapperHeight * 0.15)
+      : 0;
+  const maxOffsetY =
+    overflowOffsetY > 0 ? overflowOffsetY : immersiveVerticalSlack;
+
+  return {
+    x: Number(Math.min(maxOffsetX, Math.max(-maxOffsetX, x)).toFixed(4)),
+    y: Number(Math.min(maxOffsetY, Math.max(-maxOffsetY, y)).toFixed(4)),
+  };
+}
+
+/**
+ * @param {{
  *   scale: number;
  *   renderMaxScale: number;
  *   renderScaleChanged: boolean;
