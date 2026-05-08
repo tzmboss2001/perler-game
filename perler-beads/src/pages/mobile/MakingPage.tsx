@@ -7490,7 +7490,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     background:
       "linear-gradient(135deg, rgba(255,255,255,0.62), rgba(255,248,240,0.48))",
-    border: `1px solid rgba(255,255,255,0.58)`,
+    borderColor: "rgba(255,255,255,0.58)",
     boxShadow: "0 8px 20px rgba(62,45,82,0.07)",
     backdropFilter: "blur(12px)",
   },
