@@ -1,0 +1,40 @@
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-layer {
+  transition:
+    opacity 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    filter 180ms ease;
+}
+
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-floating-controls {
+  filter: drop-shadow(0 10px 20px rgba(62, 45, 82, 0.12));
+}
+
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-toolbar-shell {
+  transform: translate3d(0, 0, 0);
+}
+
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-toolbar-expanded {
+  opacity: 0.98;
+  transform: translate3d(0, -2px, 0);
+}
+
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-toolbar-collapsed {
+  opacity: 0.82;
+}
+
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-status-hint {
+  transform: translate3d(0, 0, 0);
+}
+
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-overview-card {
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-layer {
+    transition: opacity 60ms linear;
+  }
+}

@@ -4336,11 +4336,25 @@ const MakingPage: React.FC = () => {
     width: `${safeRenderCanvasWidth}px`,
     height: `${safeRenderCanvasHeight}px`,
   };
+  const mobileImmersiveClass = (name: string) =>
+    isSingleBoardMobileImmersive
+      ? `mobile-immersive-layer mobile-immersive-${name}`
+      : undefined;
+  const singleBoardMobileToolbarClassName = isSingleBoardMobileImmersive
+    ? `mobile-immersive-layer mobile-immersive-toolbar-shell ${
+        singleBoardMobileToolbarExpanded
+          ? "mobile-immersive-toolbar-expanded"
+          : "mobile-immersive-toolbar-collapsed"
+      }`
+    : undefined;
 
   return (
     <div
       style={{ ...styles.container, height: viewportHeight }}
       data-making-page
+      data-mobile-single-board-immersive={
+        isSingleBoardMobileImmersive ? "1" : undefined
+      }
     >
       {/* 头部 */}
       <div style={styles.header}>
@@ -4493,10 +4507,11 @@ const MakingPage: React.FC = () => {
               <>
                 {isSingleBoardMobile ? (
                   <>
-                    <div
-                      ref={singleBoardMobileChromeRef}
-                      style={singleBoardMobileChromeStackStyle}
-                    >
+                      <div
+                        ref={singleBoardMobileChromeRef}
+                        className={mobileImmersiveClass("chrome-stack")}
+                        style={singleBoardMobileChromeStackStyle}
+                      >
                       {isSingleBoardMobileImmersive &&
                         singleBoardMobileToolbarExpanded && (
                           <div
@@ -4506,7 +4521,10 @@ const MakingPage: React.FC = () => {
                             }
                           />
                         )}
-                      <div style={singleBoardMobileSummaryRowStyle}>
+                      <div
+                        className={mobileImmersiveClass("summary-pill")}
+                        style={singleBoardMobileSummaryRowStyle}
+                      >
                         <div style={styles.singleBoardMobileSummaryMain}>
                           <span style={styles.singleBoardMobileSummaryText}>
                             进度 {singleBoardProgress.doneCount}/
@@ -4530,6 +4548,7 @@ const MakingPage: React.FC = () => {
                       </div>
                       {totalBoardCount > 1 && (
                         <div
+                          className={mobileImmersiveClass("status-hint")}
                           style={singleBoardMobileSwipeStatusStyle}
                         >
                           <span style={styles.singleBoardSwipeStatusTitle}>
@@ -4540,7 +4559,10 @@ const MakingPage: React.FC = () => {
                           </span>
                         </div>
                       )}
-                      <div style={singleBoardMobileToolbarShellStyle}>
+                      <div
+                        className={singleBoardMobileToolbarClassName}
+                        style={singleBoardMobileToolbarShellStyle}
+                      >
                         <div style={styles.singleBoardMobileNavRow}>
                           {showSingleBoardMobileOverviewButton && (
                             <button
@@ -4668,6 +4690,7 @@ const MakingPage: React.FC = () => {
                           }}
                         >
                           <div
+                            className={mobileImmersiveClass("overview-card")}
                             style={{
                               ...styles.singleBoardMobileOverviewCard,
                               ...(singleBoardMobileOverviewLayout
@@ -5215,9 +5238,13 @@ const MakingPage: React.FC = () => {
 
         <div style={canvasContainerStyle}>
           {/* 浮动控制栏 */}
-          <div style={floatingControlsStyle}>
+          <div
+            className={mobileImmersiveClass("floating-controls")}
+            style={floatingControlsStyle}
+          >
             {/* 左侧：缩放 */}
             <div
+              className={mobileImmersiveClass("zoom-controls")}
               style={{
                 ...zoomControlsStyle,
                 ...(viewMode === "singleBoard"
@@ -7457,9 +7484,15 @@ const styles: Record<string, React.CSSProperties> = {
     left: "8px",
     right: "8px",
     top: "42px",
-    opacity: 0.86,
+    opacity: 0.78,
     zIndex: 3,
     pointerEvents: "none" as const,
+    justifyContent: "center",
+    background:
+      "linear-gradient(135deg, rgba(255,255,255,0.62), rgba(255,248,240,0.48))",
+    border: `1px solid rgba(255,255,255,0.58)`,
+    boxShadow: "0 8px 20px rgba(62,45,82,0.07)",
+    backdropFilter: "blur(12px)",
   },
 
   singleBoardMobileImmersiveToolbarShell: {
