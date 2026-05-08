@@ -57,6 +57,7 @@ import {
   getSingleBoardCanvasWrapperTopOffset,
   getSingleBoardMobileImmersiveControlLayout,
   getSingleBoardMobileImmersiveLayout,
+  getSingleBoardMobileImmersiveLayerZIndexes,
   getLiveStageDisplayScale,
   getSingleBoardLayoutFlags,
   getSingleBoardMobileUiFlags,
@@ -4124,6 +4125,8 @@ const MakingPage: React.FC = () => {
 
   const singleBoardMobileImmersiveControlLayout =
     getSingleBoardMobileImmersiveControlLayout({ viewportWidth });
+  const singleBoardMobileImmersiveLayers =
+    getSingleBoardMobileImmersiveLayerZIndexes();
   const floatingControlsStyle: React.CSSProperties = {
     ...styles.floatingControls,
     flexWrap: isNarrowToolbar ? "wrap" : "nowrap",
@@ -4135,6 +4138,7 @@ const MakingPage: React.FC = () => {
     ...(isSingleBoardMobileImmersive
       ? {
           bottom: `max(${singleBoardMobileImmersiveControlLayout.zoomBottomPx}px, calc(env(safe-area-inset-bottom, 0px) + ${singleBoardMobileImmersiveControlLayout.zoomBottomPx}px))`,
+          zIndex: singleBoardMobileImmersiveLayers.controls,
         }
       : {}),
   };
@@ -4291,7 +4295,10 @@ const MakingPage: React.FC = () => {
   const singleBoardMobileSummaryRowStyle: React.CSSProperties = {
     ...styles.singleBoardMobileSummaryRow,
     ...(isSingleBoardMobileImmersive
-      ? styles.singleBoardMobileImmersiveSummaryPill
+      ? {
+          ...styles.singleBoardMobileImmersiveSummaryPill,
+          zIndex: singleBoardMobileImmersiveLayers.summary,
+        }
       : {}),
   };
   const singleBoardMobileToolbarShellStyle: React.CSSProperties = {
@@ -4302,6 +4309,7 @@ const MakingPage: React.FC = () => {
     ...(isSingleBoardMobileImmersive
       ? {
           bottom: `max(${singleBoardMobileImmersiveControlLayout.toolbarBottomPx}px, calc(env(safe-area-inset-bottom, 0px) + ${singleBoardMobileImmersiveControlLayout.toolbarBottomPx}px))`,
+          zIndex: singleBoardMobileImmersiveLayers.toolbar,
         }
       : {}),
   };
@@ -4309,7 +4317,10 @@ const MakingPage: React.FC = () => {
     ...styles.singleBoardSwipeStatus,
     ...singleBoardSwipeUi.style,
     ...(isSingleBoardMobileImmersive
-      ? styles.singleBoardMobileImmersiveSwipeStatus
+      ? {
+          ...styles.singleBoardMobileImmersiveSwipeStatus,
+          zIndex: singleBoardMobileImmersiveLayers.passiveStatus,
+        }
       : {}),
   };
   const previewSectionStyle: React.CSSProperties = {
@@ -4645,7 +4656,17 @@ const MakingPage: React.FC = () => {
                     </div>
                     {showSingleBoardMobileOverviewButton &&
                       singleBoardMobileMiniMapExpanded && (
-                        <div style={styles.singleBoardMobileOverviewOverlay}>
+                        <div
+                          style={{
+                            ...styles.singleBoardMobileOverviewOverlay,
+                            ...(isSingleBoardMobileImmersive
+                              ? {
+                                  zIndex:
+                                    singleBoardMobileImmersiveLayers.panel,
+                                }
+                              : {}),
+                          }}
+                        >
                           <div
                             style={{
                               ...styles.singleBoardMobileOverviewCard,

@@ -206,6 +206,17 @@ export function getSingleBoardMobileImmersiveControlLayout({
   };
 }
 
+export function getSingleBoardMobileImmersiveLayerZIndexes() {
+  return {
+    passiveStatus: 31,
+    controls: 32,
+    summary: 33,
+    toolbar: 36,
+    panel: 60,
+    modal: 2500,
+  };
+}
+
 /**
  * @param {{
  *   currentScale: number;

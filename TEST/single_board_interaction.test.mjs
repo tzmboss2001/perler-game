@@ -21,6 +21,7 @@ import {
   getSingleBoardCanvasWrapperTopOffset,
   getSingleBoardMobileImmersiveControlLayout,
   getSingleBoardMobileImmersiveLayout,
+  getSingleBoardMobileImmersiveLayerZIndexes,
   getSingleBoardLayoutFlags,
   clampMakingStageTranslate,
   getLiveStageDisplayScale,
@@ -426,6 +427,24 @@ test("mobile single-board immersive tool controls stay above zoom controls", () 
       layout.zoomBottomPx + layout.zoomHeightPx + layout.gapPx,
   );
   assert.ok(layout.zoomMaxWidthPx >= 260);
+});
+
+test("mobile single-board immersive overlay layers keep explicit ordering", () => {
+  assert.deepEqual(getSingleBoardMobileImmersiveLayerZIndexes(), {
+    passiveStatus: 31,
+    controls: 32,
+    summary: 33,
+    toolbar: 36,
+    panel: 60,
+    modal: 2500,
+  });
+
+  const layers = getSingleBoardMobileImmersiveLayerZIndexes();
+  assert.ok(layers.passiveStatus < layers.controls);
+  assert.ok(layers.controls < layers.summary);
+  assert.ok(layers.summary < layers.toolbar);
+  assert.ok(layers.toolbar < layers.panel);
+  assert.ok(layers.panel < layers.modal);
 });
 
 test("mobile single-board immersive mode allows conservative pan slack when board is shorter than viewport", () => {
