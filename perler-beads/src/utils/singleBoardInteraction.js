@@ -23,6 +23,47 @@ export function getSingleBoardLayoutFlags({ viewMode, viewportWidth }) {
 /**
  * @param {{
  *   viewMode: string;
+ *   isSingleBoardMobile: boolean;
+ *   hasSelectedColor: boolean;
+ * }} input
+ */
+export function getSingleBoardMobileUiFlags({
+  viewMode,
+  isSingleBoardMobile,
+  hasSelectedColor,
+}) {
+  const isMobileSingleBoard = Boolean(
+    viewMode === "singleBoard" && isSingleBoardMobile,
+  );
+
+  if (!isMobileSingleBoard) {
+    return {
+      showToolbarOverview: false,
+      showToolbarReset: false,
+      showToolbarPrimaryComplete: false,
+      showToolbarTools: false,
+      showToolbarExport: true,
+      showToolbarAssist: true,
+      showToolbarAutoAdvance: true,
+      showToolsReplaceAction: false,
+    };
+  }
+
+  return {
+    showToolbarOverview: true,
+    showToolbarReset: true,
+    showToolbarPrimaryComplete: true,
+    showToolbarTools: true,
+    showToolbarExport: false,
+    showToolbarAssist: false,
+    showToolbarAutoAdvance: false,
+    showToolsReplaceAction: Boolean(hasSelectedColor),
+  };
+}
+
+/**
+ * @param {{
+ *   viewMode: string;
  *   viewportWidth: number;
  *   pointerFine: boolean;
  * }} input
@@ -62,6 +103,32 @@ export function getMakingDesktopSidebarLayout({ viewportWidth, collapsed }) {
 /**
  * @param {{
  *   viewMode: string;
+ *   useDesktopSidebarLayout: boolean;
+ *   hasSelectedColor: boolean;
+ * }} input
+ */
+export function getMakingDesktopSingleBoardUiFlags({
+  viewMode,
+  useDesktopSidebarLayout,
+  hasSelectedColor,
+}) {
+  const isDesktopSidebarSingleBoard = Boolean(
+    viewMode === "singleBoard" && useDesktopSidebarLayout,
+  );
+  return {
+    isDesktopSidebarSingleBoard,
+    showMainWorkflowCard: !isDesktopSidebarSingleBoard,
+    showToolbarReplaceAction: !isDesktopSidebarSingleBoard,
+    showSidebarWorkflowActions: isDesktopSidebarSingleBoard,
+    showSidebarReplaceAction: Boolean(
+      isDesktopSidebarSingleBoard && hasSelectedColor,
+    ),
+  };
+}
+
+/**
+ * @param {{
+ *   viewMode: string;
  *   isSingleBoardMobile: boolean;
  *   isSingleBoardDesktop: boolean;
  *   singleBoardAllDone: boolean;
@@ -86,6 +153,72 @@ export function getSingleBoardCanvasMinHeight({
 
 /**
  * @param {{
+ *   viewMode: string;
+ *   isSingleBoardMobile: boolean;
+ *   singleBoardAllDone: boolean;
+ * }} input
+ */
+export function getSingleBoardMobileImmersiveLayout({
+  viewMode,
+  isSingleBoardMobile,
+  singleBoardAllDone,
+}) {
+  const enabled = Boolean(
+    viewMode === "singleBoard" &&
+      isSingleBoardMobile &&
+      !singleBoardAllDone,
+  );
+
+  return {
+    enabled,
+    showBottomNav: !enabled,
+    showModeSwitch: !enabled,
+    canvasWrapperTopOffset: enabled ? 0 : null,
+    overlayChrome: enabled,
+  };
+}
+
+/**
+ * @param {{ viewportWidth: number }} input
+ */
+export function getSingleBoardMobileImmersiveControlLayout({
+  viewportWidth,
+}) {
+  const zoomBottomPx = 10;
+  const zoomHeightPx = 38;
+  const gapPx = 10;
+  const toolbarBottomPx = zoomBottomPx + zoomHeightPx + gapPx;
+  const safeViewportWidth = Number.isFinite(viewportWidth)
+    ? Math.max(viewportWidth, 0)
+    : 0;
+  const zoomMaxWidthPx = Math.max(
+    220,
+    Math.min(320, safeViewportWidth - 16),
+  );
+
+  return {
+    zoomBottomPx,
+    zoomHeightPx,
+    gapPx,
+    toolbarBottomPx,
+    zoomMaxWidthPx,
+    zoomButtonMinWidthPx: 28,
+  };
+}
+
+export function getSingleBoardMobileImmersiveLayerZIndexes() {
+  return {
+    passiveStatus: 31,
+    controls: 32,
+    summary: 33,
+    toolbar: 36,
+    panel: 60,
+    modal: 2500,
+  };
+}
+
+/**
+ * @param {{
  *   currentScale: number;
  *   minScale: number;
  *   maxScale: number;
@@ -101,6 +234,41 @@ export function getSingleBoardAutoFocusScaleDecision({
     nextScale: Number(
       Math.min(maxScale, Math.max(minScale, currentScale)).toFixed(4),
     ),
+  };
+}
+
+/**
+ * @param {{
+ *   x: number;
+ *   y: number;
+ *   canvasWidth: number;
+ *   canvasHeight: number;
+ *   wrapperWidth: number;
+ *   wrapperHeight: number;
+ *   isSingleBoardMobileImmersive?: boolean;
+ * }} input
+ */
+export function clampMakingStageTranslate({
+  x,
+  y,
+  canvasWidth,
+  canvasHeight,
+  wrapperWidth,
+  wrapperHeight,
+  isSingleBoardMobileImmersive = false,
+}) {
+  const maxOffsetX = Math.max(0, (canvasWidth - wrapperWidth) / 2);
+  const overflowOffsetY = Math.max(0, (canvasHeight - wrapperHeight) / 2);
+  const immersiveVerticalSlack =
+    isSingleBoardMobileImmersive && overflowOffsetY <= 0
+      ? Math.min(120, wrapperHeight * 0.15)
+      : 0;
+  const maxOffsetY =
+    overflowOffsetY > 0 ? overflowOffsetY : immersiveVerticalSlack;
+
+  return {
+    x: Number(Math.min(maxOffsetX, Math.max(-maxOffsetX, x)).toFixed(4)),
+    y: Number(Math.min(maxOffsetY, Math.max(-maxOffsetY, y)).toFixed(4)),
   };
 }
 
@@ -141,6 +309,22 @@ export function getRenderScaleAnchorDelayMs({
   }
 
   return 140;
+}
+
+/**
+ * @param {{
+ *   targetScale: number;
+ *   committedRenderScale: number;
+ * }} input
+ */
+export function getLiveStageDisplayScale({
+  targetScale,
+  committedRenderScale,
+}) {
+  return Math.max(
+    1,
+    targetScale / Math.max(committedRenderScale, 0.0001),
+  );
 }
 
 /**
@@ -399,6 +583,27 @@ export function getSingleBoardMobileTopChromeOffset({
     toolbarHeight +
     swipeStatusHeight
   );
+}
+
+/**
+ * @param {{
+ *   viewMode: string;
+ *   isSingleBoardMobile: boolean;
+ *   baseOffset: number;
+ *   pageChromeOffset: number;
+ * }} input
+ */
+export function getSingleBoardCanvasWrapperTopOffset({
+  viewMode,
+  isSingleBoardMobile,
+  baseOffset,
+  pageChromeOffset,
+}) {
+  if (viewMode === "singleBoard" && isSingleBoardMobile) {
+    return baseOffset;
+  }
+
+  return pageChromeOffset;
 }
 
 /**

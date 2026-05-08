@@ -4,6 +4,7 @@ import {
   buildCompletedSingleBoardOnboardingState,
   clampSingleBoardMobileOverviewOffset,
   clampSingleBoardMobileOverviewWidth,
+  getMakingDesktopSingleBoardUiFlags,
   getMakingDesktopLayoutFlags,
   getMakingDesktopSidebarLayout,
   getTextOverlayTransitionTransform,
@@ -11,12 +12,19 @@ import {
   getSafeRenderMetricsBudget,
   getColorIdTextStyle,
   getRenderScaleAnchorDelayMs,
+  getSingleBoardMobileUiFlags,
   getSingleBoardMobileOverviewLayout,
   getSingleBoardOverviewTitle,
   getTextOverlayStabilizationFrames,
   getSingleBoardAutoFocusScaleDecision,
   getSingleBoardCanvasMinHeight,
+  getSingleBoardCanvasWrapperTopOffset,
+  getSingleBoardMobileImmersiveControlLayout,
+  getSingleBoardMobileImmersiveLayout,
+  getSingleBoardMobileImmersiveLayerZIndexes,
   getSingleBoardLayoutFlags,
+  clampMakingStageTranslate,
+  getLiveStageDisplayScale,
   getSingleBoardMobileTopChromeOffset,
   getSingleBoardMobileToolbarState,
   getNeighborBoardNumber,
@@ -146,6 +154,76 @@ test("making desktop sidebar layout stays compact when collapsed", () => {
     {
       width: 40,
       contentPadding: 0,
+    },
+  );
+});
+
+test("desktop sidebar single-board mode moves workflow actions out of the main work area", () => {
+  assert.deepEqual(
+    getMakingDesktopSingleBoardUiFlags({
+      viewMode: "singleBoard",
+      useDesktopSidebarLayout: true,
+      hasSelectedColor: true,
+    }),
+    {
+      isDesktopSidebarSingleBoard: true,
+      showMainWorkflowCard: false,
+      showToolbarReplaceAction: false,
+      showSidebarWorkflowActions: true,
+      showSidebarReplaceAction: true,
+    },
+  );
+
+  assert.deepEqual(
+    getMakingDesktopSingleBoardUiFlags({
+      viewMode: "singleBoard",
+      useDesktopSidebarLayout: false,
+      hasSelectedColor: true,
+    }),
+    {
+      isDesktopSidebarSingleBoard: false,
+      showMainWorkflowCard: true,
+      showToolbarReplaceAction: true,
+      showSidebarWorkflowActions: false,
+      showSidebarReplaceAction: false,
+    },
+  );
+});
+
+test("mobile single-board mode keeps only core controls in the main toolbar", () => {
+  assert.deepEqual(
+    getSingleBoardMobileUiFlags({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      hasSelectedColor: true,
+    }),
+    {
+      showToolbarOverview: true,
+      showToolbarReset: true,
+      showToolbarPrimaryComplete: true,
+      showToolbarTools: true,
+      showToolbarExport: false,
+      showToolbarAssist: false,
+      showToolbarAutoAdvance: false,
+      showToolsReplaceAction: true,
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardMobileUiFlags({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      hasSelectedColor: false,
+    }),
+    {
+      showToolbarOverview: true,
+      showToolbarReset: true,
+      showToolbarPrimaryComplete: true,
+      showToolbarTools: true,
+      showToolbarExport: false,
+      showToolbarAssist: false,
+      showToolbarAutoAdvance: false,
+      showToolsReplaceAction: false,
     },
   );
 });
@@ -294,6 +372,121 @@ test("mobile single-board top chrome offset includes summary, toolbar, and swipe
       swipeStatusHeight: 24,
     }),
     144,
+  );
+});
+
+test("mobile single-board canvas wrapper keeps local top offset inside canvas container", () => {
+  assert.equal(
+    getSingleBoardCanvasWrapperTopOffset({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      baseOffset: 46,
+      pageChromeOffset: 173,
+    }),
+    46,
+  );
+});
+
+test("mobile single-board immersive layout removes tool chrome from document flow", () => {
+  assert.deepEqual(
+    getSingleBoardMobileImmersiveLayout({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      singleBoardAllDone: false,
+    }),
+    {
+      enabled: true,
+      showBottomNav: false,
+      showModeSwitch: false,
+      canvasWrapperTopOffset: 0,
+      overlayChrome: true,
+    },
+  );
+});
+
+test("mobile single-board immersive layout stays off after all boards are done", () => {
+  assert.equal(
+    getSingleBoardMobileImmersiveLayout({
+      viewMode: "singleBoard",
+      isSingleBoardMobile: true,
+      singleBoardAllDone: true,
+    }).enabled,
+    false,
+  );
+});
+
+test("mobile single-board immersive tool controls stay above zoom controls", () => {
+  const layout = getSingleBoardMobileImmersiveControlLayout({
+    viewportWidth: 390,
+  });
+
+  assert.equal(layout.zoomBottomPx, 10);
+  assert.equal(layout.toolbarBottomPx, 58);
+  assert.ok(
+    layout.toolbarBottomPx >=
+      layout.zoomBottomPx + layout.zoomHeightPx + layout.gapPx,
+  );
+  assert.ok(layout.zoomMaxWidthPx >= 260);
+});
+
+test("mobile single-board immersive overlay layers keep explicit ordering", () => {
+  assert.deepEqual(getSingleBoardMobileImmersiveLayerZIndexes(), {
+    passiveStatus: 31,
+    controls: 32,
+    summary: 33,
+    toolbar: 36,
+    panel: 60,
+    modal: 2500,
+  });
+
+  const layers = getSingleBoardMobileImmersiveLayerZIndexes();
+  assert.ok(layers.passiveStatus < layers.controls);
+  assert.ok(layers.controls < layers.summary);
+  assert.ok(layers.summary < layers.toolbar);
+  assert.ok(layers.toolbar < layers.panel);
+  assert.ok(layers.panel < layers.modal);
+});
+
+test("mobile single-board immersive mode allows conservative pan slack when board is shorter than viewport", () => {
+  assert.deepEqual(
+    clampMakingStageTranslate({
+      x: 0,
+      y: 100,
+      canvasWidth: 570,
+      canvasHeight: 570,
+      wrapperWidth: 390,
+      wrapperHeight: 791,
+      isSingleBoardMobileImmersive: false,
+    }),
+    { x: 0, y: 0 },
+  );
+
+  assert.deepEqual(
+    clampMakingStageTranslate({
+      x: 0,
+      y: 200,
+      canvasWidth: 570,
+      canvasHeight: 570,
+      wrapperWidth: 390,
+      wrapperHeight: 791,
+      isSingleBoardMobileImmersive: true,
+    }),
+    { x: 0, y: 118.65 },
+  );
+});
+
+test("mobile single-board immersive mode keeps normal bounds once board exceeds viewport", () => {
+  assert.deepEqual(
+    clampMakingStageTranslate({
+      x: 240,
+      y: 120,
+      canvasWidth: 900,
+      canvasHeight: 900,
+      wrapperWidth: 390,
+      wrapperHeight: 791,
+      isSingleBoardMobileImmersive: true,
+    }),
+    { x: 240, y: 54.5 },
   );
 });
 
@@ -569,6 +762,16 @@ test("text overlay live transform keeps scaling continuous from current size", (
       translateX: -120,
       translateY: -100,
     },
+  );
+});
+
+test("live stage display scale uses committed render scale during delayed redraw", () => {
+  assert.equal(
+    getLiveStageDisplayScale({
+      targetScale: 1.5,
+      committedRenderScale: 1,
+    }),
+    1.5,
   );
 });
 
