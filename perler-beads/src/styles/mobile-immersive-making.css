@@ -12,6 +12,12 @@
   filter: drop-shadow(0 10px 20px rgba(62, 45, 82, 0.12));
 }
 
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-chrome-stack,
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-summary-pill,
+[data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-zoom-controls {
+  transform: translate3d(0, 0, 0);
+}
+
 [data-making-page][data-mobile-single-board-immersive="1"] .mobile-immersive-toolbar-shell {
   transform: translate3d(0, 0, 0);
 }

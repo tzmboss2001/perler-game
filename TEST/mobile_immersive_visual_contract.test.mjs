@@ -79,3 +79,11 @@ test("mobile immersive status hint stays edge scoped and non-interactive", () =>
     /mobileImmersiveClass\("status-hint"\)[\s\S]{0,300}translateX\(-50%\)/,
   );
 });
+
+test("mobile immersive motion classes are attached to overlay controls only", () => {
+  const source = read(makingPagePath);
+  assert.match(source, /mobileImmersiveClass\("floating-controls"\)/);
+  assert.match(source, /mobileImmersiveClass\("zoom-controls"\)/);
+  assert.match(source, /mobile-immersive-toolbar-shell/);
+  assert.match(source, /mobileImmersiveClass\("overview-card"\)/);
+});
