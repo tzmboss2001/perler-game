@@ -50,6 +50,8 @@ import {
   clampSingleBoardMobileOverviewWidth,
   getColorIdTextStyle,
   getMakingDesktopSingleBoardUiFlags,
+  getSingleBoardCurrentColorSummary,
+  getSingleBoardWorkflowStatus,
   getRenderScaleAnchorDelayMs,
   getSafeRenderMetricsBudget,
   getMakingDesktopLayoutFlags,
@@ -2094,6 +2096,80 @@ const MakingPage: React.FC = () => {
     if (!activeBoardRect) return false;
     return Boolean(boardStatusMap[activeBoardRect.boardNumber]);
   }, [activeBoardRect, boardStatusMap]);
+
+  const singleBoardWorkflowStatus = useMemo(
+    () =>
+      getSingleBoardWorkflowStatus({
+        activeBoardNumber,
+        boardCols: physicalBoardCols,
+        totalBoardCount: singleBoardProgress.totalCount,
+        doneCount: singleBoardProgress.doneCount,
+        remainingCount: singleBoardProgress.remainingCount,
+        boardDone: activeBoardDone,
+        nextPendingBoardNumber,
+      }),
+    [
+      activeBoardDone,
+      activeBoardNumber,
+      nextPendingBoardNumber,
+      physicalBoardCols,
+      singleBoardProgress.doneCount,
+      singleBoardProgress.remainingCount,
+      singleBoardProgress.totalCount,
+    ],
+  );
+
+  const selectedBoardCoordinate = useMemo(
+    () =>
+      selectedCell
+        ? getPhysicalBoardCoordinate(selectedCell.x, selectedCell.y)
+        : null,
+    [getPhysicalBoardCoordinate, selectedCell],
+  );
+
+  const colorCountInCurrentBoard = useMemo(() => {
+    if (!beadData || selection.type !== "color" || !selection.colorHex) return 0;
+    const targetRect = activeBoardRect ?? currentBoardRect;
+    if (!targetRect) return 0;
+    let count = 0;
+    for (let y = targetRect.startY; y < targetRect.endY; y++) {
+      for (let x = targetRect.startX; x < targetRect.endX; x++) {
+        const bead = beadData.beads[y * beadData.width + x];
+        if (bead?.hex === selection.colorHex) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }, [activeBoardRect, beadData, currentBoardRect, selection.colorHex, selection.type]);
+
+  const singleBoardCurrentColorSummary = useMemo(
+    () =>
+      getSingleBoardCurrentColorSummary({
+        selectedCell,
+        selectedColorId:
+          selection.type === "color" ? selection.colorId : undefined,
+        selectedColorHex:
+          selection.type === "color" ? selection.colorHex : undefined,
+        colorCountInScope: colorCountInCurrentBoard,
+        colorCountTotal,
+        boardNumber: selectedBoardCoordinate?.boardNumber ?? activeBoardNumber,
+        localRow: selectedBoardCoordinate?.localRow ?? 0,
+        localCol: selectedBoardCoordinate?.localCol ?? 0,
+      }),
+    [
+      activeBoardNumber,
+      colorCountInCurrentBoard,
+      colorCountTotal,
+      selectedBoardCoordinate?.boardNumber,
+      selectedBoardCoordinate?.localCol,
+      selectedBoardCoordinate?.localRow,
+      selectedCell,
+      selection.colorHex,
+      selection.colorId,
+      selection.type,
+    ],
+  );
 
   useLayoutEffect(() => {
     if (!isSingleBoardMobile || singleBoardAllDone) {
@@ -4527,12 +4603,41 @@ const MakingPage: React.FC = () => {
                       >
                         <div style={styles.singleBoardMobileSummaryMain}>
                           <span style={styles.singleBoardMobileSummaryText}>
-                            进度 {singleBoardProgress.doneCount}/
-                            {singleBoardProgress.totalCount}
+                            {singleBoardWorkflowStatus.boardLabel} ·{" "}
+                            {singleBoardWorkflowStatus.boardPositionLabel}
                           </span>
                           <span style={styles.singleBoardMobileSummaryText}>
-                            剩余 {singleBoardProgress.remainingCount} 块
+                            进度 {singleBoardWorkflowStatus.progressLabel} ·{" "}
+                            {singleBoardWorkflowStatus.remainingLabel}
                           </span>
+                          <span
+                            style={{
+                              ...styles.singleBoardStatePill,
+                              ...(activeBoardDone
+                                ? styles.singleBoardStatePillDone
+                                : styles.singleBoardStatePillTodo),
+                            }}
+                          >
+                            {singleBoardWorkflowStatus.stateLabel}
+                          </span>
+                          <span style={styles.singleBoardMobileSummaryText}>
+                            {singleBoardWorkflowStatus.nextActionLabel}
+                          </span>
+                          {singleBoardCurrentColorSummary.visible && (
+                            <span style={styles.singleBoardMobileCurrentColorPill}>
+                              <span
+                                style={{
+                                  ...styles.singleBoardMobileCurrentColorSwatch,
+                                  backgroundColor:
+                                    singleBoardCurrentColorSummary.colorHex,
+                                }}
+                              />
+                              {singleBoardCurrentColorSummary.boardLabel} ·{" "}
+                              {singleBoardCurrentColorSummary.cellLabel} ·{" "}
+                              {singleBoardCurrentColorSummary.colorLabel} ·{" "}
+                              {singleBoardCurrentColorSummary.countLabel}
+                            </span>
+                          )}
                           {resumeBoardNumber &&
                             resumeBoardNumber !== activeBoardNumber && (
                               <button
@@ -4644,16 +4749,26 @@ const MakingPage: React.FC = () => {
                           >
                             {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
                           </button>
+                           <button
+                             style={styles.singleBoardMobileToolChip}
+                             onClick={handleOpenExport}
+                             title="下载图纸"
+                           >
+                             图纸
+                           </button>
                           <button
                             style={styles.singleBoardMobileToolChip}
-                            onClick={handleOpenExport}
-                            title="下载图纸"
+                            onClick={() => {
+                              setSingleBoardMobileToolbarExpanded(false);
+                              setShowSingleBoardOnboarding(true);
+                            }}
+                            title="查看单板制作帮助"
                           >
-                            图纸
+                            帮助
                           </button>
-                          <button
-                            style={{
-                              ...styles.singleBoardMobileToolChip,
+                           <button
+                             style={{
+                               ...styles.singleBoardMobileToolChip,
                               ...(showSettings
                                 ? styles.singleBoardMobileToolChipActive
                                 : {}),
@@ -5547,6 +5662,22 @@ const MakingPage: React.FC = () => {
                         }}
                       >
                         下载
+                      </button>
+                    </div>
+                    <div style={styles.settingRow}>
+                      <span style={styles.settingLabel}>制作帮助</span>
+                      <button
+                        style={{
+                          ...styles.actionBtn,
+                          padding: "8px 12px",
+                          fontSize: "12px",
+                        }}
+                        onClick={() => {
+                          setShowSettings(false);
+                          setShowSingleBoardOnboarding(true);
+                        }}
+                      >
+                        查看
                       </button>
                     </div>
                     <div style={styles.settingRow}>
@@ -7404,6 +7535,31 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "9px",
     color: makingCandy.textSoft,
     fontWeight: 800,
+  },
+
+  singleBoardMobileCurrentColorPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    maxWidth: "100%",
+    padding: "2px 7px",
+    borderRadius: radius.full,
+    background: "rgba(255,255,255,0.82)",
+    border: "1px solid rgba(255,198,220,0.72)",
+    color: makingCandy.text,
+    fontSize: "10px",
+    fontWeight: 800,
+    whiteSpace: "nowrap" as const,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+
+  singleBoardMobileCurrentColorSwatch: {
+    width: "10px",
+    height: "10px",
+    borderRadius: "3px",
+    border: "1px solid rgba(0,0,0,0.18)",
+    flexShrink: 0,
   },
 
   singleBoardMobileSummaryHint: {

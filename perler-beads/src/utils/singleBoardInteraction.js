@@ -219,6 +219,97 @@ export function getSingleBoardMobileImmersiveLayerZIndexes() {
 
 /**
  * @param {{
+ *   activeBoardNumber: number;
+ *   boardCols: number;
+ *   totalBoardCount: number;
+ *   doneCount: number;
+ *   remainingCount: number;
+ *   boardDone: boolean;
+ *   nextPendingBoardNumber: number | null;
+ * }} input
+ */
+export function getSingleBoardWorkflowStatus({
+  activeBoardNumber,
+  boardCols,
+  totalBoardCount,
+  doneCount,
+  remainingCount,
+  boardDone,
+  nextPendingBoardNumber,
+}) {
+  const safeBoard = Math.max(1, Math.floor(Number(activeBoardNumber) || 1));
+  const safeCols = Math.max(1, Math.floor(Number(boardCols) || 1));
+  const row = Math.floor((safeBoard - 1) / safeCols) + 1;
+  const col = ((safeBoard - 1) % safeCols) + 1;
+  const safeTotal = Math.max(0, Math.floor(Number(totalBoardCount) || 0));
+  const safeDone = Math.max(0, Math.floor(Number(doneCount) || 0));
+  const safeRemaining = Math.max(0, Math.floor(Number(remainingCount) || 0));
+  const hasNextPending =
+    nextPendingBoardNumber !== null &&
+    nextPendingBoardNumber !== undefined &&
+    Number.isFinite(Number(nextPendingBoardNumber));
+
+  return {
+    boardLabel: `板${safeBoard}`,
+    boardPositionLabel: `第${row}行 第${col}列`,
+    progressLabel: `${safeDone}/${safeTotal}`,
+    remainingLabel: safeRemaining > 0 ? `剩余${safeRemaining}块` : "全部完成",
+    stateLabel: boardDone ? "已完成" : "进行中",
+    nextActionLabel: boardDone
+      ? hasNextPending
+        ? `下一步：继续板${nextPendingBoardNumber}`
+        : "下一步：导出图纸"
+      : "下一步：完成本板",
+    nextPendingLabel: hasNextPending ? `下一块：板${nextPendingBoardNumber}` : null,
+  };
+}
+
+/**
+ * @param {{
+ *   selectedCell: { x: number; y: number } | null;
+ *   selectedColorId: string | undefined;
+ *   selectedColorHex: string | undefined;
+ *   colorCountInScope: number;
+ *   colorCountTotal: number;
+ *   boardNumber: number;
+ *   localRow: number;
+ *   localCol: number;
+ * }} input
+ */
+export function getSingleBoardCurrentColorSummary({
+  selectedCell,
+  selectedColorId,
+  selectedColorHex,
+  colorCountInScope,
+  colorCountTotal,
+  boardNumber,
+  localRow,
+  localCol,
+}) {
+  if (!selectedCell || !selectedColorHex) {
+    return {
+      visible: false,
+      colorLabel: "",
+      colorHex: "",
+      cellLabel: "",
+      boardLabel: "",
+      countLabel: "",
+    };
+  }
+
+  const colorLabel = selectedColorId || selectedColorHex;
+  return {
+    visible: true,
+    colorLabel,
+    colorHex: selectedColorHex,
+    cellLabel: `列${localCol} 行${localRow}`,
+    boardLabel: `板${boardNumber}`,
+    countLabel: `本板${colorCountInScope}颗 / 总计${colorCountTotal}颗`,
+  };
+}
+
+/**
+ * @param {{
  *   currentScale: number;
  *   minScale: number;
  *   maxScale: number;

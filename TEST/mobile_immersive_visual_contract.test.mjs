@@ -87,3 +87,18 @@ test("mobile immersive motion classes are attached to overlay controls only", ()
   assert.match(source, /mobile-immersive-toolbar-shell/);
   assert.match(source, /mobileImmersiveClass\("overview-card"\)/);
 });
+
+test("making workflow productization status uses mobile immersive overlay hooks", () => {
+  const source = read(makingPagePath);
+  assert.match(source, /singleBoardWorkflowStatus/);
+  assert.match(source, /singleBoardCurrentColorSummary/);
+  assert.match(source, /singleBoardMobileCurrentColorPill/);
+  assert.match(source, /mobileImmersiveClass\("summary-pill"\)/);
+});
+
+test("phase1a lightweight help entry reuses single-board onboarding without new lock state", () => {
+  const source = read(makingPagePath);
+  assert.match(source, /查看单板制作帮助/);
+  assert.match(source, /setShowSingleBoardOnboarding\(true\)/);
+  assert.doesNotMatch(source, /showMakingHelp/);
+});

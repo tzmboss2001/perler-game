@@ -23,6 +23,8 @@ import {
   getSingleBoardMobileImmersiveLayout,
   getSingleBoardMobileImmersiveLayerZIndexes,
   getSingleBoardLayoutFlags,
+  getSingleBoardCurrentColorSummary,
+  getSingleBoardWorkflowStatus,
   clampMakingStageTranslate,
   getLiveStageDisplayScale,
   getSingleBoardMobileTopChromeOffset,
@@ -34,6 +36,98 @@ import {
   resolveSingleBoardSwipeDirection,
   shouldShowSingleBoardMobileOverviewButton,
 } from "../perler-beads/src/utils/singleBoardInteraction.js";
+
+test("workflow status summarizes active board row column progress and next pending board", () => {
+  assert.deepEqual(
+    getSingleBoardWorkflowStatus({
+      activeBoardNumber: 3,
+      boardCols: 2,
+      totalBoardCount: 6,
+      doneCount: 2,
+      remainingCount: 4,
+      boardDone: false,
+      nextPendingBoardNumber: 4,
+    }),
+    {
+      boardLabel: "板3",
+      boardPositionLabel: "第2行 第1列",
+      progressLabel: "2/6",
+      remainingLabel: "剩余4块",
+      stateLabel: "进行中",
+      nextActionLabel: "下一步：完成本板",
+      nextPendingLabel: "下一块：板4",
+    },
+  );
+});
+
+test("workflow status handles completed active board without next pending board", () => {
+  assert.deepEqual(
+    getSingleBoardWorkflowStatus({
+      activeBoardNumber: 2,
+      boardCols: 2,
+      totalBoardCount: 2,
+      doneCount: 2,
+      remainingCount: 0,
+      boardDone: true,
+      nextPendingBoardNumber: null,
+    }),
+    {
+      boardLabel: "板2",
+      boardPositionLabel: "第1行 第2列",
+      progressLabel: "2/2",
+      remainingLabel: "全部完成",
+      stateLabel: "已完成",
+      nextActionLabel: "下一步：导出图纸",
+      nextPendingLabel: null,
+    },
+  );
+});
+
+test("current color summary returns selected cell and current board color count", () => {
+  assert.deepEqual(
+    getSingleBoardCurrentColorSummary({
+      selectedCell: { x: 64, y: 81 },
+      selectedColorId: "C73",
+      selectedColorHex: "#aabbcc",
+      colorCountInScope: 12,
+      colorCountTotal: 48,
+      boardNumber: 3,
+      localRow: 28,
+      localCol: 11,
+    }),
+    {
+      visible: true,
+      colorLabel: "C73",
+      colorHex: "#aabbcc",
+      cellLabel: "列11 行28",
+      boardLabel: "板3",
+      countLabel: "本板12颗 / 总计48颗",
+    },
+  );
+});
+
+test("current color summary stays hidden without a selected color", () => {
+  assert.deepEqual(
+    getSingleBoardCurrentColorSummary({
+      selectedCell: null,
+      selectedColorId: "",
+      selectedColorHex: "",
+      colorCountInScope: 0,
+      colorCountTotal: 0,
+      boardNumber: 1,
+      localRow: 1,
+      localCol: 1,
+    }),
+    {
+      visible: false,
+      colorLabel: "",
+      colorHex: "",
+      cellLabel: "",
+      boardLabel: "",
+      countLabel: "",
+    },
+  );
+});
 
 test("single board min scale follows fit scale instead of snapping to fit scale", () => {
   assert.equal(getSingleBoardMinScale({ fitScale: 0.63, baseMinScale: 0.2 }), 0.2835);
