@@ -73,24 +73,16 @@ export const pixelizeFromImage = (
 ): PixelData => {
   const { gridWidth, gridHeight: targetHeight, keepAspectRatio = true } = options;
 
-  // 计算网格高度
-  let gridHeight: number;
-  if (targetHeight && !keepAspectRatio) {
-    gridHeight = targetHeight;
-  } else {
-    // 保持宽高比（参考 perlerbeads 网站做法）
-    const aspectRatio = image.height / image.width;
-    gridHeight = Math.round(gridWidth * aspectRatio);
-  }
-
-  // 只限制宽度范围（10-200），高度根据比例自动计算，不做限制
+  // 只限制宽度范围（10-240），高度根据最终宽度按比例自动计算，不做限制
   // 这样可以正确处理各种比例的图片（横图、竖图、正方形）
-  // 支持拼豆板规格：52钉小板、104钉大板、156/208钉拼接
+  // 支持拼豆板规格：52钉小板、104钉大板、156/208钉拼接，以及编辑器最大 240 宽度
   // 注意：>100 可能会在低端设备上变慢，UI 有渐变色提示
   const minWidth = 10;
-  const maxWidth = 200;
+  const maxWidth = 240;
   const finalWidth = Math.max(minWidth, Math.min(gridWidth, maxWidth));
-  const finalHeight = gridHeight; // 高度不限制，保持原图比例
+  const finalHeight = targetHeight && !keepAspectRatio
+    ? targetHeight
+    : Math.round(finalWidth * (image.height / image.width));
 
   // 创建离屏 Canvas
   const canvas = document.createElement('canvas');
