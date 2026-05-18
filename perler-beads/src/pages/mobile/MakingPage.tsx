@@ -52,6 +52,8 @@ import {
   getMakingDesktopSingleBoardUiFlags,
   getSingleBoardInteractionLockState,
   getSingleBoardCurrentColorSummary,
+  getSingleBoardMobileFreezeHint,
+  getSingleBoardMobileOverlayInteractionState,
   getSingleBoardMobileOverlayOcclusionState,
   getSingleBoardWorkflowStatus,
   getRenderScaleAnchorDelayMs,
@@ -2006,13 +2008,30 @@ const MakingPage: React.FC = () => {
   const isSingleBoardMobileImmersive =
     singleBoardMobileImmersiveLayout.enabled;
   singleBoardMobileImmersiveRef.current = isSingleBoardMobileImmersive;
-  const isSingleBoardInteractionLocked = getSingleBoardInteractionLockState({
+  const singleBoardMobileOverlayInteractionInput = {
     isSingleBoardMobileImmersive,
     toolbarExpanded: singleBoardMobileToolbarExpanded,
     settingsOpen: showSettings,
     overviewOpen: singleBoardMobileMiniMapExpanded,
     onboardingOpen: showSingleBoardOnboarding,
-  });
+    helpOpen: false,
+    modalOpen:
+      showExportModal ||
+      showRewardedUnlockModal ||
+      showReplaceModal ||
+      showVisionAssist,
+    detailFocus: false,
+  };
+  const singleBoardMobileOverlayInteractionState =
+    getSingleBoardMobileOverlayInteractionState(
+      singleBoardMobileOverlayInteractionInput,
+    );
+  const isSingleBoardInteractionLocked = getSingleBoardInteractionLockState(
+    singleBoardMobileOverlayInteractionInput,
+  );
+  const singleBoardMobileFreezeHint = getSingleBoardMobileFreezeHint(
+    singleBoardMobileOverlayInteractionState,
+  );
 
   const nextPendingBoardNumber = useMemo(() => {
     const nextPending = boardRects.find(
@@ -4143,6 +4162,12 @@ const MakingPage: React.FC = () => {
     setShowExportModal(true);
   }, []);
 
+  const handleOpenSingleBoardHelp = useCallback(() => {
+    setShowSettings(false);
+    setSingleBoardMobileToolbarExpanded(false);
+    setShowSingleBoardOnboarding(true);
+  }, []);
+
   const handleSingleBoardToolbarPrimaryAction = useCallback(() => {
     if (singleBoardAllDone) {
       setSingleBoardOverviewCollapsed(false);
@@ -4445,6 +4470,18 @@ const MakingPage: React.FC = () => {
         }
       : {}),
   };
+  const singleBoardMobileFreezeHintStyle: React.CSSProperties = {
+    ...styles.singleBoardSwipeStatus,
+    ...styles.singleBoardMobileFreezeHint,
+    ...(isSingleBoardMobileImmersive
+      ? styles.singleBoardMobileImmersiveFreezeHint
+      : {}),
+    ...(isSingleBoardMobileImmersive
+      ? {
+          zIndex: singleBoardMobileImmersiveLayers.passiveStatus,
+        }
+      : {}),
+  };
   const previewSectionStyle: React.CSSProperties = {
     ...styles.previewSection,
     ...(useDesktopSidebarLayout
@@ -4716,7 +4753,20 @@ const MakingPage: React.FC = () => {
                             )}
                         </div>
                       </div>
-                      {totalBoardCount > 1 && (
+                      {singleBoardMobileFreezeHint.visible ? (
+                        <div
+                          data-phase1b-freeze-hint="1"
+                          className={mobileImmersiveClass("status-hint")}
+                          style={singleBoardMobileFreezeHintStyle}
+                        >
+                          <span style={styles.singleBoardSwipeStatusTitle}>
+                            {singleBoardMobileFreezeHint.title}
+                          </span>
+                          <span style={styles.singleBoardSwipeStatusText}>
+                            {singleBoardMobileFreezeHint.text}
+                          </span>
+                        </div>
+                      ) : totalBoardCount > 1 ? (
                         <div
                           className={mobileImmersiveClass("status-hint")}
                           style={singleBoardMobileSwipeStatusStyle}
@@ -4728,7 +4778,7 @@ const MakingPage: React.FC = () => {
                             {singleBoardSwipeUi.text}
                           </span>
                         </div>
-                      )}
+                      ) : null}
                       <div
                         className={singleBoardMobileToolbarClassName}
                         style={singleBoardMobileToolbarShellStyle}
@@ -4823,10 +4873,7 @@ const MakingPage: React.FC = () => {
                            </button>
                           <button
                             style={styles.singleBoardMobileToolChip}
-                            onClick={() => {
-                              setSingleBoardMobileToolbarExpanded(false);
-                              setShowSingleBoardOnboarding(true);
-                            }}
+                            onClick={handleOpenSingleBoardHelp}
                             title="查看单板制作帮助"
                           >
                             帮助
@@ -5738,8 +5785,7 @@ const MakingPage: React.FC = () => {
                           fontSize: "12px",
                         }}
                         onClick={() => {
-                          setShowSettings(false);
-                          setShowSingleBoardOnboarding(true);
+                          handleOpenSingleBoardHelp();
                         }}
                       >
                         查看
@@ -7742,6 +7788,25 @@ const styles: Record<string, React.CSSProperties> = {
       "linear-gradient(135deg, rgba(255,255,255,0.62), rgba(255,248,240,0.48))",
     borderColor: "rgba(255,255,255,0.58)",
     boxShadow: "0 8px 20px rgba(62,45,82,0.07)",
+    backdropFilter: "blur(12px)",
+  },
+
+  singleBoardMobileFreezeHint: {
+    background:
+      "linear-gradient(135deg, rgba(255,255,255,0.74), rgba(255,244,236,0.62))",
+    border: "1px solid rgba(255,255,255,0.68)",
+    color: makingCandy.text,
+    boxShadow: "0 8px 20px rgba(62,45,82,0.08)",
+  },
+
+  singleBoardMobileImmersiveFreezeHint: {
+    position: "absolute" as const,
+    left: "8px",
+    right: "8px",
+    top: "42px",
+    opacity: 0.82,
+    pointerEvents: "none" as const,
+    justifyContent: "center",
     backdropFilter: "blur(12px)",
   },
 

@@ -124,3 +124,21 @@ test("phase1b freeze model is centralized in the interaction helper", () => {
     /isSingleBoardInteractionLocked\s*=\s*[\s\S]{0,120}singleBoardMobileToolbarExpanded\s*\|\|[\s\S]{0,120}showSettings\s*\|\|[\s\S]{0,120}singleBoardMobileMiniMapExpanded/,
   );
 });
+
+test("phase1b freeze hint stays in the existing overlay status layer", () => {
+  const source = read(makingPagePath);
+  assert.match(source, /getSingleBoardMobileFreezeHint/);
+  assert.match(source, /singleBoardMobileFreezeHint/);
+  assert.match(source, /data-phase1b-freeze-hint/);
+  assert.match(source, /mobileImmersiveClass\("status-hint"\)/);
+});
+
+test("phase1b toolbar and settings help entries share one opener", () => {
+  const source = read(makingPagePath);
+  const helperOpenMatches = source.match(/handleOpenSingleBoardHelp/g) || [];
+  assert.ok(
+    helperOpenMatches.length >= 3,
+    "definition plus toolbar and settings entries should reuse one help opener",
+  );
+  assert.doesNotMatch(source, /title="查看单板制作帮助"[\s\S]{0,160}setShowSingleBoardOnboarding\(true\)/);
+});

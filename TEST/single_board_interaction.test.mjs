@@ -22,6 +22,7 @@ import {
   getSingleBoardMobileImmersiveControlLayout,
   getSingleBoardMobileImmersiveLayout,
   getSingleBoardMobileImmersiveLayerZIndexes,
+  getSingleBoardMobileFreezeHint,
   getSingleBoardMobileOverlayInteractionState,
   getSingleBoardMobileOverlayOcclusionState,
   getSingleBoardInteractionLockState,
@@ -313,6 +314,75 @@ test("single board interaction lock state follows overlay freeze decision", () =
       detailFocus: true,
     }),
     false,
+  );
+});
+
+test("mobile freeze hint explains why canvas gestures are paused", () => {
+  assert.deepEqual(
+    getSingleBoardMobileFreezeHint({
+      activeOverlay: "toolbar",
+      freezesCanvas: true,
+    }),
+    {
+      visible: true,
+      title: "工具已展开",
+      text: "收起工具后可继续拖动、缩放和切板",
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardMobileFreezeHint({
+      activeOverlay: "settings",
+      freezesCanvas: true,
+    }),
+    {
+      visible: true,
+      title: "辅助面板打开中",
+      text: "关闭辅助面板后可继续操作图纸",
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardMobileFreezeHint({
+      activeOverlay: "onboarding",
+      freezesCanvas: true,
+    }),
+    {
+      visible: true,
+      title: "制作帮助打开中",
+      text: "关闭帮助后可继续拖动和缩放图纸",
+    },
+  );
+});
+
+test("mobile freeze hint follows overlay priority and hides for passive states", () => {
+  const priorityState = getSingleBoardMobileOverlayInteractionState({
+    isSingleBoardMobileImmersive: true,
+    toolbarExpanded: true,
+    settingsOpen: true,
+    overviewOpen: true,
+    onboardingOpen: true,
+    helpOpen: true,
+    modalOpen: true,
+    detailFocus: true,
+  });
+
+  assert.deepEqual(getSingleBoardMobileFreezeHint(priorityState), {
+    visible: true,
+    title: "弹窗打开中",
+    text: "关闭弹窗后可继续制作",
+  });
+
+  assert.deepEqual(
+    getSingleBoardMobileFreezeHint({
+      activeOverlay: "detail-focus",
+      freezesCanvas: false,
+    }),
+    {
+      visible: false,
+      title: "",
+      text: "",
+    },
   );
 });
 

@@ -306,6 +306,60 @@ export function getSingleBoardInteractionLockState(input) {
   return getSingleBoardMobileOverlayInteractionState(input).freezesCanvas;
 }
 
+const SINGLE_BOARD_FREEZE_HINT_COPY = {
+  modal: {
+    title: "弹窗打开中",
+    text: "关闭弹窗后可继续制作",
+  },
+  help: {
+    title: "制作帮助打开中",
+    text: "关闭帮助后可继续拖动和缩放图纸",
+  },
+  onboarding: {
+    title: "制作帮助打开中",
+    text: "关闭帮助后可继续拖动和缩放图纸",
+  },
+  settings: {
+    title: "辅助面板打开中",
+    text: "关闭辅助面板后可继续操作图纸",
+  },
+  overview: {
+    title: "总览打开中",
+    text: "收起总览后可继续拖动、缩放和切板",
+  },
+  toolbar: {
+    title: "工具已展开",
+    text: "收起工具后可继续拖动、缩放和切板",
+  },
+};
+
+/**
+ * @param {{
+ *   activeOverlay: string;
+ *   freezesCanvas: boolean;
+ * }} input
+ */
+export function getSingleBoardMobileFreezeHint({ activeOverlay, freezesCanvas }) {
+  if (!freezesCanvas) {
+    return {
+      visible: false,
+      title: "",
+      text: "",
+    };
+  }
+
+  const copy = SINGLE_BOARD_FREEZE_HINT_COPY[activeOverlay] || {
+    title: "操作暂停中",
+    text: "关闭当前浮层后可继续操作图纸",
+  };
+
+  return {
+    visible: true,
+    title: copy.title,
+    text: copy.text,
+  };
+}
+
 /**
  * @param {{
  *   activeBoardNumber: number;
