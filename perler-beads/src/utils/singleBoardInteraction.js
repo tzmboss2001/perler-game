@@ -217,6 +217,95 @@ export function getSingleBoardMobileImmersiveLayerZIndexes() {
   };
 }
 
+const SINGLE_BOARD_OVERLAY_PRIORITY = [
+  ["modal", 90],
+  ["help", 70],
+  ["onboarding", 70],
+  ["settings", 60],
+  ["overview", 50],
+  ["toolbar", 40],
+  ["detail-focus", 10],
+];
+
+function buildSingleBoardOverlayState(activeOverlay, priority, freezesCanvas) {
+  return {
+    activeOverlay,
+    priority,
+    freezesCanvas,
+    allowCanvasDrag: !freezesCanvas,
+    allowCanvasZoom: !freezesCanvas,
+    allowCanvasTap: !freezesCanvas,
+    allowBoardSwipe: !freezesCanvas,
+  };
+}
+
+/**
+ * @param {{
+ *   isSingleBoardMobileImmersive: boolean;
+ *   toolbarExpanded?: boolean;
+ *   settingsOpen?: boolean;
+ *   overviewOpen?: boolean;
+ *   onboardingOpen?: boolean;
+ *   helpOpen?: boolean;
+ *   modalOpen?: boolean;
+ *   detailFocus?: boolean;
+ * }} input
+ */
+export function getSingleBoardMobileOverlayInteractionState({
+  isSingleBoardMobileImmersive,
+  toolbarExpanded = false,
+  settingsOpen = false,
+  overviewOpen = false,
+  onboardingOpen = false,
+  helpOpen = false,
+  modalOpen = false,
+  detailFocus = false,
+}) {
+  if (!isSingleBoardMobileImmersive) {
+    return buildSingleBoardOverlayState("none", 0, false);
+  }
+
+  const overlayFlags = {
+    modal: modalOpen,
+    help: helpOpen,
+    onboarding: onboardingOpen,
+    settings: settingsOpen,
+    overview: overviewOpen,
+    toolbar: toolbarExpanded,
+    "detail-focus": detailFocus,
+  };
+  const active = SINGLE_BOARD_OVERLAY_PRIORITY.find(
+    ([overlay]) => overlayFlags[overlay],
+  );
+
+  if (!active) {
+    return buildSingleBoardOverlayState("none", 0, false);
+  }
+
+  const [activeOverlay, priority] = active;
+  return buildSingleBoardOverlayState(
+    activeOverlay,
+    priority,
+    priority >= 40,
+  );
+}
+
+/**
+ * @param {{
+ *   isSingleBoardMobileImmersive: boolean;
+ *   toolbarExpanded?: boolean;
+ *   settingsOpen?: boolean;
+ *   overviewOpen?: boolean;
+ *   onboardingOpen?: boolean;
+ *   helpOpen?: boolean;
+ *   modalOpen?: boolean;
+ *   detailFocus?: boolean;
+ * }} input
+ */
+export function getSingleBoardInteractionLockState(input) {
+  return getSingleBoardMobileOverlayInteractionState(input).freezesCanvas;
+}
+
 /**
  * @param {{
  *   activeBoardNumber: number;

@@ -22,7 +22,9 @@ import {
   getSingleBoardMobileImmersiveControlLayout,
   getSingleBoardMobileImmersiveLayout,
   getSingleBoardMobileImmersiveLayerZIndexes,
+  getSingleBoardMobileOverlayInteractionState,
   getSingleBoardMobileOverlayOcclusionState,
+  getSingleBoardInteractionLockState,
   getSingleBoardLayoutFlags,
   getSingleBoardCurrentColorSummary,
   getSingleBoardWorkflowStatus,
@@ -188,6 +190,128 @@ test("mobile overlay occlusion guard stays normal outside detail focus or while 
       toolbarExpanded: false,
       panelOpen: true,
     }).detailFocus,
+    false,
+  );
+});
+
+test("mobile overlay interaction state freezes canvas for blocking overlays by priority", () => {
+  assert.deepEqual(
+    getSingleBoardMobileOverlayInteractionState({
+      isSingleBoardMobileImmersive: true,
+      toolbarExpanded: true,
+      settingsOpen: false,
+      overviewOpen: false,
+      onboardingOpen: false,
+      helpOpen: false,
+      modalOpen: false,
+      detailFocus: false,
+    }),
+    {
+      activeOverlay: "toolbar",
+      priority: 40,
+      freezesCanvas: true,
+      allowCanvasDrag: false,
+      allowCanvasZoom: false,
+      allowCanvasTap: false,
+      allowBoardSwipe: false,
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardMobileOverlayInteractionState({
+      isSingleBoardMobileImmersive: true,
+      toolbarExpanded: true,
+      settingsOpen: true,
+      overviewOpen: true,
+      onboardingOpen: true,
+      helpOpen: true,
+      modalOpen: true,
+      detailFocus: true,
+    }),
+    {
+      activeOverlay: "modal",
+      priority: 90,
+      freezesCanvas: true,
+      allowCanvasDrag: false,
+      allowCanvasZoom: false,
+      allowCanvasTap: false,
+      allowBoardSwipe: false,
+    },
+  );
+});
+
+test("mobile overlay interaction state keeps passive detail focus draggable and desktop unlocked", () => {
+  assert.deepEqual(
+    getSingleBoardMobileOverlayInteractionState({
+      isSingleBoardMobileImmersive: true,
+      toolbarExpanded: false,
+      settingsOpen: false,
+      overviewOpen: false,
+      onboardingOpen: false,
+      helpOpen: false,
+      modalOpen: false,
+      detailFocus: true,
+    }),
+    {
+      activeOverlay: "detail-focus",
+      priority: 10,
+      freezesCanvas: false,
+      allowCanvasDrag: true,
+      allowCanvasZoom: true,
+      allowCanvasTap: true,
+      allowBoardSwipe: true,
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardMobileOverlayInteractionState({
+      isSingleBoardMobileImmersive: false,
+      toolbarExpanded: true,
+      settingsOpen: true,
+      overviewOpen: true,
+      onboardingOpen: true,
+      helpOpen: true,
+      modalOpen: true,
+      detailFocus: true,
+    }),
+    {
+      activeOverlay: "none",
+      priority: 0,
+      freezesCanvas: false,
+      allowCanvasDrag: true,
+      allowCanvasZoom: true,
+      allowCanvasTap: true,
+      allowBoardSwipe: true,
+    },
+  );
+});
+
+test("single board interaction lock state follows overlay freeze decision", () => {
+  assert.equal(
+    getSingleBoardInteractionLockState({
+      isSingleBoardMobileImmersive: true,
+      toolbarExpanded: false,
+      settingsOpen: false,
+      overviewOpen: false,
+      onboardingOpen: true,
+      helpOpen: false,
+      modalOpen: false,
+      detailFocus: false,
+    }),
+    true,
+  );
+
+  assert.equal(
+    getSingleBoardInteractionLockState({
+      isSingleBoardMobileImmersive: true,
+      toolbarExpanded: false,
+      settingsOpen: false,
+      overviewOpen: false,
+      onboardingOpen: false,
+      helpOpen: false,
+      modalOpen: false,
+      detailFocus: true,
+    }),
     false,
   );
 });

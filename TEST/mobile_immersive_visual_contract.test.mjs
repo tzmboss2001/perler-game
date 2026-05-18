@@ -114,3 +114,13 @@ test("phase1a lightweight help entry reuses single-board onboarding without new 
   assert.match(source, /setShowSingleBoardOnboarding\(true\)/);
   assert.doesNotMatch(source, /showMakingHelp/);
 });
+
+test("phase1b freeze model is centralized in the interaction helper", () => {
+  const source = read(makingPagePath);
+  assert.match(source, /getSingleBoardInteractionLockState/);
+  assert.match(source, /onboardingOpen:\s*showSingleBoardOnboarding/);
+  assert.doesNotMatch(
+    source,
+    /isSingleBoardInteractionLocked\s*=\s*[\s\S]{0,120}singleBoardMobileToolbarExpanded\s*\|\|[\s\S]{0,120}showSettings\s*\|\|[\s\S]{0,120}singleBoardMobileMiniMapExpanded/,
+  );
+});

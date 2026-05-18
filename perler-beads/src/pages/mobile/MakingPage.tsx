@@ -50,6 +50,7 @@ import {
   clampSingleBoardMobileOverviewWidth,
   getColorIdTextStyle,
   getMakingDesktopSingleBoardUiFlags,
+  getSingleBoardInteractionLockState,
   getSingleBoardCurrentColorSummary,
   getSingleBoardMobileOverlayOcclusionState,
   getSingleBoardWorkflowStatus,
@@ -2005,11 +2006,13 @@ const MakingPage: React.FC = () => {
   const isSingleBoardMobileImmersive =
     singleBoardMobileImmersiveLayout.enabled;
   singleBoardMobileImmersiveRef.current = isSingleBoardMobileImmersive;
-  const isSingleBoardInteractionLocked =
-    isSingleBoardMobileImmersive &&
-    (singleBoardMobileToolbarExpanded ||
-      showSettings ||
-      singleBoardMobileMiniMapExpanded);
+  const isSingleBoardInteractionLocked = getSingleBoardInteractionLockState({
+    isSingleBoardMobileImmersive,
+    toolbarExpanded: singleBoardMobileToolbarExpanded,
+    settingsOpen: showSettings,
+    overviewOpen: singleBoardMobileMiniMapExpanded,
+    onboardingOpen: showSingleBoardOnboarding,
+  });
 
   const nextPendingBoardNumber = useMemo(() => {
     const nextPending = boardRects.find(
