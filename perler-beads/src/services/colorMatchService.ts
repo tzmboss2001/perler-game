@@ -9,7 +9,11 @@ import {
   colorDistance,
   allBeadColors,
 } from '../data/beadColors';
-import { getPhysicalBoardDrawSize, getPhysicalBoardGuideOffsets } from './boardService';
+import {
+  getPhysicalBoardDrawSize,
+  getPhysicalBoardGuideOffsets,
+  getPhysicalBoardTenCellCrossGuides,
+} from './boardService';
 import { PixelData } from './pixelizeService';
 
 export interface BeadPixelData {
@@ -868,6 +872,18 @@ export const renderBeadsToCanvas = (
         }
       }
 
+      drawTenCellCrossGuides(
+        ctx,
+        patternOffsetX,
+        patternOffsetY,
+        cellSize,
+        physicalBoardSize,
+        0,
+        0,
+        width,
+        height,
+      );
+
       for (let x = 0; x <= width; x += physicalBoardSize) {
         ctx.beginPath();
         ctx.moveTo(patternOffsetX + x * cellSize, patternOffsetY);
@@ -912,6 +928,96 @@ const getContrastColor = (rgb: [number, number, number]): string => {
 
 const getExportPhysicalBoardSize = (width: number, height: number): number => {
   return getPhysicalBoardDrawSize(width, height);
+};
+
+const drawTenCellCrossGuides = (
+  ctx: CanvasRenderingContext2D,
+  patternOffsetX: number,
+  patternOffsetY: number,
+  cellSize: number,
+  physicalBoardSize: number,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+) => {
+  const guides = getPhysicalBoardTenCellCrossGuides(physicalBoardSize);
+  if (guides.length === 0) return;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.36)';
+  ctx.lineWidth = Math.max(1, Math.min(2, cellSize / 8));
+  ctx.setLineDash([Math.max(2, cellSize * 0.25), Math.max(2, cellSize * 0.2)]);
+  ctx.lineCap = 'round';
+
+  const firstBoardStartX = Math.floor(startX / physicalBoardSize) * physicalBoardSize;
+  const firstBoardStartY = Math.floor(startY / physicalBoardSize) * physicalBoardSize;
+
+  for (
+    let boardStartX = firstBoardStartX;
+    boardStartX < endX;
+    boardStartX += physicalBoardSize
+  ) {
+    for (
+      let boardStartY = firstBoardStartY;
+      boardStartY < endY;
+      boardStartY += physicalBoardSize
+    ) {
+      for (const guide of guides) {
+        const guideStartX = boardStartX + guide.startX;
+        const guideStartY = boardStartY + guide.startY;
+        const guideEndX = boardStartX + guide.endX;
+        const guideEndY = boardStartY + guide.endY;
+        const guideCenterX = boardStartX + guide.centerX;
+        const guideCenterY = boardStartY + guide.centerY;
+
+        if (
+          guideEndX < startX ||
+          guideStartX > endX ||
+          guideEndY < startY ||
+          guideStartY > endY
+        ) {
+          continue;
+        }
+
+        if (guideCenterX >= startX && guideCenterX <= endX) {
+          const y1 = Math.max(guideStartY, startY);
+          const y2 = Math.min(guideEndY, endY);
+          if (y2 > y1) {
+            ctx.beginPath();
+            ctx.moveTo(
+              patternOffsetX + (guideCenterX - startX) * cellSize,
+              patternOffsetY + (y1 - startY) * cellSize,
+            );
+            ctx.lineTo(
+              patternOffsetX + (guideCenterX - startX) * cellSize,
+              patternOffsetY + (y2 - startY) * cellSize,
+            );
+            ctx.stroke();
+          }
+        }
+
+        if (guideCenterY >= startY && guideCenterY <= endY) {
+          const x1 = Math.max(guideStartX, startX);
+          const x2 = Math.min(guideEndX, endX);
+          if (x2 > x1) {
+            ctx.beginPath();
+            ctx.moveTo(
+              patternOffsetX + (x1 - startX) * cellSize,
+              patternOffsetY + (guideCenterY - startY) * cellSize,
+            );
+            ctx.lineTo(
+              patternOffsetX + (x2 - startX) * cellSize,
+              patternOffsetY + (guideCenterY - startY) * cellSize,
+            );
+            ctx.stroke();
+          }
+        }
+      }
+    }
+  }
+
+  ctx.restore();
 };
 
 const getBoardLocalCoordLabel = (
@@ -1191,6 +1297,18 @@ export const renderBeadsToCanvasWithList = (
         }
       }
 
+      drawTenCellCrossGuides(
+        ctx,
+        patternOffsetX,
+        patternOffsetY,
+        cellSize,
+        physicalBoardSize,
+        0,
+        0,
+        width,
+        height,
+      );
+
       for (let x = 0; x <= width; x += physicalBoardSize) {
         ctx.beginPath();
         ctx.moveTo(patternOffsetX + x * cellSize, patternOffsetY);
@@ -1357,6 +1475,7 @@ export interface PaginatedPage {
   canvas: HTMLCanvasElement;
   pageIndex: number;
   totalPages: number;
+  boardNumber: number;
   rowIndex: number;
   colIndex: number;
   startX: number;
@@ -1429,7 +1548,7 @@ export const renderBeadsPaginated = (
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(
-        `打印版图纸 · 第 ${pageNum}/${totalPages} 页`,
+        `分板图纸 · 第 ${pageNum} 板 / 共 ${totalPages} 板`,
         12,
         Math.round(headerHeight * 0.42)
       );
@@ -1552,6 +1671,18 @@ export const renderBeadsPaginated = (
             ctx.stroke();
           }
         }
+
+        drawTenCellCrossGuides(
+          ctx,
+          patternOffsetX,
+          patternOffsetY,
+          cellSize,
+          physicalBoardSize,
+          startX,
+          startY,
+          endX,
+          endY,
+        );
       }
 
       if (showCoords) {
@@ -1580,6 +1711,7 @@ export const renderBeadsPaginated = (
         canvas,
         pageIndex: pageNum - 1,
         totalPages,
+        boardNumber: pageNum,
         rowIndex: row,
         colIndex: col,
         startX,
@@ -1591,6 +1723,104 @@ export const renderBeadsPaginated = (
   }
 
   return pages;
+};
+
+export const renderBeadsOverviewCanvas = (
+  beadData: BeadPixelData,
+  canvas: HTMLCanvasElement,
+  cellSize: number,
+  boardSize: number,
+): void => {
+  const { width, height, beads } = beadData;
+  const cols = Math.ceil(width / boardSize);
+  const rows = Math.ceil(height / boardSize);
+  const totalBoards = cols * rows;
+  const titleHeight = Math.max(54, Math.round(cellSize * 5));
+  const padding = Math.max(14, Math.round(cellSize * 2));
+  const patternWidth = width * cellSize;
+  const patternHeight = height * cellSize;
+  const canvasWidth = patternWidth + padding * 2;
+  const canvasHeight = titleHeight + patternHeight + padding;
+  const originX = padding;
+  const originY = titleHeight;
+
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Failed to get canvas context');
+  }
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  ctx.fillStyle = '#f7f4ff';
+  ctx.fillRect(0, 0, canvasWidth, titleHeight);
+  ctx.fillStyle = '#45306b';
+  ctx.font = `bold ${Math.max(16, Math.round(cellSize * 1.4))}px Arial, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('分板总览图', padding, Math.round(titleHeight * 0.35));
+  ctx.fillStyle = '#6f6290';
+  ctx.font = `${Math.max(11, Math.round(cellSize * 0.95))}px Arial, sans-serif`;
+  ctx.fillText(
+    `整图 ${width}×${height} · 板规格 ${boardSize}×${boardSize} · 共 ${totalBoards} 板`,
+    padding,
+    Math.round(titleHeight * 0.68),
+  );
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const bead = beads[y * width + x];
+      const px = originX + x * cellSize;
+      const py = originY + y * cellSize;
+      if (bead) {
+        ctx.fillStyle = bead.hex;
+      } else {
+        ctx.fillStyle = (x + y) % 2 === 0 ? '#f0f0f0' : '#e0e0e0';
+      }
+      ctx.fillRect(px, py, cellSize, cellSize);
+    }
+  }
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const boardNumber = row * cols + col + 1;
+      const startX = col * boardSize;
+      const startY = row * boardSize;
+      const endX = Math.min(startX + boardSize, width);
+      const endY = Math.min(startY + boardSize, height);
+      const x = originX + startX * cellSize;
+      const y = originY + startY * cellSize;
+      const w = (endX - startX) * cellSize;
+      const h = (endY - startY) * cellSize;
+
+      ctx.strokeStyle = 'rgba(0,0,0,0.86)';
+      ctx.lineWidth = Math.max(1.2, cellSize * 0.18);
+      ctx.strokeRect(x, y, w, h);
+
+      const label = `板${boardNumber}`;
+      const labelFont = Math.max(12, Math.min(24, Math.round(Math.min(w, h) * 0.18)));
+      ctx.font = `bold ${labelFont}px Arial, sans-serif`;
+      const textWidth = ctx.measureText(label).width;
+      const pillWidth = textWidth + Math.max(12, labelFont * 0.9);
+      const pillHeight = labelFont + Math.max(8, labelFont * 0.55);
+      const pillX = x + w / 2 - pillWidth / 2;
+      const pillY = y + h / 2 - pillHeight / 2;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.beginPath();
+      ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 6);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(69,48,107,0.28)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#45306b';
+      ctx.fillText(label, x + w / 2, y + h / 2 + 1);
+    }
+  }
 };
 
 export default {
@@ -1607,6 +1837,7 @@ export default {
   setBeadAt,
   renderBeadsToCanvas,
   renderBeadsPaginated,
+  renderBeadsOverviewCanvas,
   exportBeadPattern,
   generateBeadList,
 };

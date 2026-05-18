@@ -48,7 +48,9 @@ import {
   clampMakingStageTranslate,
   clampSingleBoardMobileOverviewOffset,
   clampSingleBoardMobileOverviewWidth,
+  getColorIndicesInRectByIdFirst,
   getColorIdTextStyle,
+  getColorSpotlightVisualStyle,
   getMakingDesktopSingleBoardUiFlags,
   getRenderScaleAnchorDelayMs,
   getSafeRenderMetricsBudget,
@@ -74,6 +76,7 @@ import {
   getSingleBoardSwipeStatus,
   getTextOverlayStabilizationFrames,
   parseSingleBoardOnboardingState,
+  resolveColorCellSelection,
   resolveSingleBoardSwipeDirection,
   shouldShowSingleBoardMobileOverviewButton,
 } from "../../utils/singleBoardInteraction.js";
@@ -81,6 +84,7 @@ import BottomNav from "../../components/BottomNav";
 import {
   recommendBoard,
   getPhysicalBoardGuideOffsets,
+  getPhysicalBoardTenCellCrossGuides,
   getPhysicalBoardCenterOffset,
   getPhysicalBoardBlockCoordinate,
   getPhysicalBoardBlockRect,
@@ -641,43 +645,33 @@ const MakingPage: React.FC = () => {
     [beadData, physicalBoardSize],
   );
 
-  // 获取指定区块内某颜色的全部格子索引
-  const getColorIndicesInBlock = useCallback(
-    (colorHex: string, blockX: number, blockY: number): number[] => {
+  const getColorIndicesInRect = useCallback(
+    (
+      rect: { startX: number; startY: number; endX: number; endY: number } | null,
+      colorId?: string,
+      colorHex?: string,
+    ): number[] => {
       if (!beadData) return [];
-      const rect = getBlockRectBySelection(blockX, blockY);
-      if (!rect) return [];
-
-      const indices: number[] = [];
-      for (let y = rect.startY; y < rect.endY; y++) {
-        for (let x = rect.startX; x < rect.endX; x++) {
-          const index = y * beadData.width + x;
-          const bead = beadData.beads[index];
-          if (bead && bead.hex === colorHex) {
-            indices.push(index);
-          }
-        }
-      }
-      return indices;
+      return getColorIndicesInRectByIdFirst({
+        beads: beadData.beads,
+        width: beadData.width,
+        rect,
+        colorId,
+        colorHex,
+      });
     },
-    [beadData, getBlockRectBySelection],
+    [beadData],
   );
-
-  // 获取选中颜色在当前区块的数量
-  const colorCountInBlock = useMemo(() => {
-    if (selection.type !== "color" || !selection.colorHex) return 0;
-    return getColorIndicesInBlock(
-      selection.colorHex,
-      selection.blockX,
-      selection.blockY,
-    ).length;
-  }, [selection, getColorIndicesInBlock]);
 
   // 获取选中颜色在整幅作品的数量
   const colorCountTotal = useMemo(() => {
-    if (!beadData || !selection.colorHex) return 0;
-    return beadData.beads.filter((b) => b.hex === selection.colorHex).length;
-  }, [beadData, selection.colorHex]);
+    if (!beadData || (!selection.colorId && !selection.colorHex)) return 0;
+    return getColorIndicesInRect(
+      { startX: 0, startY: 0, endX: beadData.width, endY: beadData.height },
+      selection.colorId,
+      selection.colorHex,
+    ).length;
+  }, [beadData, getColorIndicesInRect, selection.colorHex, selection.colorId]);
 
   const boardRects = useMemo(() => {
     if (!beadData) return [];
@@ -713,6 +707,50 @@ const MakingPage: React.FC = () => {
       boardRects.find((item) => item.boardNumber === activeBoardNumber) || null
     );
   }, [activeBoardNumber, boardRects]);
+
+  const selectedColorHighlightRect = useMemo(() => {
+    if (!beadData || selection.type !== "color") return null;
+    if (viewMode === "singleBoard") {
+      return activeBoardRect;
+    }
+    return getBlockRectBySelection(selection.blockX, selection.blockY);
+  }, [
+    activeBoardRect,
+    beadData,
+    getBlockRectBySelection,
+    selection.blockX,
+    selection.blockY,
+    selection.type,
+    viewMode,
+  ]);
+
+  const getSelectedColorHighlightIndices = useCallback((): number[] => {
+    if (
+      selection.type !== "color" ||
+      (!selection.colorId && !selection.colorHex)
+    ) {
+      return [];
+    }
+    return getColorIndicesInRect(
+      selectedColorHighlightRect,
+      selection.colorId,
+      selection.colorHex,
+    );
+  }, [
+    getColorIndicesInRect,
+    selectedColorHighlightRect,
+    selection.colorHex,
+    selection.colorId,
+    selection.type,
+  ]);
+
+  const colorCountInHighlightScope = useMemo(
+    () => getSelectedColorHighlightIndices().length,
+    [getSelectedColorHighlightIndices],
+  );
+
+  const colorHighlightScopeLabel =
+    viewMode === "singleBoard" ? "当前板" : "区内";
 
   const showSingleBoardMobileOverviewButton = useMemo(
     () =>
@@ -988,8 +1026,8 @@ const MakingPage: React.FC = () => {
         wrapperWidth: wrapperRect.width,
         wrapperHeight: wrapperRect.height,
         isSingleBoardMobileImmersive:
-          singleBoardMobileImmersiveRef.current &&
-          !options?.ignoreImmersivePanSlack,
+          singleBoardMobileImmersiveRef.current,
+        allowImmersiveVerticalSlack: !options?.ignoreImmersivePanSlack,
       });
     },
     [baseCellSize, displayBoardRect, displayHeight, displayWidth],
@@ -1210,9 +1248,11 @@ const MakingPage: React.FC = () => {
       nextScale: number,
       x: number,
       y: number,
-      options?: { immediate?: boolean },
+      options?: { immediate?: boolean; ignoreImmersivePanSlack?: boolean },
     ) => {
-      const clamped = clampTranslate(nextScale, x, y);
+      const clamped = clampTranslate(nextScale, x, y, {
+        ignoreImmersivePanSlack: options?.ignoreImmersivePanSlack,
+      });
       translateRef.current = clamped;
       scaleRef.current = nextScale;
       const predictedRenderMetrics =
@@ -2838,6 +2878,101 @@ const MakingPage: React.FC = () => {
     };
   }, []);
 
+  const applyCellSelection = useCallback(
+    (
+      globalCellX: number,
+      globalCellY: number,
+      screenX: number,
+      screenY: number,
+    ) => {
+      if (!beadData) return;
+      const blockCoordinate = getPhysicalBoardBlockCoordinate(
+        globalCellX,
+        globalCellY,
+        physicalBoardSize,
+      );
+      const blockX = blockCoordinate.blockX;
+      const blockY = blockCoordinate.blockY;
+
+      if (scale < DETAIL_MODE_THRESHOLD) {
+        if (
+          selection.type === "block" &&
+          selection.blockX === blockX &&
+          selection.blockY === blockY
+        ) {
+          setSelection({ type: null, blockX: 0, blockY: 0 });
+          setSelectedCell(null);
+          setTooltipState((prev) => ({ ...prev, visible: false }));
+          return;
+        }
+
+        setSelection({ type: "block", blockX, blockY });
+        setSelectedCell(null);
+        setTooltipState((prev) => ({ ...prev, visible: false }));
+        return;
+      }
+
+      const index = globalCellY * beadData.width + globalCellX;
+      const bead = beadData.beads[index];
+      if (!bead) {
+        setSelection({ type: null, blockX: 0, blockY: 0 });
+        setSelectedCell(null);
+        setTooltipState((prev) => ({ ...prev, visible: false }));
+        return;
+      }
+
+      const boardCoordinate = getPhysicalBoardCoordinate(
+        globalCellX,
+        globalCellY,
+      );
+
+      setTooltipState({
+        visible: true,
+        row: globalCellY + 1,
+        col: globalCellX + 1,
+        boardNumber: boardCoordinate.boardNumber,
+        localRow: boardCoordinate.localRow,
+        localCol: boardCoordinate.localCol,
+        screenX,
+        screenY,
+      });
+
+      if (voiceEnabled) {
+        speakCoordinate(
+          globalCellY + 1,
+          globalCellX + 1,
+          boardCoordinate.boardNumber,
+          boardCoordinate.localRow,
+          boardCoordinate.localCol,
+        );
+      }
+
+      const nextSelection = resolveColorCellSelection({
+        previousSelection: selection,
+        previousSelectedCell: selectedCell,
+        nextCell: { x: globalCellX, y: globalCellY },
+        nextBead: bead,
+        blockX,
+        blockY,
+      });
+
+      setSelection(nextSelection.selection);
+      setSelectedCell(nextSelection.selectedCell);
+      if (nextSelection.shouldClearTooltip) {
+        setTooltipState((prev) => ({ ...prev, visible: false }));
+      }
+    },
+    [
+      beadData,
+      getPhysicalBoardCoordinate,
+      physicalBoardSize,
+      scale,
+      selectedCell,
+      selection,
+      voiceEnabled,
+    ],
+  );
+
   // ===== 点击处理（交互核心）=====
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -2891,110 +3026,16 @@ const MakingPage: React.FC = () => {
 
       const globalCellX = displayBoardRect.startX + cellX;
       const globalCellY = displayBoardRect.startY + cellY;
-
-      // 计算所在区块（按现实豆板分区）
-      const blockCoordinate = getPhysicalBoardBlockCoordinate(
-        globalCellX,
-        globalCellY,
-        physicalBoardSize,
-      );
-      const blockX = blockCoordinate.blockX;
-      const blockY = blockCoordinate.blockY;
-
-      // 根据缩放级别决定行为
-      if (scale < DETAIL_MODE_THRESHOLD) {
-        // 缩小状态：选中区块
-        if (
-          selection.type === "block" &&
-          selection.blockX === blockX &&
-          selection.blockY === blockY
-        ) {
-          setSelection({ type: null, blockX: 0, blockY: 0 });
-          setSelectedCell(null);
-          setTooltipState((prev) => ({ ...prev, visible: false }));
-        } else {
-          setSelection({
-            type: "block",
-            blockX,
-            blockY,
-          });
-          setSelectedCell(null);
-          setTooltipState((prev) => ({ ...prev, visible: false }));
-        }
-      } else {
-        // 放大状态：选中颜色
-        const index = globalCellY * beadData.width + globalCellX;
-        const bead = beadData.beads[index];
-        if (!bead) {
-          setSelection({ type: null, blockX: 0, blockY: 0 });
-          setSelectedCell(null);
-          setTooltipState((prev) => ({ ...prev, visible: false }));
-          return;
-        }
-
-        // 显示坐标提示
-        const screenX = e.clientX - wrapperRect.left;
-        const screenY = e.clientY - wrapperRect.top;
-        const boardCoordinate = getPhysicalBoardCoordinate(
-          globalCellX,
-          globalCellY,
-        );
-
-        setTooltipState({
-          visible: true,
-          row: globalCellY + 1,
-          col: globalCellX + 1,
-          boardNumber: boardCoordinate.boardNumber,
-          localRow: boardCoordinate.localRow,
-          localCol: boardCoordinate.localCol,
-          screenX,
-          screenY,
-        });
-
-        if (voiceEnabled) {
-          speakCoordinate(
-            globalCellY + 1,
-            globalCellX + 1,
-            boardCoordinate.boardNumber,
-            boardCoordinate.localRow,
-            boardCoordinate.localCol,
-          );
-        }
-
-        const sameCell =
-          selection.type === "color" &&
-          selectedCell?.x === globalCellX &&
-          selectedCell?.y === globalCellY;
-
-        // 只有重复点击同一个格子时才取消；点击其他格子一律直接切换
-        if (sameCell) {
-          setSelection({ type: null, blockX: 0, blockY: 0 });
-          setSelectedCell(null);
-          setTooltipState((prev) => ({ ...prev, visible: false }));
-        } else {
-          setSelection({
-            type: "color",
-            blockX,
-            blockY,
-            colorHex: bead.hex,
-            colorId: bead.id,
-          });
-          setSelectedCell({ x: globalCellX, y: globalCellY });
-        }
-      }
+      const screenX = e.clientX - wrapperRect.left;
+      const screenY = e.clientY - wrapperRect.top;
+      applyCellSelection(globalCellX, globalCellY, screenX, screenY);
     },
     [
+      applyCellSelection,
       beadData,
       displayBoardRect,
       displayHeight,
       displayWidth,
-      getPhysicalBoardCoordinate,
-      physicalBoardSize,
-      scale,
-      selectedCell,
-      selection,
-      voiceEnabled,
-      toast,
       markSingleBoardMobileCanvasInteraction,
       isSingleBoardInteractionLocked,
     ],
@@ -3159,7 +3200,10 @@ const MakingPage: React.FC = () => {
           (1 - ratioFromStart) * (start.focalY - centerY) +
           deltaFocalY;
 
-        commitTranslate(nextScale, nextX, nextY);
+        const isPinchZoomingOut = nextScale < start.scale - 0.001;
+        commitTranslate(nextScale, nextX, nextY, {
+          ignoreImmersivePanSlack: isPinchZoomingOut,
+        });
       }
     },
     [
@@ -3230,90 +3274,9 @@ const MakingPage: React.FC = () => {
           ) {
             const globalCellX = displayBoardRect.startX + cellX;
             const globalCellY = displayBoardRect.startY + cellY;
-            const blockCoordinate = getPhysicalBoardBlockCoordinate(
-              globalCellX,
-              globalCellY,
-              physicalBoardSize,
-            );
-            const blockX = blockCoordinate.blockX;
-            const blockY = blockCoordinate.blockY;
-
-            if (scale < DETAIL_MODE_THRESHOLD) {
-              if (
-                selection.type === "block" &&
-                selection.blockX === blockX &&
-                selection.blockY === blockY
-              ) {
-                setSelection({ type: null, blockX: 0, blockY: 0 });
-                setSelectedCell(null);
-                setTooltipState((prev) => ({ ...prev, visible: false }));
-              } else {
-                setSelection({ type: "block", blockX, blockY });
-                setSelectedCell(null);
-                setTooltipState((prev) => ({ ...prev, visible: false }));
-              }
-            } else {
-              const index = globalCellY * beadData.width + globalCellX;
-              const bead = beadData.beads[index];
-              if (!bead) {
-                setSelection({ type: null, blockX: 0, blockY: 0 });
-                setSelectedCell(null);
-                setTooltipState((prev) => ({ ...prev, visible: false }));
-                lastTapProcessedRef.current = Date.now();
-                return;
-              }
-
-              const screenX = touch.clientX - wrapperRect.left;
-              const screenY = touch.clientY - wrapperRect.top;
-              const boardCoordinate = getPhysicalBoardCoordinate(
-                globalCellX,
-                globalCellY,
-              );
-
-              setTooltipState({
-                visible: true,
-                row: globalCellY + 1,
-                col: globalCellX + 1,
-                boardNumber: boardCoordinate.boardNumber,
-                localRow: boardCoordinate.localRow,
-                localCol: boardCoordinate.localCol,
-                screenX,
-                screenY,
-              });
-
-              if (voiceEnabled) {
-                speakCoordinate(
-                  globalCellY + 1,
-                  globalCellX + 1,
-                  boardCoordinate.boardNumber,
-                  boardCoordinate.localRow,
-                  boardCoordinate.localCol,
-                );
-              }
-
-              const sameBlock =
-                selection.blockX === blockX && selection.blockY === blockY;
-
-              // 点击当前区块内相同颜色：回到区块高亮，不清空区块
-              if (
-                selection.type === "color" &&
-                sameBlock &&
-                selection.colorHex === bead.hex
-              ) {
-                setSelection({ type: "block", blockX, blockY });
-                setSelectedCell(null);
-                setTooltipState((prev) => ({ ...prev, visible: false }));
-              } else {
-                setSelection({
-                  type: "color",
-                  blockX,
-                  blockY,
-                  colorHex: bead.hex,
-                  colorId: bead.id,
-                });
-                setSelectedCell({ x: globalCellX, y: globalCellY });
-              }
-            }
+            const screenX = touch.clientX - wrapperRect.left;
+            const screenY = touch.clientY - wrapperRect.top;
+            applyCellSelection(globalCellX, globalCellY, screenX, screenY);
           }
 
           // 标记已处理，防止后续 click 事件重复触发
@@ -3328,17 +3291,12 @@ const MakingPage: React.FC = () => {
       singleBoardSwipeGestureRef.current.triggered = false;
     },
     [
+      applyCellSelection,
       beadData,
       displayBoardRect,
       displayHeight,
       displayWidth,
-      getPhysicalBoardCoordinate,
-      physicalBoardSize,
-      scale,
-      selection,
       markSingleBoardMobileCanvasInteraction,
-      voiceEnabled,
-      toast,
       isSingleBoardInteractionLocked,
     ],
   );
@@ -3526,17 +3484,18 @@ const MakingPage: React.FC = () => {
     const selectedBlockStartY = selectedBlockRect?.startY ?? 0;
     const selectedBlockEndX = selectedBlockRect?.endX ?? 0;
     const selectedBlockEndY = selectedBlockRect?.endY ?? 0;
+    const colorScopeStartX = selectedColorHighlightRect?.startX ?? 0;
+    const colorScopeStartY = selectedColorHighlightRect?.startY ?? 0;
+    const colorScopeEndX = selectedColorHighlightRect?.endX ?? 0;
+    const colorScopeEndY = selectedColorHighlightRect?.endY ?? 0;
 
     // 获取选中颜色的索引集合
     const highlightedIndices = new Set(
-      selection.type === "color" && selection.colorHex
-        ? getColorIndicesInBlock(
-            selection.colorHex,
-            selection.blockX,
-            selection.blockY,
-          )
-        : [],
+      selection.type === "color" ? getSelectedColorHighlightIndices() : [],
     );
+    const colorSpotlightStyle = getColorSpotlightVisualStyle({
+      dpr: renderDpr,
+    });
 
     const focusedBoardRect =
       assistPackEnabled &&
@@ -3585,22 +3544,22 @@ const MakingPage: React.FC = () => {
         }
 
         // 选中颜色时：区块外明显弱化，区块内非目标格子轻度变暗，
-        // 目标颜色整格轻量高亮，让原色仍然可读。
+        // 目标颜色保留原色并轻量提亮，让视觉焦点落在目标格。
         if (selection.type === "color") {
           const inBlock =
-            globalX >= selectedBlockStartX &&
-            globalX < selectedBlockEndX &&
-            globalY >= selectedBlockStartY &&
-            globalY < selectedBlockEndY;
+            globalX >= colorScopeStartX &&
+            globalX < colorScopeEndX &&
+            globalY >= colorScopeStartY &&
+            globalY < colorScopeEndY;
 
           if (!inBlock) {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+            ctx.fillStyle = colorSpotlightStyle.outsideScopeDim;
             ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
           } else if (!highlightedIndices.has(index)) {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+            ctx.fillStyle = colorSpotlightStyle.insideScopeDim;
             ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
           } else if (highlightedIndices.has(index)) {
-            ctx.fillStyle = "rgba(255, 255, 255, 0.14)";
+            ctx.fillStyle = colorSpotlightStyle.targetLift;
             ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
           }
         }
@@ -3609,7 +3568,10 @@ const MakingPage: React.FC = () => {
 
     if (focusedBoardRect) {
       ctx.save();
-      ctx.fillStyle = "rgba(255, 247, 237, 0.56)";
+      ctx.fillStyle =
+        selection.type === "color"
+          ? colorSpotlightStyle.outsideScopeDim
+          : "rgba(255, 247, 237, 0.56)";
       if (focusedBoardRect.top > 0) {
         ctx.fillRect(0, 0, safeRenderCanvasWidth, focusedBoardRect.top);
       }
@@ -3653,12 +3615,13 @@ const MakingPage: React.FC = () => {
     displayWidth,
     focusCurrentBoard,
     getBlockRectBySelection,
-    getColorIndicesInBlock,
+    getSelectedColorHighlightIndices,
     renderDpr,
     renderScale,
     safeRenderCellSize,
     safeRenderCanvasHeight,
     safeRenderCanvasWidth,
+    selectedColorHighlightRect,
     selection,
     showColorId,
   ]);
@@ -3695,14 +3658,9 @@ const MakingPage: React.FC = () => {
     const selectedBlockEndX = selectedBlockRect?.endX ?? 0;
     const selectedBlockEndY = selectedBlockRect?.endY ?? 0;
     const highlightedIndices = new Set(
-      selection.type === "color" && selection.colorHex
-        ? getColorIndicesInBlock(
-            selection.colorHex,
-            selection.blockX,
-            selection.blockY,
-          )
-        : [],
+      selection.type === "color" ? getSelectedColorHighlightIndices() : [],
     );
+    const colorSpotlightStyle = getColorSpotlightVisualStyle({ dpr });
     const focusedBoardRect =
       assistPackEnabled &&
       focusCurrentBoard &&
@@ -3812,6 +3770,8 @@ const MakingPage: React.FC = () => {
 
     // 2. 现实豆板内部对称分区线
     const guideOffsets = getPhysicalBoardGuideOffsets(physicalBoardSize);
+    const tenCellCrossGuides =
+      getPhysicalBoardTenCellCrossGuides(physicalBoardSize);
     const boardColStart = Math.floor(visibleGlobalStartX / physicalBoardSize);
     const boardColEnd = Math.ceil(visibleGlobalEndX / physicalBoardSize);
     const boardRowStart = Math.floor(visibleGlobalStartY / physicalBoardSize);
@@ -3848,7 +3808,88 @@ const MakingPage: React.FC = () => {
       }
     }
 
-    // 3. 豆板边界线
+    // 3. 每个完整 10x10 区块内部的数格虚线十字
+    if (drawCellSize >= 10 && tenCellCrossGuides.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(15,23,42,0.34)";
+      ctx.lineWidth = Math.min(1.1, Math.max(0.55, 0.8 / dpr));
+      ctx.setLineDash([Math.max(2, drawCellSize * 0.28), Math.max(2, drawCellSize * 0.22)]);
+      ctx.lineCap = "round";
+
+      for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
+        for (let boardRow = boardRowStart; boardRow <= boardRowEnd; boardRow++) {
+          const originX = boardCol * physicalBoardSize;
+          const originY = boardRow * physicalBoardSize;
+
+          for (const guide of tenCellCrossGuides) {
+            const guideStartX = originX + guide.startX;
+            const guideStartY = originY + guide.startY;
+            const guideEndX = originX + guide.endX;
+            const guideEndY = originY + guide.endY;
+            const guideCenterX = originX + guide.centerX;
+            const guideCenterY = originY + guide.centerY;
+
+            if (
+              guideEndX < visibleGlobalStartX ||
+              guideStartX > visibleGlobalEndX ||
+              guideEndY < visibleGlobalStartY ||
+              guideStartY > visibleGlobalEndY
+            ) {
+              continue;
+            }
+
+            if (
+              guideCenterX >= visibleGlobalStartX &&
+              guideCenterX <= visibleGlobalEndX
+            ) {
+              const startY = Math.max(guideStartY, visibleGlobalStartY);
+              const endY = Math.min(guideEndY, visibleGlobalEndY);
+              if (endY > startY) {
+                const screenX = snapCanvasCoord(
+                  (guideCenterX - displayStartX) * drawCellWidth,
+                );
+                const screenStartY = snapCanvasCoord(
+                  (startY - displayStartY) * drawCellHeight,
+                );
+                const screenEndY = snapCanvasCoord(
+                  (endY - displayStartY) * drawCellHeight,
+                );
+                ctx.beginPath();
+                ctx.moveTo(screenX, screenStartY);
+                ctx.lineTo(screenX, screenEndY);
+                ctx.stroke();
+              }
+            }
+
+            if (
+              guideCenterY >= visibleGlobalStartY &&
+              guideCenterY <= visibleGlobalEndY
+            ) {
+              const startX = Math.max(guideStartX, visibleGlobalStartX);
+              const endX = Math.min(guideEndX, visibleGlobalEndX);
+              if (endX > startX) {
+                const screenY = snapCanvasCoord(
+                  (guideCenterY - displayStartY) * drawCellHeight,
+                );
+                const screenStartX = snapCanvasCoord(
+                  (startX - displayStartX) * drawCellWidth,
+                );
+                const screenEndX = snapCanvasCoord(
+                  (endX - displayStartX) * drawCellWidth,
+                );
+                ctx.beginPath();
+                ctx.moveTo(screenStartX, screenY);
+                ctx.lineTo(screenEndX, screenY);
+                ctx.stroke();
+              }
+            }
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    // 4. 豆板边界线
     for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
       const lineX = boardCol * physicalBoardSize;
       if (lineX < visibleGlobalStartX || lineX > visibleGlobalEndX) continue;
@@ -3874,7 +3915,7 @@ const MakingPage: React.FC = () => {
       );
     }
 
-    // 4. 每块板中心十字
+    // 5. 每块板中心十字
     if (drawCellSize >= 8) {
       const centerOffset = getPhysicalBoardCenterOffset(physicalBoardSize);
       const crossArm = Math.min(8, Math.max(4, drawCellSize * 0.38));
@@ -3910,7 +3951,7 @@ const MakingPage: React.FC = () => {
       }
     }
 
-    // 5. 板号标签
+    // 6. 板号标签
     if (drawCellSize >= 7) {
       const labelFont = Math.min(16, Math.max(11, drawCellSize * 0.6));
       for (let boardRow = 0; boardRow < physicalBoardRows; boardRow++) {
@@ -3985,9 +4026,15 @@ const MakingPage: React.FC = () => {
 
     if (selection.type === "color" && highlightedIndices.size > 0) {
       ctx.save();
-      const highlightFill = "rgba(255, 106, 162, 0.18)";
-      const selectedStroke = "rgba(255, 255, 255, 0.98)";
-      const selectedStrokeWidth = Math.max(1.5, 2.6 / dpr);
+      const highlightFill = colorSpotlightStyle.targetLift;
+      const targetStroke = colorSpotlightStyle.targetStroke;
+      const targetStrokeWidth = colorSpotlightStyle.targetStrokeWidth;
+      const selectedOuterStroke = colorSpotlightStyle.selectedOuterStroke;
+      const selectedInnerStroke = colorSpotlightStyle.selectedInnerStroke;
+      const selectedOuterStrokeWidth =
+        colorSpotlightStyle.selectedOuterStrokeWidth;
+      const selectedInnerStrokeWidth =
+        colorSpotlightStyle.selectedInnerStrokeWidth;
 
       for (let y = visibleStartY; y < visibleEndY; y++) {
         const globalY = displayStartY + y;
@@ -4007,19 +4054,37 @@ const MakingPage: React.FC = () => {
 
           ctx.fillStyle = highlightFill;
           ctx.fillRect(snappedPx, snappedPy, snappedWidth, snappedHeight);
+          ctx.strokeStyle = targetStroke;
+          ctx.lineWidth = targetStrokeWidth;
+          ctx.strokeRect(
+            snappedPx + targetStrokeWidth * 0.5,
+            snappedPy + targetStrokeWidth * 0.5,
+            Math.max(0, snappedWidth - targetStrokeWidth),
+            Math.max(0, snappedHeight - targetStrokeWidth),
+          );
 
           if (
             selectedCell &&
             selectedCell.x === globalX &&
             selectedCell.y === globalY
           ) {
-            ctx.strokeStyle = selectedStroke;
-            ctx.lineWidth = selectedStrokeWidth;
+            ctx.strokeStyle = selectedOuterStroke;
+            ctx.lineWidth = selectedOuterStrokeWidth;
             ctx.strokeRect(
-              snappedPx + selectedStrokeWidth * 0.5,
-              snappedPy + selectedStrokeWidth * 0.5,
-              Math.max(0, snappedWidth - selectedStrokeWidth),
-              Math.max(0, snappedHeight - selectedStrokeWidth),
+              snappedPx + selectedOuterStrokeWidth * 0.5,
+              snappedPy + selectedOuterStrokeWidth * 0.5,
+              Math.max(0, snappedWidth - selectedOuterStrokeWidth),
+              Math.max(0, snappedHeight - selectedOuterStrokeWidth),
+            );
+            ctx.strokeStyle = selectedInnerStroke;
+            ctx.lineWidth = selectedInnerStrokeWidth;
+            const innerInset =
+              selectedOuterStrokeWidth + selectedInnerStrokeWidth * 0.5;
+            ctx.strokeRect(
+              snappedPx + innerInset,
+              snappedPy + innerInset,
+              Math.max(0, snappedWidth - innerInset * 2),
+              Math.max(0, snappedHeight - innerInset * 2),
             );
           }
         }
@@ -4032,7 +4097,7 @@ const MakingPage: React.FC = () => {
     displayHeight,
     displayWidth,
     getBlockRectBySelection,
-    getColorIndicesInBlock,
+    getSelectedColorHighlightIndices,
     showColorId,
     scale,
     safeRenderCellSize,
@@ -4568,9 +4633,7 @@ const MakingPage: React.FC = () => {
                             <button
                               style={{
                                 ...styles.singleBoardMobileOverviewBtn,
-                                width: "auto",
-                                minWidth: "64px",
-                                padding: "0 12px",
+                                ...styles.singleBoardMobileNavRowFill,
                                 fontSize: "11px",
                               }}
                               onClick={() =>
@@ -4590,14 +4653,20 @@ const MakingPage: React.FC = () => {
                             </button>
                           )}
                           <button
-                            style={styles.singleBoardMobileSecondaryBtn}
+                            style={{
+                              ...styles.singleBoardMobileSecondaryBtn,
+                              ...styles.singleBoardMobileNavRowFill,
+                            }}
                             onClick={resetCurrentView}
                             disabled={!activeBoardRect}
                           >
                             复位
                           </button>
                           <button
-                            style={styles.singleBoardMobilePrimaryBtn}
+                            style={{
+                              ...styles.singleBoardMobilePrimaryBtn,
+                              ...styles.singleBoardMobileNavRowFill,
+                            }}
                             onClick={() => {
                               if (activeBoardDone && nextPendingBoardNumber) {
                                 activateBoard(nextPendingBoardNumber, true);
@@ -4614,6 +4683,7 @@ const MakingPage: React.FC = () => {
                           <button
                             style={{
                               ...styles.singleBoardMobileToolToggleBtn,
+                              ...styles.singleBoardMobileNavRowFill,
                               ...(singleBoardMobileToolbarExpanded
                                 ? styles.singleBoardMobileToolToggleBtnActive
                                 : {}),
@@ -5759,7 +5829,8 @@ const MakingPage: React.FC = () => {
                       border: "1px solid rgba(255,255,255,0.3)",
                     }}
                   />
-                  区内{colorCountInBlock}颗 / 总计{colorCountTotal}颗
+                  {colorHighlightScopeLabel}
+                  {colorCountInHighlightScope}颗 / 总计{colorCountTotal}颗
                 </span>
               )}
             </div>
@@ -6664,6 +6735,9 @@ const MakingPage: React.FC = () => {
           visible={showExportModal}
           onClose={() => setShowExportModal(false)}
           beadData={beadData}
+          defaultPaginateMode={viewMode === "singleBoard"}
+          defaultBoardSize={physicalBoardSize}
+          includeOverview={viewMode === "singleBoard"}
           onNeedRewardUnlock={(_reason, onUnlocked) => {
             pendingExportAfterRewardRef.current = onUnlocked || null;
             setShowRewardedUnlockModal(true);
@@ -7084,7 +7158,7 @@ const styles: Record<string, React.CSSProperties> = {
     background:
       "linear-gradient(145deg, #7fd8ff 0%, #85b7ff 55%, #ff93bf 100%)",
     color: "#ffffff",
-    borderColor: "rgba(126,163,255,0.45)",
+    border: "1px solid rgba(126,163,255,0.45)",
     boxShadow: makingCandy.shadow,
   },
 
@@ -7569,11 +7643,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   singleBoardMobileNavRow: {
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     alignItems: "center",
     gap: "4px",
-    flexWrap: "wrap" as const,
     minWidth: 0,
+  },
+
+  singleBoardMobileNavRowFill: {
+    width: "100%",
+    minWidth: 0,
+    height: "28px",
+    padding: "0 8px",
   },
 
   singleBoardMobileToolRow: {

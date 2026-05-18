@@ -144,6 +144,46 @@ export interface PhysicalBoardBlockRect {
   endY: number;
 }
 
+export interface PhysicalBoardTenCellCrossGuide {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  centerX: number;
+  centerY: number;
+}
+
+export function getPhysicalBoardTenCellCrossGuides(
+  boardSize: number,
+): PhysicalBoardTenCellCrossGuide[] {
+  const segments = getPhysicalBoardSegments(boardSize);
+  const tenCellRanges: Array<{ start: number; end: number }> = [];
+  let cursor = 0;
+  for (const segment of segments) {
+    const start = cursor;
+    const end = start + segment;
+    if (segment === 10) {
+      tenCellRanges.push({ start, end });
+    }
+    cursor = end;
+  }
+
+  const guides: PhysicalBoardTenCellCrossGuide[] = [];
+  for (const xRange of tenCellRanges) {
+    for (const yRange of tenCellRanges) {
+      guides.push({
+        startX: xRange.start,
+        startY: yRange.start,
+        endX: xRange.end,
+        endY: yRange.end,
+        centerX: xRange.start + 5,
+        centerY: yRange.start + 5,
+      });
+    }
+  }
+  return guides;
+}
+
 export function getPhysicalBoardBlockRect(
   blockX: number,
   blockY: number,

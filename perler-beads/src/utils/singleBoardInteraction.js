@@ -246,6 +246,7 @@ export function getSingleBoardAutoFocusScaleDecision({
  *   wrapperWidth: number;
  *   wrapperHeight: number;
  *   isSingleBoardMobileImmersive?: boolean;
+ *   allowImmersiveVerticalSlack?: boolean;
  * }} input
  */
 export function clampMakingStageTranslate({
@@ -256,11 +257,14 @@ export function clampMakingStageTranslate({
   wrapperWidth,
   wrapperHeight,
   isSingleBoardMobileImmersive = false,
+  allowImmersiveVerticalSlack = true,
 }) {
   const maxOffsetX = Math.max(0, (canvasWidth - wrapperWidth) / 2);
   const overflowOffsetY = Math.max(0, (canvasHeight - wrapperHeight) / 2);
   const immersiveVerticalSlack =
-    isSingleBoardMobileImmersive && overflowOffsetY <= 0
+    isSingleBoardMobileImmersive &&
+    allowImmersiveVerticalSlack &&
+    overflowOffsetY <= 0
       ? Math.min(120, wrapperHeight * 0.15)
       : 0;
   const maxOffsetY =
@@ -321,10 +325,7 @@ export function getLiveStageDisplayScale({
   targetScale,
   committedRenderScale,
 }) {
-  return Math.max(
-    1,
-    targetScale / Math.max(committedRenderScale, 0.0001),
-  );
+  return Math.max(targetScale, 0.0001) / Math.max(committedRenderScale, 0.0001);
 }
 
 /**
@@ -645,6 +646,162 @@ export function buildCompletedSingleBoardOnboardingState() {
     seen: true,
     completed: true,
   };
+}
+
+/**
+ * @param {{
+ *   bead?: { id?: string; hex?: string } | null;
+ *   colorId?: string | null;
+ *   colorHex?: string | null;
+ * }} input
+ */
+export function isSameBeadColorByIdFirst({ bead, colorId, colorHex }) {
+  if (!bead) return false;
+  if (colorId && bead.id) {
+    return bead.id === colorId;
+  }
+  if (colorHex && bead.hex) {
+    return bead.hex === colorHex;
+  }
+  return false;
+}
+
+/**
+ * @param {{
+ *   beads: Array<{ id?: string; hex?: string } | null>;
+ *   width: number;
+ *   rect: { startX: number; startY: number; endX: number; endY: number } | null;
+ *   colorId?: string | null;
+ *   colorHex?: string | null;
+ * }} input
+ */
+export function getColorIndicesInRectByIdFirst({
+  beads,
+  width,
+  rect,
+  colorId,
+  colorHex,
+}) {
+  if (!Array.isArray(beads) || !rect || width <= 0) return [];
+  const indices = [];
+  for (let y = Math.max(0, rect.startY); y < rect.endY; y++) {
+    for (let x = Math.max(0, rect.startX); x < rect.endX; x++) {
+      const index = y * width + x;
+      if (
+        isSameBeadColorByIdFirst({
+          bead: beads[index],
+          colorId,
+          colorHex,
+        })
+      ) {
+        indices.push(index);
+      }
+    }
+  }
+  return indices;
+}
+
+/**
+ * @param {{ dpr?: number }} input
+ */
+export function getColorSpotlightVisualStyle({ dpr = 1 } = {}) {
+  const safeDpr = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+  return {
+    outsideScopeDim: "rgba(0, 0, 0, 0.72)",
+    insideScopeDim: "rgba(0, 0, 0, 0.56)",
+    targetLift: "rgba(255, 255, 255, 0.10)",
+    targetStroke: "rgba(255, 255, 255, 0.92)",
+    targetAccentStroke: "rgba(255, 58, 142, 1)",
+    selectedOuterStroke: "rgba(255, 40, 136, 1)",
+    selectedInnerStroke: "rgba(255, 255, 255, 0.98)",
+    targetStrokeWidth: Number(Math.max(1.1, 1.6 / safeDpr).toFixed(3)),
+    selectedOuterStrokeWidth: Number(
+      Math.max(2.4, 3.8 / safeDpr).toFixed(3),
+    ),
+    selectedInnerStrokeWidth: Number(
+      Math.max(1.2, 2 / safeDpr).toFixed(3),
+    ),
+  };
+}
+
+/**
+ * @param {{
+ *   previousSelection: { type: "block" | "color" | null; blockX: number; blockY: number; colorHex?: string; colorId?: string };
+ *   previousSelectedCell: { x: number; y: number } | null;
+ *   nextCell: { x: number; y: number };
+ *   nextBead: { id?: string; hex?: string } | null;
+ *   blockX: number;
+ *   blockY: number;
+ * }} input
+ */
+export function resolveColorCellSelection({
+  previousSelection,
+  previousSelectedCell,
+  nextCell,
+  nextBead,
+  blockX,
+  blockY,
+}) {
+  if (!nextBead) {
+    return {
+      selection: { type: null, blockX: 0, blockY: 0 },
+      selectedCell: null,
+      shouldClearTooltip: true,
+    };
+  }
+
+  const sameCell =
+    previousSelection?.type === "color" &&
+    previousSelectedCell?.x === nextCell.x &&
+    previousSelectedCell?.y === nextCell.y;
+
+  if (sameCell) {
+    return {
+      selection: { type: null, blockX: 0, blockY: 0 },
+      selectedCell: null,
+      shouldClearTooltip: true,
+    };
+  }
+
+  return {
+    selection: {
+      type: "color",
+      blockX,
+      blockY,
+      colorHex: nextBead.hex,
+      colorId: nextBead.id,
+    },
+    selectedCell: { x: nextCell.x, y: nextCell.y },
+    shouldClearTooltip: false,
+  };
+}
+
+/**
+ * @param {{
+ *   width: number;
+ *   height: number;
+ *   boardNumber: number;
+ *   pageIndex: number;
+ *   totalPages: number;
+ *   timestamp: string;
+ * }} input
+ */
+export function buildPaginatedBoardExportFilename({
+  width,
+  height,
+  boardNumber,
+  pageIndex,
+  totalPages,
+  timestamp,
+}) {
+  return `perler-${width}x${height}-board${boardNumber}-p${pageIndex + 1}of${totalPages}-${timestamp}.png`;
+}
+
+/**
+ * @param {{ width: number; height: number; timestamp: string }} input
+ */
+export function buildOverviewExportFilename({ width, height, timestamp }) {
+  return `perler-${width}x${height}-overview-${timestamp}.png`;
 }
 
 /**
