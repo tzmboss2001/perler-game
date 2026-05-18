@@ -13,6 +13,7 @@ import {
   Eye,
   EyeSlash,
   Gear,
+  GridFour,
   Lightning,
   LightningSlash,
   X,
@@ -80,6 +81,14 @@ import {
   resolveSingleBoardSwipeDirection,
   shouldShowSingleBoardMobileOverviewButton,
 } from "../../utils/singleBoardInteraction.js";
+import {
+  DEFAULT_ADAPTIVE_GRID_VISIBILITY,
+  getAdaptiveGridBoostLevel,
+  getAdaptiveGridRegionTone,
+  getAdaptiveGridVisualLayers,
+  getViewportCenterGridRect,
+  resolveAdaptiveGridVisibility,
+} from "../../utils/adaptiveGrid.js";
 import BottomNav from "../../components/BottomNav";
 import {
   recommendBoard,
@@ -355,6 +364,11 @@ const MakingPage: React.FC = () => {
   const [voiceEnabled, setVoiceEnabled] = useState(canSpeak());
   const [assistPackEnabled, setAssistPackEnabled] = useState(true);
   const [focusCurrentBoard, setFocusCurrentBoard] = useState(true);
+  const [gridEnhanceEnabled, setGridEnhanceEnabled] = useState(false);
+  const adaptiveGridVisibilityRef = useRef(DEFAULT_ADAPTIVE_GRID_VISIBILITY);
+  const adaptiveGridToneCacheRef = useRef<
+    Map<string, "light" | "dark" | "mixed">
+  >(new Map());
   const [viewMode, setViewMode] = useState<MakingViewMode>("traditional");
   const [activeBoardNumber, setActiveBoardNumber] = useState(1);
   const [boardStatusMap, setBoardStatusMap] = useState<BoardStatusMap>({});
@@ -604,6 +618,11 @@ const MakingPage: React.FC = () => {
     if (!beadData) return 104;
     return recommendBoard(beadData.width, beadData.height).boardSize;
   }, [beadData]);
+
+  useEffect(() => {
+    adaptiveGridToneCacheRef.current.clear();
+    adaptiveGridVisibilityRef.current = DEFAULT_ADAPTIVE_GRID_VISIBILITY;
+  }, [beadData, physicalBoardSize]);
 
   const physicalBoardCols = useMemo(() => {
     if (!beadData) return 1;
@@ -3738,6 +3757,65 @@ const MakingPage: React.FC = () => {
       ctx.stroke();
       ctx.restore();
     };
+    const adaptiveGridVisibility = resolveAdaptiveGridVisibility({
+      enabled: gridEnhanceEnabled,
+      drawCellSize,
+      previous: adaptiveGridVisibilityRef.current,
+    });
+    adaptiveGridVisibilityRef.current = adaptiveGridVisibility;
+    const viewportCenterRect =
+      adaptiveGridVisibility.workingBoost && beadData
+        ? getViewportCenterGridRect({
+            displayStartX,
+            displayStartY,
+            displayWidth,
+            displayHeight,
+            artworkWidth: beadData.width,
+            artworkHeight: beadData.height,
+            physicalBoardSize,
+          })
+        : null;
+    const getToneForRect = (rect: {
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+    }) => {
+      const key = `${rect.startX}:${rect.startY}:${rect.endX}:${rect.endY}`;
+      const cached = adaptiveGridToneCacheRef.current.get(key);
+      if (cached) return cached;
+      const tone = getAdaptiveGridRegionTone({
+        beads: beadData.beads,
+        width: beadData.width,
+        height: beadData.height,
+        startX: rect.startX,
+        startY: rect.startY,
+        endX: rect.endX,
+        endY: rect.endY,
+      });
+      adaptiveGridToneCacheRef.current.set(key, tone);
+      return tone;
+    };
+    const strokeLayeredVLine = (
+      x: number,
+      y1: number,
+      y2: number,
+      layers: Array<{ strokeStyle: string; lineWidth: number }>,
+    ) => {
+      for (const layer of layers) {
+        drawVLine(x, y1, y2, layer.strokeStyle, layer.lineWidth);
+      }
+    };
+    const strokeLayeredHLine = (
+      y: number,
+      x1: number,
+      x2: number,
+      layers: Array<{ strokeStyle: string; lineWidth: number }>,
+    ) => {
+      for (const layer of layers) {
+        drawHLine(y, x1, x2, layer.strokeStyle, layer.lineWidth);
+      }
+    };
 
     ctx.save();
     ctx.beginPath();
@@ -3776,6 +3854,129 @@ const MakingPage: React.FC = () => {
     const boardColEnd = Math.ceil(visibleGlobalEndX / physicalBoardSize);
     const boardRowStart = Math.floor(visibleGlobalStartY / physicalBoardSize);
     const boardRowEnd = Math.ceil(visibleGlobalEndY / physicalBoardSize);
+    const drawAdaptiveGridEnhancement = () => {
+      if (!adaptiveGridVisibility.adaptive || tenCellCrossGuides.length === 0) {
+        return;
+      }
+
+      const currentRect = currentBoardRect
+        ? {
+            startX: currentBoardRect.startX,
+            startY: currentBoardRect.startY,
+            endX: currentBoardRect.endX,
+            endY: currentBoardRect.endY,
+          }
+        : null;
+
+      for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
+        for (
+          let boardRow = boardRowStart;
+          boardRow <= boardRowEnd;
+          boardRow++
+        ) {
+          const boardOriginX = boardCol * physicalBoardSize;
+          const boardOriginY = boardRow * physicalBoardSize;
+
+          for (const guide of tenCellCrossGuides) {
+            const regionRect = {
+              startX: Math.max(0, boardOriginX + guide.startX),
+              startY: Math.max(0, boardOriginY + guide.startY),
+              endX: Math.min(boardOriginX + guide.endX, beadData.width),
+              endY: Math.min(boardOriginY + guide.endY, beadData.height),
+            };
+
+            if (
+              regionRect.endX <= regionRect.startX ||
+              regionRect.endY <= regionRect.startY ||
+              regionRect.endX < visibleGlobalStartX ||
+              regionRect.startX > visibleGlobalEndX ||
+              regionRect.endY < visibleGlobalStartY ||
+              regionRect.startY > visibleGlobalEndY
+            ) {
+              continue;
+            }
+
+            const boostLevel = getAdaptiveGridBoostLevel({
+              regionRect,
+              currentBoardRect: currentRect,
+              viewportCenterRect,
+            });
+            if (boostLevel === "none") continue;
+
+            const tone = getToneForRect(regionRect);
+            const crossLayers = getAdaptiveGridVisualLayers({
+              tone,
+              lineKind: "cross",
+              boostLevel,
+              dpr,
+            });
+            const guideLayers = getAdaptiveGridVisualLayers({
+              tone,
+              lineKind: "guide",
+              boostLevel,
+              dpr,
+            });
+            const clippedLeft =
+              (Math.max(regionRect.startX, visibleGlobalStartX) -
+                displayStartX) *
+              drawCellWidth;
+            const clippedRight =
+              (Math.min(regionRect.endX, visibleGlobalEndX) - displayStartX) *
+              drawCellWidth;
+            const clippedTop =
+              (Math.max(regionRect.startY, visibleGlobalStartY) -
+                displayStartY) *
+              drawCellHeight;
+            const clippedBottom =
+              (Math.min(regionRect.endY, visibleGlobalEndY) - displayStartY) *
+              drawCellHeight;
+
+            if (adaptiveGridVisibility.crossGuide) {
+              const centerX = boardOriginX + guide.centerX;
+              const centerY = boardOriginY + guide.centerY;
+              if (
+                centerX >= visibleGlobalStartX &&
+                centerX <= visibleGlobalEndX
+              ) {
+                const x = (centerX - displayStartX) * drawCellWidth;
+                strokeLayeredVLine(x, clippedTop, clippedBottom, crossLayers);
+              }
+              if (
+                centerY >= visibleGlobalStartY &&
+                centerY <= visibleGlobalEndY
+              ) {
+                const y = (centerY - displayStartY) * drawCellHeight;
+                strokeLayeredHLine(y, clippedLeft, clippedRight, crossLayers);
+              }
+            }
+
+            for (const offset of guideOffsets) {
+              const globalX = boardOriginX + offset;
+              if (globalX > regionRect.startX && globalX < regionRect.endX) {
+                const screenX = (globalX - displayStartX) * drawCellWidth;
+                strokeLayeredVLine(
+                  screenX,
+                  clippedTop,
+                  clippedBottom,
+                  guideLayers,
+                );
+              }
+
+              const globalY = boardOriginY + offset;
+              if (globalY > regionRect.startY && globalY < regionRect.endY) {
+                const screenY = (globalY - displayStartY) * drawCellHeight;
+                strokeLayeredHLine(
+                  screenY,
+                  clippedLeft,
+                  clippedRight,
+                  guideLayers,
+                );
+              }
+            }
+          }
+        }
+      }
+    };
 
     for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
       const originX = boardCol * physicalBoardSize;
@@ -3888,6 +4089,8 @@ const MakingPage: React.FC = () => {
       }
       ctx.restore();
     }
+
+    drawAdaptiveGridEnhancement();
 
     // 4. 豆板边界线
     for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
@@ -4107,6 +4310,7 @@ const MakingPage: React.FC = () => {
     currentBoardRect,
     assistPackEnabled,
     focusCurrentBoard,
+    gridEnhanceEnabled,
     selectedCell,
     physicalBoardCols,
     physicalBoardRows,
@@ -5766,6 +5970,25 @@ const MakingPage: React.FC = () => {
                   </button>
                 </div>
                 <div style={styles.settingRow}>
+                  <span style={styles.settingLabel}>网格增强</span>
+                  <button
+                    style={{
+                      ...styles.toggleBtn,
+                      ...(gridEnhanceEnabled ? styles.toggleBtnActive : {}),
+                    }}
+                    onClick={() =>
+                      setGridEnhanceEnabled((enabled) => !enabled)
+                    }
+                    title="增强当前制作区域的网格可读性"
+                  >
+                    {gridEnhanceEnabled ? (
+                      <GridFour size={16} weight="fill" />
+                    ) : (
+                      <GridFour size={16} />
+                    )}
+                  </button>
+                </div>
+                <div style={styles.settingRow}>
                   <span style={styles.settingLabel}>聚焦当前板</span>
                   <button
                     style={{
@@ -6270,6 +6493,29 @@ const MakingPage: React.FC = () => {
                               <CheckCircle size={16} weight="fill" />
                             ) : (
                               <CheckCircle size={16} />
+                            )}
+                          </button>
+                        </div>
+                        <div style={styles.makingDesktopSidebarToggleRow}>
+                          <span style={styles.makingDesktopSidebarToggleLabel}>
+                            网格增强
+                          </span>
+                          <button
+                            style={{
+                              ...styles.toggleBtn,
+                              ...(gridEnhanceEnabled
+                                ? styles.toggleBtnActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setGridEnhanceEnabled((enabled) => !enabled)
+                            }
+                            title="增强当前制作区域的网格可读性"
+                          >
+                            {gridEnhanceEnabled ? (
+                              <GridFour size={16} weight="fill" />
+                            ) : (
+                              <GridFour size={16} />
                             )}
                           </button>
                         </div>
