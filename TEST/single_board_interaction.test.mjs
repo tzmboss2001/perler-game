@@ -22,6 +22,7 @@ import {
   getSingleBoardMobileImmersiveControlLayout,
   getSingleBoardMobileImmersiveLayout,
   getSingleBoardMobileImmersiveLayerZIndexes,
+  getSingleBoardMobileOverlayOcclusionState,
   getSingleBoardLayoutFlags,
   getSingleBoardCurrentColorSummary,
   getSingleBoardWorkflowStatus,
@@ -126,6 +127,68 @@ test("current color summary stays hidden without a selected color", () => {
       boardLabel: "",
       countLabel: "",
     },
+  );
+});
+
+test("mobile overlay occlusion guard enters detail focus only for selected high-zoom cells", () => {
+  assert.deepEqual(
+    getSingleBoardMobileOverlayOcclusionState({
+      isSingleBoardMobileImmersive: true,
+      scale: 2.8,
+      detailModeThreshold: 1.5,
+      hasCurrentColorSummary: true,
+      toolbarExpanded: false,
+      panelOpen: false,
+    }),
+    {
+      detailFocus: true,
+      summaryMode: "compact",
+      toolbarMode: "weak-hidden",
+      zoomMode: "weak-hidden",
+    },
+  );
+});
+
+test("mobile overlay occlusion guard stays normal outside detail focus or while a panel is open", () => {
+  assert.equal(
+    getSingleBoardMobileOverlayOcclusionState({
+      isSingleBoardMobileImmersive: true,
+      scale: 1.2,
+      detailModeThreshold: 1.5,
+      hasCurrentColorSummary: true,
+      toolbarExpanded: false,
+      panelOpen: false,
+    }).detailFocus,
+    false,
+  );
+
+  assert.deepEqual(
+    getSingleBoardMobileOverlayOcclusionState({
+      isSingleBoardMobileImmersive: true,
+      scale: 2.8,
+      detailModeThreshold: 1.5,
+      hasCurrentColorSummary: true,
+      toolbarExpanded: true,
+      panelOpen: false,
+    }),
+    {
+      detailFocus: true,
+      summaryMode: "compact",
+      toolbarMode: "expanded",
+      zoomMode: "weak-hidden",
+    },
+  );
+
+  assert.equal(
+    getSingleBoardMobileOverlayOcclusionState({
+      isSingleBoardMobileImmersive: true,
+      scale: 2.8,
+      detailModeThreshold: 1.5,
+      hasCurrentColorSummary: true,
+      toolbarExpanded: false,
+      panelOpen: true,
+    }).detailFocus,
+    false,
   );
 });
 

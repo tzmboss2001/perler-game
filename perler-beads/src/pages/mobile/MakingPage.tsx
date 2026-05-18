@@ -51,6 +51,7 @@ import {
   getColorIdTextStyle,
   getMakingDesktopSingleBoardUiFlags,
   getSingleBoardCurrentColorSummary,
+  getSingleBoardMobileOverlayOcclusionState,
   getSingleBoardWorkflowStatus,
   getRenderScaleAnchorDelayMs,
   getSafeRenderMetricsBudget,
@@ -4203,6 +4204,24 @@ const MakingPage: React.FC = () => {
     getSingleBoardMobileImmersiveControlLayout({ viewportWidth });
   const singleBoardMobileImmersiveLayers =
     getSingleBoardMobileImmersiveLayerZIndexes();
+  const singleBoardMobileOverlayOcclusionState =
+    getSingleBoardMobileOverlayOcclusionState({
+      isSingleBoardMobileImmersive,
+      scale,
+      detailModeThreshold: DETAIL_MODE_THRESHOLD,
+      hasCurrentColorSummary: singleBoardCurrentColorSummary.visible,
+      toolbarExpanded: singleBoardMobileToolbarExpanded,
+      panelOpen:
+        showSettings ||
+        showSingleBoardOnboarding ||
+        singleBoardMobileMiniMapExpanded,
+    });
+  const singleBoardMobileDetailFocus =
+    singleBoardMobileOverlayOcclusionState.detailFocus;
+  const singleBoardMobileToolbarWeakHidden =
+    singleBoardMobileOverlayOcclusionState.toolbarMode === "weak-hidden";
+  const singleBoardMobileZoomWeakHidden =
+    singleBoardMobileOverlayOcclusionState.zoomMode === "weak-hidden";
   const floatingControlsStyle: React.CSSProperties = {
     ...styles.floatingControls,
     flexWrap: isNarrowToolbar ? "wrap" : "nowrap",
@@ -4216,6 +4235,9 @@ const MakingPage: React.FC = () => {
           bottom: `max(${singleBoardMobileImmersiveControlLayout.zoomBottomPx}px, calc(env(safe-area-inset-bottom, 0px) + ${singleBoardMobileImmersiveControlLayout.zoomBottomPx}px))`,
           zIndex: singleBoardMobileImmersiveLayers.controls,
         }
+      : {}),
+    ...(singleBoardMobileZoomWeakHidden
+      ? styles.singleBoardMobileDetailFocusFloatingControls
       : {}),
   };
   const zoomControlsStyle: React.CSSProperties = {
@@ -4242,6 +4264,9 @@ const MakingPage: React.FC = () => {
       ? {
           maxWidth: `${singleBoardMobileImmersiveControlLayout.zoomMaxWidthPx}px`,
         }
+      : {}),
+    ...(singleBoardMobileZoomWeakHidden
+      ? styles.singleBoardMobileDetailFocusZoomControls
       : {}),
   };
   const zoomRangeStyle: React.CSSProperties = {
@@ -4376,6 +4401,21 @@ const MakingPage: React.FC = () => {
           zIndex: singleBoardMobileImmersiveLayers.summary,
         }
       : {}),
+    ...(singleBoardMobileOverlayOcclusionState.summaryMode === "compact"
+      ? styles.singleBoardMobileDetailFocusSummaryPill
+      : {}),
+  };
+  const singleBoardMobileSummaryMainStyle: React.CSSProperties = {
+    ...styles.singleBoardMobileSummaryMain,
+    ...(singleBoardMobileDetailFocus
+      ? styles.singleBoardMobileDetailFocusSummaryMain
+      : {}),
+  };
+  const singleBoardMobileCurrentColorPillStyle: React.CSSProperties = {
+    ...styles.singleBoardMobileCurrentColorPill,
+    ...(singleBoardMobileDetailFocus
+      ? styles.singleBoardMobileDetailFocusCurrentColorPill
+      : {}),
   };
   const singleBoardMobileToolbarShellStyle: React.CSSProperties = {
     ...styles.singleBoardMobileToolbarShell,
@@ -4387,6 +4427,9 @@ const MakingPage: React.FC = () => {
           bottom: `max(${singleBoardMobileImmersiveControlLayout.toolbarBottomPx}px, calc(env(safe-area-inset-bottom, 0px) + ${singleBoardMobileImmersiveControlLayout.toolbarBottomPx}px))`,
           zIndex: singleBoardMobileImmersiveLayers.toolbar,
         }
+      : {}),
+    ...(singleBoardMobileToolbarWeakHidden
+      ? styles.singleBoardMobileDetailFocusToolbarShell
       : {}),
   };
   const singleBoardMobileSwipeStatusStyle: React.CSSProperties = {
@@ -4601,30 +4644,10 @@ const MakingPage: React.FC = () => {
                         className={mobileImmersiveClass("summary-pill")}
                         style={singleBoardMobileSummaryRowStyle}
                       >
-                        <div style={styles.singleBoardMobileSummaryMain}>
-                          <span style={styles.singleBoardMobileSummaryText}>
-                            {singleBoardWorkflowStatus.boardLabel} ·{" "}
-                            {singleBoardWorkflowStatus.boardPositionLabel}
-                          </span>
-                          <span style={styles.singleBoardMobileSummaryText}>
-                            进度 {singleBoardWorkflowStatus.progressLabel} ·{" "}
-                            {singleBoardWorkflowStatus.remainingLabel}
-                          </span>
-                          <span
-                            style={{
-                              ...styles.singleBoardStatePill,
-                              ...(activeBoardDone
-                                ? styles.singleBoardStatePillDone
-                                : styles.singleBoardStatePillTodo),
-                            }}
-                          >
-                            {singleBoardWorkflowStatus.stateLabel}
-                          </span>
-                          <span style={styles.singleBoardMobileSummaryText}>
-                            {singleBoardWorkflowStatus.nextActionLabel}
-                          </span>
-                          {singleBoardCurrentColorSummary.visible && (
-                            <span style={styles.singleBoardMobileCurrentColorPill}>
+                        <div style={singleBoardMobileSummaryMainStyle}>
+                          {singleBoardMobileDetailFocus &&
+                          singleBoardCurrentColorSummary.visible ? (
+                            <span style={singleBoardMobileCurrentColorPillStyle}>
                               <span
                                 style={{
                                   ...styles.singleBoardMobileCurrentColorSwatch,
@@ -4637,6 +4660,45 @@ const MakingPage: React.FC = () => {
                               {singleBoardCurrentColorSummary.colorLabel} ·{" "}
                               {singleBoardCurrentColorSummary.countLabel}
                             </span>
+                          ) : (
+                            <>
+                              <span style={styles.singleBoardMobileSummaryText}>
+                                {singleBoardWorkflowStatus.boardLabel} ·{" "}
+                                {singleBoardWorkflowStatus.boardPositionLabel}
+                              </span>
+                              <span style={styles.singleBoardMobileSummaryText}>
+                                进度 {singleBoardWorkflowStatus.progressLabel} ·{" "}
+                                {singleBoardWorkflowStatus.remainingLabel}
+                              </span>
+                              <span
+                                style={{
+                                  ...styles.singleBoardStatePill,
+                                  ...(activeBoardDone
+                                    ? styles.singleBoardStatePillDone
+                                    : styles.singleBoardStatePillTodo),
+                                }}
+                              >
+                                {singleBoardWorkflowStatus.stateLabel}
+                              </span>
+                              <span style={styles.singleBoardMobileSummaryText}>
+                                {singleBoardWorkflowStatus.nextActionLabel}
+                              </span>
+                              {singleBoardCurrentColorSummary.visible && (
+                                <span style={singleBoardMobileCurrentColorPillStyle}>
+                                  <span
+                                    style={{
+                                      ...styles.singleBoardMobileCurrentColorSwatch,
+                                      backgroundColor:
+                                        singleBoardCurrentColorSummary.colorHex,
+                                    }}
+                                  />
+                                  {singleBoardCurrentColorSummary.boardLabel} ·{" "}
+                                  {singleBoardCurrentColorSummary.cellLabel} ·{" "}
+                                  {singleBoardCurrentColorSummary.colorLabel} ·{" "}
+                                  {singleBoardCurrentColorSummary.countLabel}
+                                </span>
+                              )}
+                            </>
                           )}
                           {resumeBoardNumber &&
                             resumeBoardNumber !== activeBoardNumber && (
@@ -7525,6 +7587,12 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
   },
 
+  singleBoardMobileDetailFocusSummaryMain: {
+    flexWrap: "nowrap" as const,
+    overflow: "hidden",
+    maxWidth: "100%",
+  },
+
   singleBoardMobileSummaryTitle: {
     fontSize: "11px",
     fontWeight: 800,
@@ -7552,6 +7620,14 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
     overflow: "hidden",
     textOverflow: "ellipsis",
+  },
+
+  singleBoardMobileDetailFocusCurrentColorPill: {
+    maxWidth: "min(176px, calc(100vw - 190px))",
+    padding: "1px 5px",
+    fontSize: "9px",
+    background: "rgba(255,255,255,0.34)",
+    border: "1px solid rgba(255,198,220,0.38)",
   },
 
   singleBoardMobileCurrentColorSwatch: {
@@ -7635,6 +7711,21 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "auto" as const,
   },
 
+  singleBoardMobileDetailFocusSummaryPill: {
+    top: "6px",
+    left: "6px",
+    maxWidth: "min(214px, calc(100vw - 158px))",
+    minHeight: "22px",
+    padding: "3px 6px",
+    opacity: 0.38,
+    background: "rgba(255,255,255,0.22)",
+    border: "1px solid rgba(255,255,255,0.26)",
+    boxShadow: "0 6px 14px rgba(62,45,82,0.04)",
+    transform: "translate3d(0, -2px, 0) scale(0.96)",
+    transformOrigin: "top left",
+    pointerEvents: "none" as const,
+  },
+
   singleBoardMobileImmersiveSwipeStatus: {
     position: "absolute" as const,
     left: "8px",
@@ -7660,6 +7751,16 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.9,
     zIndex: 5,
     pointerEvents: "auto" as const,
+  },
+
+  singleBoardMobileDetailFocusToolbarShell: {
+    opacity: 0.22,
+    transform: "translate3d(0, 24px, 0) scale(0.92)",
+    transformOrigin: "bottom right",
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.28), rgba(255,248,240,0.22))",
+    border: "1px solid rgba(255,255,255,0.32)",
+    boxShadow: "0 6px 14px rgba(62,45,82,0.04)",
   },
 
   singleBoardMobileToolbarShell: {
@@ -8481,6 +8582,11 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 32,
   },
 
+  singleBoardMobileDetailFocusFloatingControls: {
+    transform: "translate3d(0, 18px, 0)",
+    transformOrigin: "bottom left",
+  },
+
   zoomControls: {
     display: "flex",
     alignItems: "center",
@@ -8507,6 +8613,16 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.58,
     padding: "4px 6px",
     borderRadius: radius.full,
+  },
+
+  singleBoardMobileDetailFocusZoomControls: {
+    opacity: 0.22,
+    transform: "translate3d(0, 18px, 0) scale(0.92)",
+    transformOrigin: "bottom left",
+    background:
+      "linear-gradient(145deg, rgba(255,255,255,0.3), rgba(255,245,236,0.24))",
+    border: "1px solid rgba(255,255,255,0.32)",
+    boxShadow: "0 6px 14px rgba(62,45,82,0.04)",
   },
 
   miniBtn: {

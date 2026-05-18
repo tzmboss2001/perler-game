@@ -310,6 +310,49 @@ export function getSingleBoardCurrentColorSummary({
 
 /**
  * @param {{
+ *   isSingleBoardMobileImmersive: boolean;
+ *   scale: number;
+ *   detailModeThreshold: number;
+ *   hasCurrentColorSummary: boolean;
+ *   toolbarExpanded: boolean;
+ *   panelOpen: boolean;
+ * }} input
+ */
+export function getSingleBoardMobileOverlayOcclusionState({
+  isSingleBoardMobileImmersive,
+  scale,
+  detailModeThreshold,
+  hasCurrentColorSummary,
+  toolbarExpanded,
+  panelOpen,
+}) {
+  const safeScale = Number(scale) || 0;
+  const safeThreshold = Math.max(0, Number(detailModeThreshold) || 0);
+  const detailFocus =
+    Boolean(isSingleBoardMobileImmersive) &&
+    !panelOpen &&
+    Boolean(hasCurrentColorSummary) &&
+    safeScale >= safeThreshold;
+
+  if (!detailFocus) {
+    return {
+      detailFocus: false,
+      summaryMode: "normal",
+      toolbarMode: "normal",
+      zoomMode: "normal",
+    };
+  }
+
+  return {
+    detailFocus: true,
+    summaryMode: "compact",
+    toolbarMode: toolbarExpanded ? "expanded" : "weak-hidden",
+    zoomMode: "weak-hidden",
+  };
+}
+
+/**
+ * @param {{
  *   currentScale: number;
  *   minScale: number;
  *   maxScale: number;

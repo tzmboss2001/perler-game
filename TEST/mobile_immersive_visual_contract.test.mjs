@@ -88,6 +88,18 @@ test("mobile immersive motion classes are attached to overlay controls only", ()
   assert.match(source, /mobileImmersiveClass\("overview-card"\)/);
 });
 
+test("phase1a occlusion fix keeps detail focus as overlay-only visual state", () => {
+  const source = read(makingPagePath);
+  assert.match(source, /singleBoardMobileOverlayOcclusionState/);
+  assert.match(source, /singleBoardMobileDetailFocusSummaryPill/);
+  assert.match(source, /singleBoardMobileDetailFocusToolbarShell/);
+  assert.match(source, /singleBoardMobileDetailFocusZoomControls/);
+  assert.doesNotMatch(
+    source,
+    /setScale\([^)]*singleBoardMobileOverlayOcclusionState/,
+  );
+});
+
 test("making workflow productization status uses mobile immersive overlay hooks", () => {
   const source = read(makingPagePath);
   assert.match(source, /singleBoardWorkflowStatus/);
