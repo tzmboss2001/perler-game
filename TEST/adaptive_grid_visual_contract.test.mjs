@@ -34,3 +34,10 @@ test("adaptive grid renders before selected color spotlight keeps visual priorit
   assert.ok(spotlightIndex > -1);
   assert.ok(adaptiveIndex < spotlightIndex);
 });
+
+test("toggle active styles avoid React border shorthand conflicts", () => {
+  const activeStyle = source.match(/toggleBtnActive:\s*\{([\s\S]*?)\n\s*\},/);
+  assert.ok(activeStyle);
+  assert.match(activeStyle[1], /border:\s*`1px solid/);
+  assert.doesNotMatch(activeStyle[1], /borderColor:/);
+});

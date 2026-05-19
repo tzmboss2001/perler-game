@@ -8873,7 +8873,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   toggleBtnActive: {
     background: `${colors.bead.cyan}20`,
-    borderColor: colors.bead.cyan,
+    border: `1px solid ${colors.bead.cyan}`,
     color: colors.bead.cyan,
   },
 
