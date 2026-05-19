@@ -2270,6 +2270,15 @@ const MakingPage: React.FC = () => {
     ],
   );
 
+  const singleBoardTaskPromptDetailFocus = Boolean(
+    isSingleBoardMobileImmersive &&
+      singleBoardCurrentColorSummary.visible &&
+      scale >= DETAIL_MODE_THRESHOLD &&
+      !showSettings &&
+      !showSingleBoardOnboarding &&
+      !singleBoardMobileMiniMapExpanded,
+  );
+
   const singleBoardTaskPrompt = useMemo(
     () =>
       getSingleBoardTaskPrompt({
@@ -2281,6 +2290,7 @@ const MakingPage: React.FC = () => {
         activeBoardDoneCount: activeBoardDone ? 1 : 0,
         activeBoardTotalCount: 1,
         remainingBoardCount: singleBoardProgress.remainingCount,
+        detailFocus: singleBoardTaskPromptDetailFocus,
         selectedCell: selectedBoardCoordinate
           ? {
               row: selectedBoardCoordinate.localRow,
@@ -2307,10 +2317,14 @@ const MakingPage: React.FC = () => {
       selectedBoardCoordinate,
       selection.colorId,
       selection.type,
+      singleBoardTaskPromptDetailFocus,
       singleBoardProgress.remainingCount,
       totalBoardCount,
       viewMode,
     ],
+  );
+  const showSingleBoardPassiveStatus = Boolean(
+    totalBoardCount > 1 && !singleBoardTaskPromptDetailFocus,
   );
 
   useLayoutEffect(() => {
@@ -4913,7 +4927,7 @@ const MakingPage: React.FC = () => {
                             {singleBoardTaskPrompt.text}
                           </span>
                         </div>
-                      ) : totalBoardCount > 1 ? (
+                      ) : showSingleBoardPassiveStatus ? (
                         <div
                           className={mobileImmersiveClass("status-hint")}
                           style={singleBoardMobileSwipeStatusStyle}

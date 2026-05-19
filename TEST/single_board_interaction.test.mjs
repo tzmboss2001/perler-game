@@ -225,6 +225,57 @@ test("single board task prompt explains completion and selected work target", ()
   );
 });
 
+test("single board task prompt yields to detail focus at high zoom", () => {
+  assert.deepEqual(
+    getSingleBoardTaskPrompt({
+      isSingleBoardMode: true,
+      isMobileImmersive: true,
+      activeBoardIndex: 2,
+      totalBoardCount: 4,
+      activeBoardCompleted: false,
+      activeBoardDoneCount: 12,
+      activeBoardTotalCount: 64,
+      remainingBoardCount: 4,
+      detailFocus: true,
+      selectedCell: {
+        row: 38,
+        col: 8,
+        colorId: "80-19005",
+      },
+    }),
+    {
+      visible: false,
+      level: "passive",
+      title: "",
+      text: "",
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardTaskPrompt({
+      isSingleBoardMode: true,
+      isMobileImmersive: true,
+      activeBoardIndex: 2,
+      totalBoardCount: 4,
+      activeBoardCompleted: false,
+      activeBoardDoneCount: 12,
+      activeBoardTotalCount: 64,
+      remainingBoardCount: 4,
+      detailFocus: true,
+      selectedColor: {
+        id: "80-19005",
+        boardRemainingCount: 448,
+      },
+    }),
+    {
+      visible: false,
+      level: "passive",
+      title: "",
+      text: "",
+    },
+  );
+});
+
 test("single board task prompt falls back to current board task", () => {
   assert.deepEqual(
     getSingleBoardTaskPrompt({

@@ -169,3 +169,21 @@ test("phase1b transient toast stays overlay-only and does not replace help opene
   );
   assert.doesNotMatch(source, /showTaskHelp/);
 });
+
+test("phase1b task prompt is suppressed during detail focus", () => {
+  const source = read(makingPagePath);
+  assert.match(source, /singleBoardTaskPromptDetailFocus/);
+  assert.match(source, /showSingleBoardPassiveStatus/);
+  assert.match(
+    source,
+    /getSingleBoardTaskPrompt\(\{[\s\S]{0,900}detailFocus:\s*singleBoardTaskPromptDetailFocus/,
+  );
+  assert.match(
+    source,
+    /showSingleBoardPassiveStatus[\s\S]{0,220}!\s*singleBoardTaskPromptDetailFocus/,
+  );
+  assert.doesNotMatch(
+    source,
+    /data-phase1b-task-prompt[\s\S]{0,240}(onPointer|onTouch|onMouse)/,
+  );
+});

@@ -384,6 +384,7 @@ function toPositiveDisplayNumber(value, fallback = 1) {
  *   activeBoardDoneCount: number;
  *   activeBoardTotalCount: number;
  *   remainingBoardCount: number;
+ *   detailFocus?: boolean;
  *   selectedCell?: { row: number; col: number; colorId?: string } | null;
  *   selectedColor?: { id: string; boardRemainingCount: number } | null;
  *   nextPendingBoardIndex?: number | null;
@@ -394,6 +395,7 @@ export function getSingleBoardTaskPrompt({
   isMobileImmersive,
   activeBoardCompleted,
   remainingBoardCount,
+  detailFocus = false,
   selectedCell = null,
   selectedColor = null,
   nextPendingBoardIndex = null,
@@ -420,6 +422,10 @@ export function getSingleBoardTaskPrompt({
         nextPendingBoardIndex,
       )} 继续制作`,
     };
+  }
+
+  if (detailFocus && (selectedCell || selectedColor?.id)) {
+    return EMPTY_SINGLE_BOARD_TASK_PROMPT;
   }
 
   if (selectedCell) {
