@@ -360,6 +360,185 @@ export function getSingleBoardMobileFreezeHint({ activeOverlay, freezesCanvas })
   };
 }
 
+const EMPTY_SINGLE_BOARD_TASK_PROMPT = {
+  visible: false,
+  level: "passive",
+  title: "",
+  text: "",
+};
+
+function toPositiveDisplayNumber(value, fallback = 1) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
+}
+
+/**
+ * @param {{
+ *   isSingleBoardMode: boolean;
+ *   isMobileImmersive: boolean;
+ *   activeBoardIndex: number;
+ *   totalBoardCount: number;
+ *   activeBoardRow?: number;
+ *   activeBoardCol?: number;
+ *   activeBoardCompleted: boolean;
+ *   activeBoardDoneCount: number;
+ *   activeBoardTotalCount: number;
+ *   remainingBoardCount: number;
+ *   selectedCell?: { row: number; col: number; colorId?: string } | null;
+ *   selectedColor?: { id: string; boardRemainingCount: number } | null;
+ *   nextPendingBoardIndex?: number | null;
+ * }} input
+ */
+export function getSingleBoardTaskPrompt({
+  isSingleBoardMode,
+  isMobileImmersive,
+  activeBoardCompleted,
+  remainingBoardCount,
+  selectedCell = null,
+  selectedColor = null,
+  nextPendingBoardIndex = null,
+}) {
+  if (!isSingleBoardMode || !isMobileImmersive) {
+    return EMPTY_SINGLE_BOARD_TASK_PROMPT;
+  }
+
+  if (activeBoardCompleted) {
+    if (remainingBoardCount <= 0 || nextPendingBoardIndex === null) {
+      return {
+        visible: true,
+        level: "complete",
+        title: "全部完成",
+        text: "可以检查作品或导出图纸",
+      };
+    }
+
+    return {
+      visible: true,
+      level: "complete",
+      title: "本板已完成",
+      text: `可以切换到板 ${toPositiveDisplayNumber(
+        nextPendingBoardIndex,
+      )} 继续制作`,
+    };
+  }
+
+  if (selectedCell) {
+    const row = toPositiveDisplayNumber(selectedCell.row);
+    const col = toPositiveDisplayNumber(selectedCell.col);
+    const colorId = String(selectedCell.colorId || "").trim();
+    return {
+      visible: true,
+      level: "action",
+      title: `当前格：第${row}行第${col}列`,
+      text: colorId
+        ? `色号 ${colorId}，按当前板位置放豆`
+        : "按当前板位置放豆",
+    };
+  }
+
+  if (selectedColor?.id) {
+    const colorId = String(selectedColor.id).trim();
+    const remainingCount = Math.max(
+      0,
+      Math.floor(Number(selectedColor.boardRemainingCount) || 0),
+    );
+    return {
+      visible: true,
+      level: "action",
+      title: `当前色：${colorId}`,
+      text: `本板剩余 ${remainingCount} 颗，可继续找同色格`,
+    };
+  }
+
+  return {
+    visible: true,
+    level: "passive",
+    title: "当前任务",
+    text: "先按颜色制作本板，完成后再切下一板",
+  };
+}
+
+function hiddenSingleBoardTransientToast(eventType) {
+  return {
+    visible: false,
+    eventType,
+    title: "",
+    text: "",
+    durationMs: 0,
+  };
+}
+
+/**
+ * @param {{
+ *   eventType:
+ *     | "color-completed"
+ *     | "board-completed"
+ *     | "board-switched"
+ *     | "view-reset"
+ *     | "help-opened"
+ *     | "help-closed";
+ *   boardNumber?: number;
+ *   colorId?: string;
+ *   blockingOverlayActive?: boolean;
+ * }} input
+ */
+export function getSingleBoardTransientToast({
+  eventType,
+  boardNumber,
+  colorId,
+  blockingOverlayActive = false,
+}) {
+  if (blockingOverlayActive) {
+    return hiddenSingleBoardTransientToast(eventType);
+  }
+
+  const durationMs = 1600;
+  const safeBoardNumber = toPositiveDisplayNumber(boardNumber);
+  const safeColorId = String(colorId || "").trim();
+
+  const copyByEventType = {
+    "color-completed": {
+      title: "当前颜色完成",
+      text: safeColorId
+        ? `${safeColorId} 已完成，可以继续下一个颜色`
+        : "可以继续下一个颜色或检查漏格",
+    },
+    "board-completed": {
+      title: "本板已完成",
+      text: "可以切换下一板继续制作",
+    },
+    "board-switched": {
+      title: `已切换到板 ${safeBoardNumber}`,
+      text: "继续按当前板制作",
+    },
+    "view-reset": {
+      title: "视图已复位",
+      text: "回到适合当前板的查看位置",
+    },
+    "help-opened": {
+      title: "制作帮助已打开",
+      text: "关闭后可继续操作图纸",
+    },
+    "help-closed": {
+      title: "继续制作",
+      text: "拖动、缩放和切板已恢复",
+    },
+  };
+
+  const copy = copyByEventType[eventType];
+  if (!copy) {
+    return hiddenSingleBoardTransientToast(eventType);
+  }
+
+  return {
+    visible: true,
+    eventType,
+    title: copy.title,
+    text: copy.text,
+    durationMs,
+  };
+}
+
 /**
  * @param {{
  *   activeBoardNumber: number;

@@ -25,6 +25,8 @@ import {
   getSingleBoardMobileFreezeHint,
   getSingleBoardMobileOverlayInteractionState,
   getSingleBoardMobileOverlayOcclusionState,
+  getSingleBoardTaskPrompt,
+  getSingleBoardTransientToast,
   getSingleBoardInteractionLockState,
   getSingleBoardLayoutFlags,
   getSingleBoardCurrentColorSummary,
@@ -129,6 +131,183 @@ test("current color summary stays hidden without a selected color", () => {
       cellLabel: "",
       boardLabel: "",
       countLabel: "",
+    },
+  );
+});
+
+test("single board task prompt stays hidden outside mobile immersive mode", () => {
+  assert.deepEqual(
+    getSingleBoardTaskPrompt({
+      isSingleBoardMode: true,
+      isMobileImmersive: false,
+      activeBoardIndex: 1,
+      totalBoardCount: 4,
+      activeBoardCompleted: false,
+      activeBoardDoneCount: 0,
+      activeBoardTotalCount: 64,
+      remainingBoardCount: 4,
+    }),
+    {
+      visible: false,
+      level: "passive",
+      title: "",
+      text: "",
+    },
+  );
+});
+
+test("single board task prompt explains completion and selected work target", () => {
+  assert.deepEqual(
+    getSingleBoardTaskPrompt({
+      isSingleBoardMode: true,
+      isMobileImmersive: true,
+      activeBoardIndex: 2,
+      totalBoardCount: 4,
+      activeBoardCompleted: true,
+      activeBoardDoneCount: 64,
+      activeBoardTotalCount: 64,
+      remainingBoardCount: 3,
+      nextPendingBoardIndex: 3,
+    }),
+    {
+      visible: true,
+      level: "complete",
+      title: "本板已完成",
+      text: "可以切换到板 3 继续制作",
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardTaskPrompt({
+      isSingleBoardMode: true,
+      isMobileImmersive: true,
+      activeBoardIndex: 2,
+      totalBoardCount: 4,
+      activeBoardCompleted: false,
+      activeBoardDoneCount: 12,
+      activeBoardTotalCount: 64,
+      remainingBoardCount: 4,
+      selectedCell: {
+        row: 5,
+        col: 8,
+        colorId: "C29",
+      },
+    }),
+    {
+      visible: true,
+      level: "action",
+      title: "当前格：第5行第8列",
+      text: "色号 C29，按当前板位置放豆",
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardTaskPrompt({
+      isSingleBoardMode: true,
+      isMobileImmersive: true,
+      activeBoardIndex: 2,
+      totalBoardCount: 4,
+      activeBoardCompleted: false,
+      activeBoardDoneCount: 12,
+      activeBoardTotalCount: 64,
+      remainingBoardCount: 4,
+      selectedColor: {
+        id: "C29",
+        boardRemainingCount: 12,
+      },
+    }),
+    {
+      visible: true,
+      level: "action",
+      title: "当前色：C29",
+      text: "本板剩余 12 颗，可继续找同色格",
+    },
+  );
+});
+
+test("single board task prompt falls back to current board task", () => {
+  assert.deepEqual(
+    getSingleBoardTaskPrompt({
+      isSingleBoardMode: true,
+      isMobileImmersive: true,
+      activeBoardIndex: 1,
+      totalBoardCount: 1,
+      activeBoardCompleted: false,
+      activeBoardDoneCount: 0,
+      activeBoardTotalCount: 64,
+      remainingBoardCount: 1,
+    }),
+    {
+      visible: true,
+      level: "passive",
+      title: "当前任务",
+      text: "先按颜色制作本板，完成后再切下一板",
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardTaskPrompt({
+      isSingleBoardMode: true,
+      isMobileImmersive: true,
+      activeBoardIndex: 1,
+      totalBoardCount: 1,
+      activeBoardCompleted: true,
+      activeBoardDoneCount: 64,
+      activeBoardTotalCount: 64,
+      remainingBoardCount: 0,
+      nextPendingBoardIndex: null,
+    }),
+    {
+      visible: true,
+      level: "complete",
+      title: "全部完成",
+      text: "可以检查作品或导出图纸",
+    },
+  );
+});
+
+test("single board transient toast explains short state changes", () => {
+  assert.deepEqual(
+    getSingleBoardTransientToast({
+      eventType: "board-switched",
+      boardNumber: 3,
+    }),
+    {
+      visible: true,
+      eventType: "board-switched",
+      title: "已切换到板 3",
+      text: "继续按当前板制作",
+      durationMs: 1600,
+    },
+  );
+
+  assert.deepEqual(
+    getSingleBoardTransientToast({
+      eventType: "color-completed",
+      colorId: "C29",
+    }),
+    {
+      visible: true,
+      eventType: "color-completed",
+      title: "当前颜色完成",
+      text: "C29 已完成，可以继续下一个颜色",
+      durationMs: 1600,
+    },
+  );
+});
+
+test("single board transient toast stays hidden behind blocking overlays", () => {
+  assert.deepEqual(
+    getSingleBoardTransientToast({
+      eventType: "board-completed",
+      blockingOverlayActive: true,
+    }),
+    {
+      visible: false,
+      eventType: "board-completed",
+      title: "",
+      text: "",
+      durationMs: 0,
     },
   );
 });
