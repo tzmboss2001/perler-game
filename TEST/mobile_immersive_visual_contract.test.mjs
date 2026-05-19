@@ -142,3 +142,30 @@ test("phase1b toolbar and settings help entries share one opener", () => {
   );
   assert.doesNotMatch(source, /title="查看单板制作帮助"[\s\S]{0,160}setShowSingleBoardOnboarding\(true\)/);
 });
+test("phase1b task clarity overlay uses helper output without layout occupancy", () => {
+  const source = read(makingPagePath);
+  assert.match(source, /getSingleBoardTaskPrompt/);
+  assert.match(source, /singleBoardTaskPrompt/);
+  assert.match(source, /data-phase1b-task-prompt/);
+  assert.match(source, /mobileImmersiveClass\("status-hint"\)/);
+  assert.match(source, /singleBoardMobileFreezeHint\.visible\s*\?\s*\(/);
+  assert.match(source, /singleBoardTransientToast\.visible\s*\?\s*\(/);
+  assert.doesNotMatch(
+    source,
+    /data-phase1b-task-prompt[\s\S]{0,240}(paddingTop|marginTop|height):/,
+  );
+});
+
+test("phase1b transient toast stays overlay-only and does not replace help opener", () => {
+  const source = read(makingPagePath);
+  assert.match(source, /getSingleBoardTransientToast/);
+  assert.match(source, /singleBoardTransientToast/);
+  assert.match(source, /data-phase1b-transient-toast/);
+  assert.match(source, /pointerEvents:\s*"none"/);
+  const helperOpenMatches = source.match(/handleOpenSingleBoardHelp/g) || [];
+  assert.ok(
+    helperOpenMatches.length >= 3,
+    "toast work must not introduce a second help opener",
+  );
+  assert.doesNotMatch(source, /showTaskHelp/);
+});

@@ -55,6 +55,8 @@ import {
   getSingleBoardMobileFreezeHint,
   getSingleBoardMobileOverlayInteractionState,
   getSingleBoardMobileOverlayOcclusionState,
+  getSingleBoardTaskPrompt,
+  getSingleBoardTransientToast,
   getSingleBoardWorkflowStatus,
   getRenderScaleAnchorDelayMs,
   getSafeRenderMetricsBudget,
@@ -147,6 +149,21 @@ type MakingViewMode = "traditional" | "singleBoard";
 
 interface BoardStatusMap {
   [boardNumber: number]: boolean;
+}
+
+type SingleBoardTransientEventType =
+  | "color-completed"
+  | "board-completed"
+  | "board-switched"
+  | "view-reset"
+  | "help-opened"
+  | "help-closed";
+
+interface SingleBoardTransientEvent {
+  eventType: SingleBoardTransientEventType;
+  boardNumber?: number;
+  colorId?: string;
+  token: number;
 }
 
 // 细节模式阈值：超过该值时才显示色号并允许按单元格选色
@@ -360,6 +377,8 @@ const MakingPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<MakingViewMode>("traditional");
   const [activeBoardNumber, setActiveBoardNumber] = useState(1);
   const [boardStatusMap, setBoardStatusMap] = useState<BoardStatusMap>({});
+  const [singleBoardTransientEvent, setSingleBoardTransientEvent] =
+    useState<SingleBoardTransientEvent | null>(null);
   const [singleBoardOverviewCollapsed, setSingleBoardOverviewCollapsed] =
     useState(false);
   const [makingDesktopSidebarCollapsed, setMakingDesktopSidebarCollapsed] =
@@ -1672,6 +1691,19 @@ const MakingPage: React.FC = () => {
     setSingleBoardMobileCanvasInteracted(true);
   }, [isSingleBoardMobile, viewMode]);
 
+  const showSingleBoardTransientToast = useCallback(
+    (event: Omit<SingleBoardTransientEvent, "token">) => {
+      if (!isSingleBoardMobile || viewMode !== "singleBoard") {
+        return;
+      }
+      setSingleBoardTransientEvent({
+        ...event,
+        token: Date.now(),
+      });
+    },
+    [isSingleBoardMobile, viewMode],
+  );
+
   const handleSingleBoardMobileToolbarToggle = useCallback(() => {
     const nextExpanded = !singleBoardMobileToolbarExpanded;
     if (nextExpanded) {
@@ -1698,6 +1730,12 @@ const MakingPage: React.FC = () => {
         blockX: targetBlock.blockX,
         blockY: targetBlock.blockY,
       });
+      if (viewMode === "singleBoard" && boardNumber !== activeBoardNumber) {
+        showSingleBoardTransientToast({
+          eventType: "board-switched",
+          boardNumber,
+        });
+      }
       setSelectedCell(null);
       setTooltipState((prev) => ({ ...prev, visible: false }));
       if (shouldCenter) {
@@ -1713,7 +1751,15 @@ const MakingPage: React.FC = () => {
         }
       }
     },
-    [beadData, boardRects, centerViewportOnRect, physicalBoardSize, viewMode],
+    [
+      activeBoardNumber,
+      beadData,
+      boardRects,
+      centerViewportOnRect,
+      physicalBoardSize,
+      showSingleBoardTransientToast,
+      viewMode,
+    ],
   );
 
   const handleOverviewCanvasClick = useCallback(
@@ -1945,6 +1991,10 @@ const MakingPage: React.FC = () => {
       [activeBoardRect.boardNumber]: nextDone,
     }));
     if (nextDone) {
+      showSingleBoardTransientToast({
+        eventType: "board-completed",
+        boardNumber: activeBoardRect.boardNumber,
+      });
       if (autoAdvanceOnBoardDone) {
         const currentIndex = boardRects.findIndex(
           (item) => item.boardNumber === activeBoardRect.boardNumber,
@@ -1978,6 +2028,7 @@ const MakingPage: React.FC = () => {
     autoAdvanceOnBoardDone,
     boardRects,
     boardStatusMap,
+    showSingleBoardTransientToast,
     toast,
   ]);
 
@@ -2032,6 +2083,31 @@ const MakingPage: React.FC = () => {
   const singleBoardMobileFreezeHint = getSingleBoardMobileFreezeHint(
     singleBoardMobileOverlayInteractionState,
   );
+  const singleBoardTransientToast = singleBoardTransientEvent
+    ? getSingleBoardTransientToast({
+        ...singleBoardTransientEvent,
+        blockingOverlayActive:
+          singleBoardMobileOverlayInteractionState.freezesCanvas,
+      })
+    : {
+        visible: false,
+        eventType: "",
+        title: "",
+        text: "",
+        durationMs: 0,
+      };
+
+  useEffect(() => {
+    if (!singleBoardTransientToast.visible) return undefined;
+    const timer = window.setTimeout(() => {
+      setSingleBoardTransientEvent(null);
+    }, singleBoardTransientToast.durationMs);
+    return () => window.clearTimeout(timer);
+  }, [
+    singleBoardTransientEvent?.token,
+    singleBoardTransientToast.durationMs,
+    singleBoardTransientToast.visible,
+  ]);
 
   const nextPendingBoardNumber = useMemo(() => {
     const nextPending = boardRects.find(
@@ -2191,6 +2267,49 @@ const MakingPage: React.FC = () => {
       selection.colorHex,
       selection.colorId,
       selection.type,
+    ],
+  );
+
+  const singleBoardTaskPrompt = useMemo(
+    () =>
+      getSingleBoardTaskPrompt({
+        isSingleBoardMode: viewMode === "singleBoard",
+        isMobileImmersive: isSingleBoardMobileImmersive,
+        activeBoardIndex: activeBoardNumber,
+        totalBoardCount,
+        activeBoardCompleted: activeBoardDone,
+        activeBoardDoneCount: activeBoardDone ? 1 : 0,
+        activeBoardTotalCount: 1,
+        remainingBoardCount: singleBoardProgress.remainingCount,
+        selectedCell: selectedBoardCoordinate
+          ? {
+              row: selectedBoardCoordinate.localRow,
+              col: selectedBoardCoordinate.localCol,
+              colorId:
+                selection.type === "color" ? selection.colorId : undefined,
+            }
+          : null,
+        selectedColor:
+          selection.type === "color" && selection.colorId
+            ? {
+                id: selection.colorId,
+                boardRemainingCount: colorCountInCurrentBoard,
+              }
+            : null,
+        nextPendingBoardIndex: nextPendingBoardNumber,
+      }),
+    [
+      activeBoardDone,
+      activeBoardNumber,
+      colorCountInCurrentBoard,
+      isSingleBoardMobileImmersive,
+      nextPendingBoardNumber,
+      selectedBoardCoordinate,
+      selection.colorId,
+      selection.type,
+      singleBoardProgress.remainingCount,
+      totalBoardCount,
+      viewMode,
     ],
   );
 
@@ -4166,7 +4285,8 @@ const MakingPage: React.FC = () => {
     setShowSettings(false);
     setSingleBoardMobileToolbarExpanded(false);
     setShowSingleBoardOnboarding(true);
-  }, []);
+    showSingleBoardTransientToast({ eventType: "help-opened" });
+  }, [showSingleBoardTransientToast]);
 
   const handleSingleBoardToolbarPrimaryAction = useCallback(() => {
     if (singleBoardAllDone) {
@@ -4190,6 +4310,7 @@ const MakingPage: React.FC = () => {
 
   const handleDismissSingleBoardOnboarding = useCallback(() => {
     setShowSingleBoardOnboarding(false);
+    showSingleBoardTransientToast({ eventType: "help-closed" });
     try {
       localStorage.setItem(
         SINGLE_BOARD_ONBOARDING_STORAGE_KEY,
@@ -4198,7 +4319,7 @@ const MakingPage: React.FC = () => {
     } catch (e) {
       console.warn("[MakingPage] 保存单板模式引导状态失败:", e);
     }
-  }, []);
+  }, [showSingleBoardTransientToast]);
 
   // 如果没有数据
   if (!beadData) {
@@ -4764,6 +4885,32 @@ const MakingPage: React.FC = () => {
                           </span>
                           <span style={styles.singleBoardSwipeStatusText}>
                             {singleBoardMobileFreezeHint.text}
+                          </span>
+                        </div>
+                      ) : singleBoardTransientToast.visible ? (
+                        <div
+                          data-phase1b-transient-toast="1"
+                          className={mobileImmersiveClass("status-hint")}
+                          style={singleBoardMobileFreezeHintStyle}
+                        >
+                          <span style={styles.singleBoardSwipeStatusTitle}>
+                            {singleBoardTransientToast.title}
+                          </span>
+                          <span style={styles.singleBoardSwipeStatusText}>
+                            {singleBoardTransientToast.text}
+                          </span>
+                        </div>
+                      ) : singleBoardTaskPrompt.visible ? (
+                        <div
+                          data-phase1b-task-prompt="1"
+                          className={mobileImmersiveClass("status-hint")}
+                          style={singleBoardMobileSwipeStatusStyle}
+                        >
+                          <span style={styles.singleBoardSwipeStatusTitle}>
+                            {singleBoardTaskPrompt.title}
+                          </span>
+                          <span style={styles.singleBoardSwipeStatusText}>
+                            {singleBoardTaskPrompt.text}
                           </span>
                         </div>
                       ) : totalBoardCount > 1 ? (
