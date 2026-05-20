@@ -75,6 +75,7 @@ export interface VisionDetectionResult {
   matchedGuideCells: VisionDetectedCell[];
   wrongGuideCells: VisionDetectedCell[];
   wrongCellsDetail: VisionDetectedCell[];
+  detectedCells: VisionDetectedCell[];
   wrongColorSuggestions: VisionWrongColorSuggestion[];
   quality: VisionDetectionQuality;
   markerRadius: number;
@@ -1427,6 +1428,7 @@ export const analyzeVisionProgress = ({
     matchedGuideCells,
     wrongGuideCells,
     wrongCellsDetail,
+    detectedCells: cells,
     wrongColorSuggestions,
     quality,
     markerRadius,
