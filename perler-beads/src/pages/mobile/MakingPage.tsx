@@ -91,6 +91,7 @@ import BannerAd from "../../components/ads/BannerAd";
 import RewardedUnlockModal from "../../components/ads/RewardedUnlockModal";
 import { adService } from "../../services/adService";
 import BoardVisionAssistModal from "../../components/BoardVisionAssistModal";
+import PhotoProgressSyncModal from "../../components/PhotoProgressSyncModal";
 import countBeadUsage from "../../services/beadUsageService";
 import beadInventoryService from "../../services/beadInventoryService";
 
@@ -316,6 +317,7 @@ const MakingPage: React.FC = () => {
   const pendingExportAfterRewardRef = useRef<(() => void) | null>(null);
   const [showReplaceModal, setShowReplaceModal] = useState(false);
   const [showVisionAssist, setShowVisionAssist] = useState(false);
+  const [showPhotoProgressSync, setShowPhotoProgressSync] = useState(false);
   const [lastReplaceSnapshot, setLastReplaceSnapshot] =
     useState<ReplaceHistoryState | null>(null);
   const [redoReplaceSnapshot, setRedoReplaceSnapshot] =
@@ -5677,6 +5679,22 @@ const MakingPage: React.FC = () => {
                     试用
                   </button>
                 </div>
+                <div style={styles.settingRow}>
+                  <span style={styles.settingLabel}>拍照同步（试验）</span>
+                  <button
+                    style={{
+                      ...styles.actionBtn,
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                    }}
+                    onClick={() => {
+                      setShowSettings(false);
+                      setShowPhotoProgressSync(true);
+                    }}
+                  >
+                    预览
+                  </button>
+                </div>
                 <div style={styles.settingDivider} />
                 <div style={styles.settingRow}>
                   <span style={styles.settingLabel}>高级制作辅助</span>
@@ -6712,6 +6730,16 @@ const MakingPage: React.FC = () => {
           boardSize={visionBoardRecommendation.boardSize}
           initialBoardIndex={visionInitialBoardIndex}
           initialColorId={visionInitialColorId}
+        />
+      )}
+
+      {beadData && visionBoardRecommendation && (
+        <PhotoProgressSyncModal
+          visible={showPhotoProgressSync}
+          onClose={() => setShowPhotoProgressSync(false)}
+          beadData={beadData}
+          boardSize={visionBoardRecommendation.boardSize}
+          initialBoardIndex={visionInitialBoardIndex}
         />
       )}
 
