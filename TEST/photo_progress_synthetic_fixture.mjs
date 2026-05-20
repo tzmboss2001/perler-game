@@ -25,6 +25,12 @@ export const createSyntheticDetection = ({
       detectedDistance = 40;
     }
 
+    if (variant === "single-wrong" && index === 5) {
+      state = "wrong";
+      detectedColor = wrong;
+      detectedDistance = 40;
+    }
+
     detectedCells.push({
       index,
       x,
