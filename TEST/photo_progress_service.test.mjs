@@ -183,3 +183,105 @@ test("synthetic low quality board blocks done candidates", () => {
   assert.equal(preview.summary.doneCandidateCount, 0);
   assert.equal(preview.summary.lowConfidenceCount, 16);
 });
+
+test("photo progress reliability blocks previews with excessive suspected wrong ratio", () => {
+  const preview = createPhotoProgressPreview({
+    boardNumber: 1,
+    boardSize: 4,
+    usedWidth: 4,
+    usedHeight: 4,
+    detection: {
+      ...createSyntheticDetection({ variant: "wrong" }),
+      detectedCells: Array.from({ length: 16 }, (_, index) =>
+        cell({
+          index,
+          x: index % 4,
+          y: Math.floor(index / 4),
+          state: index < 8 ? "wrong" : "matched",
+          detectedColor:
+            index < 8
+              ? { id: "B2", hex: "#222222" }
+              : { id: "A1", hex: "#111111" },
+          detectedDistance: index < 8 ? 44 : 24,
+        }),
+      ),
+      totalTargetCells: 16,
+      matchedCells: 8,
+      wrongCells: 8,
+      missingCells: 0,
+      progress: 0.5,
+      quality: {
+        level: "good",
+        brightness: 128,
+        tint: 0,
+        glareRatio: 0,
+        issues: [],
+      },
+    },
+    hasEmptyReference: true,
+    createdAt: 1710000000000,
+  });
+
+  assert.equal(preview.reliability.level, "blocked");
+  assert.equal(preview.reliability.userAction, "retry_required");
+  assert.equal(preview.reliability.reasons.includes("wrong_ratio_too_high"), true);
+  assert.equal(preview.reliability.wrongRatio, 0.5);
+});
+
+test("photo progress reliability allows clean high-confidence previews", () => {
+  const preview = createPhotoProgressPreview({
+    boardNumber: 1,
+    boardSize: 4,
+    usedWidth: 4,
+    usedHeight: 4,
+    detection: createSyntheticDetection({ variant: "perfect" }),
+    hasEmptyReference: true,
+    createdAt: 1710000000000,
+  });
+
+  assert.equal(preview.reliability.level, "good");
+  assert.equal(preview.reliability.userAction, "can_confirm");
+  assert.equal(preview.reliability.reasons.length, 0);
+});
+
+test("photo progress reliability blocks previews with excessive low confidence ratio", () => {
+  const preview = createPhotoProgressPreview({
+    boardNumber: 1,
+    boardSize: 4,
+    usedWidth: 4,
+    usedHeight: 4,
+    detection: {
+      ...createSyntheticDetection({ variant: "perfect" }),
+      detectedCells: Array.from({ length: 16 }, (_, index) =>
+        cell({
+          index,
+          x: index % 4,
+          y: Math.floor(index / 4),
+          state: "matched",
+          detectedDistance: index < 8 ? 92 : 24,
+        }),
+      ),
+      totalTargetCells: 16,
+      matchedCells: 16,
+      wrongCells: 0,
+      missingCells: 0,
+      progress: 1,
+      quality: {
+        level: "good",
+        brightness: 128,
+        tint: 0,
+        glareRatio: 0,
+        issues: [],
+      },
+    },
+    hasEmptyReference: true,
+    createdAt: 1710000000000,
+  });
+
+  assert.equal(preview.reliability.level, "blocked");
+  assert.equal(
+    preview.reliability.reasons.includes("low_confidence_ratio_too_high"),
+    true,
+  );
+  assert.equal(preview.reliability.lowConfidenceRatio, 0.5);
+});

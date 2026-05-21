@@ -1,5 +1,7 @@
 const DONE_DISTANCE_THRESHOLD = 70;
 
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
 const normalizeQuality = ({ quality, hasEmptyReference }) => {
   const baseQuality = quality || {
     level: "poor",
@@ -84,6 +86,84 @@ const getConfidenceReasons = ({ cell, quality }) => {
 const countByState = (cells, state) =>
   cells.filter((cell) => cell.state === state).length;
 
+const ratioOf = (count, total) => (total > 0 ? count / total : 0);
+
+export const createPhotoProgressReliability = ({
+  doneCandidateCount,
+  suspectedWrongCount,
+  lowConfidenceCount,
+  pendingCount,
+  totalTargetCells,
+  qualityLevel,
+}) => {
+  const total = Number(totalTargetCells || 0);
+  const wrongRatio = ratioOf(suspectedWrongCount, total);
+  const lowConfidenceRatio = ratioOf(lowConfidenceCount, total);
+  const pendingRatio = ratioOf(pendingCount, total);
+  const doneCandidateRatio = ratioOf(doneCandidateCount, total);
+  const reasons = [];
+
+  if (total <= 0) {
+    reasons.push("empty_target_cells");
+  }
+  if (wrongRatio >= 0.25) {
+    reasons.push("wrong_ratio_too_high");
+  }
+  if (wrongRatio >= 0.12 && doneCandidateRatio < 0.35) {
+    reasons.push("wrong_ratio_high_with_low_done_candidates");
+  }
+  if (lowConfidenceRatio >= 0.45) {
+    reasons.push("low_confidence_ratio_too_high");
+  }
+  if (wrongRatio + lowConfidenceRatio >= 0.55) {
+    reasons.push("uncertain_ratio_too_high");
+  }
+  if (pendingRatio >= 0.75 && doneCandidateRatio < 0.1) {
+    reasons.push("pending_ratio_too_high");
+  }
+  if (qualityLevel === "poor") {
+    reasons.push("quality_poor");
+  }
+
+  const score = Math.round(
+    clamp(
+      100 -
+        wrongRatio * 160 -
+        lowConfidenceRatio * 80 -
+        pendingRatio * 35 -
+        (qualityLevel === "poor" ? 35 : 0) -
+        (qualityLevel === "warning" ? 12 : 0),
+      0,
+      100,
+    ),
+  );
+
+  const blocked = reasons.length > 0 || score < 55;
+  const warning =
+    !blocked && (score < 78 || wrongRatio >= 0.08 || lowConfidenceRatio >= 0.25);
+
+  return {
+    level: blocked ? "blocked" : warning ? "warning" : "good",
+    score,
+    wrongRatio,
+    lowConfidenceRatio,
+    pendingRatio,
+    doneCandidateRatio,
+    reasons: blocked
+      ? reasons.length > 0
+        ? reasons
+        : ["reliability_score_too_low"]
+      : warning
+        ? ["manual_review_recommended"]
+        : [],
+    userAction: blocked
+      ? "retry_required"
+      : warning
+        ? "review_carefully"
+        : "can_confirm",
+  };
+};
+
 const normalizeProjectId = (projectId) =>
   projectId === undefined || projectId === null ? "anonymous" : String(projectId);
 
@@ -141,6 +221,18 @@ export const createPhotoProgressPreview = ({
       };
     });
 
+  const summary = {
+    doneCandidateCount: countByState(cells, "done_candidate"),
+    suspectedWrongCount: countByState(cells, "suspected_wrong"),
+    lowConfidenceCount: countByState(cells, "low_confidence"),
+    pendingCount: countByState(cells, "pending"),
+  };
+  const reliability = createPhotoProgressReliability({
+    ...summary,
+    totalTargetCells: cells.length,
+    qualityLevel: quality.level,
+  });
+
   return {
     version: 1,
     boardNumber,
@@ -152,12 +244,8 @@ export const createPhotoProgressPreview = ({
     qualityLevel: quality.level,
     qualityIssues: quality.issues,
     cells,
-    summary: {
-      doneCandidateCount: countByState(cells, "done_candidate"),
-      suspectedWrongCount: countByState(cells, "suspected_wrong"),
-      lowConfidenceCount: countByState(cells, "low_confidence"),
-      pendingCount: countByState(cells, "pending"),
-    },
+    summary,
+    reliability,
   };
 };
 
