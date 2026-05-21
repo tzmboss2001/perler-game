@@ -84,6 +84,32 @@ const getConfidenceReasons = ({ cell, quality }) => {
 const countByState = (cells, state) =>
   cells.filter((cell) => cell.state === state).length;
 
+const normalizeProjectId = (projectId) =>
+  projectId === undefined || projectId === null ? "anonymous" : String(projectId);
+
+const getBeadColorId = (bead) => {
+  if (!bead) {
+    return "-";
+  }
+
+  if (typeof bead === "string" || typeof bead === "number") {
+    return String(bead);
+  }
+
+  return String(bead.id || bead.colorId || bead.code || "-");
+};
+
+const fnv1a32 = (text) => {
+  let hash = 0x811c9dc5;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+
+  return hash >>> 0;
+};
+
 export const createPhotoProgressPreview = ({
   boardNumber,
   boardSize,
@@ -174,4 +200,182 @@ export const confirmPhotoProgressPreview = ({
 };
 
 export const createPhotoProgressStorageKey = ({ projectId, beadDataHash }) =>
-  `photo-progress:v1:${projectId}:${beadDataHash}`;
+  `photo-progress:v1:${normalizeProjectId(projectId)}:${beadDataHash}`;
+
+export const createPhotoProgressBeadDataHash = (beadData) => {
+  const width = Number(beadData?.width || 0);
+  const height = Number(beadData?.height || 0);
+  const beads = Array.isArray(beadData?.beads) ? beadData.beads : [];
+  const colorIds = beads.map(getBeadColorId).join(",");
+  const raw = `${width}x${height}|${colorIds}`;
+
+  return `v1_${fnv1a32(raw).toString(16).padStart(8, "0")}`;
+};
+
+const canUseStorage = (storage, methodName) =>
+  Boolean(storage && typeof storage[methodName] === "function");
+
+const hasConfirmedCells = (snapshot) =>
+  Boolean(
+    snapshot &&
+      snapshot.completedCount > 0 &&
+      Array.isArray(snapshot.confirmedCells) &&
+      snapshot.confirmedCells.length > 0,
+  );
+
+const createPersistedSnapshot = ({
+  projectId,
+  beadDataHash,
+  snapshot,
+  savedAt,
+}) => ({
+  ...snapshot,
+  projectId: normalizeProjectId(projectId),
+  beadDataHash,
+  savedAt,
+});
+
+export const savePhotoProgressSnapshot = ({
+  storage,
+  projectId,
+  beadDataHash,
+  snapshot,
+  savedAt,
+}) => {
+  const key = createPhotoProgressStorageKey({ projectId, beadDataHash });
+
+  if (!canUseStorage(storage, "setItem")) {
+    return {
+      ok: false,
+      key,
+      reason: "storage_unavailable",
+      message: "本地保存不可用，请稍后重试",
+    };
+  }
+
+  if (!hasConfirmedCells(snapshot)) {
+    return {
+      ok: false,
+      key,
+      reason: "empty_confirmed_cells",
+      message: "没有可保存的确认完成格",
+    };
+  }
+
+  const persistedSnapshot = createPersistedSnapshot({
+    projectId,
+    beadDataHash,
+    snapshot,
+    savedAt,
+  });
+
+  try {
+    storage.setItem(key, JSON.stringify(persistedSnapshot));
+    return {
+      ok: true,
+      key,
+      snapshot: persistedSnapshot,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      key,
+      reason: "save_failed",
+      message: "保存失败，请释放浏览器空间后重试",
+      error,
+    };
+  }
+};
+
+export const readPhotoProgressSnapshot = ({
+  storage,
+  projectId,
+  beadDataHash,
+}) => {
+  const key = createPhotoProgressStorageKey({ projectId, beadDataHash });
+
+  if (!canUseStorage(storage, "getItem")) {
+    return {
+      status: "missing",
+      key,
+      snapshot: null,
+    };
+  }
+
+  const rawSnapshot = storage.getItem(key);
+
+  if (!rawSnapshot) {
+    return {
+      status: "missing",
+      key,
+      snapshot: null,
+    };
+  }
+
+  let snapshot;
+  try {
+    snapshot = JSON.parse(rawSnapshot);
+  } catch (error) {
+    return {
+      status: "invalid",
+      key,
+      snapshot: null,
+      error,
+    };
+  }
+
+  if (snapshot.beadDataHash !== beadDataHash) {
+    return {
+      status: "hash_mismatch",
+      key,
+      snapshot: null,
+    };
+  }
+
+  if (snapshot.projectId !== normalizeProjectId(projectId)) {
+    return {
+      status: "project_mismatch",
+      key,
+      snapshot: null,
+    };
+  }
+
+  return {
+    status: "restored",
+    key,
+    snapshot,
+  };
+};
+
+export const clearPhotoProgressSnapshot = ({
+  storage,
+  projectId,
+  beadDataHash,
+}) => {
+  const key = createPhotoProgressStorageKey({ projectId, beadDataHash });
+
+  if (!canUseStorage(storage, "removeItem")) {
+    return {
+      ok: false,
+      key,
+      reason: "storage_unavailable",
+      message: "本地保存不可用，请稍后重试",
+    };
+  }
+
+  try {
+    storage.removeItem(key);
+    return {
+      ok: true,
+      key,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      key,
+      reason: "clear_failed",
+      message: "清除失败，请稍后重试",
+      error,
+    };
+  }
+};
