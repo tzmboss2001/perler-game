@@ -45,6 +45,13 @@ interface PhotoProgressPreviewCell {
   confidenceReasons: string[];
 }
 
+interface PhotoProgressReliability {
+  level: "good" | "warning" | "blocked";
+  score: number;
+  reasons: string[];
+  userAction: "can_confirm" | "review_carefully" | "retry_required";
+}
+
 interface PhotoProgressPreview {
   boardNumber: number;
   boardSize: number;
@@ -59,6 +66,7 @@ interface PhotoProgressPreview {
     lowConfidenceCount: number;
     pendingCount: number;
   };
+  reliability?: PhotoProgressReliability;
 }
 
 const CORNER_LABELS = ["左上", "右上", "右下", "左下"];
@@ -78,6 +86,42 @@ const getQualityLabel = (qualityLevel?: PhotoProgressPreview["qualityLevel"]) =>
     default:
       return "待识别";
   }
+};
+
+const getReliabilityGateMessage = (
+  reliability?: PhotoProgressReliability | null,
+) => {
+  if (!reliability || reliability.userAction === "can_confirm") {
+    return null;
+  }
+
+  if (
+    reliability.level === "blocked" ||
+    reliability.userAction === "retry_required"
+  ) {
+    return {
+      tone: "blocked" as const,
+      title: "本次识别不可靠，暂时不能保存",
+      description:
+        "疑似错误、低可信或未完成比例过高。请重新拍摄、重新校准四角，或重新选取空孔参考后再识别。",
+      reasons: reliability.reasons || [],
+    };
+  }
+
+  if (
+    reliability.level === "warning" ||
+    reliability.userAction === "review_carefully"
+  ) {
+    return {
+      tone: "warning" as const,
+      title: "本次识别需要谨慎复核",
+      description:
+        "可以进入确认保存，但只建议勾选你肉眼确认无误的候选完成格。",
+      reasons: reliability.reasons || [],
+    };
+  }
+
+  return null;
 };
 
 const getStorage = (storage?: Storage) => {
@@ -241,6 +285,10 @@ const PhotoProgressSyncModal = ({
   const confirmationModel = useMemo(
     () => (preview ? createPhotoProgressConfirmationModel({ preview }) : null),
     [preview],
+  );
+  const reliabilityGateMessage = useMemo(
+    () => getReliabilityGateMessage(confirmationModel?.reliability),
+    [confirmationModel],
   );
 
   useEffect(() => {
@@ -690,6 +738,24 @@ const PhotoProgressSyncModal = ({
                     ? ` · ${preview.qualityIssues.slice(0, 2).join(" / ")}`
                     : ""}
                 </div>
+                {reliabilityGateMessage && (
+                  <div
+                    style={{
+                      ...styles.reliabilityGateBox,
+                      ...(reliabilityGateMessage.tone === "warning"
+                        ? styles.reliabilityWarningBox
+                        : {}),
+                    }}
+                  >
+                    <strong>{reliabilityGateMessage.title}</strong>
+                    <span>{reliabilityGateMessage.description}</span>
+                    {reliabilityGateMessage.reasons.length > 0 && (
+                      <small>
+                        原因：{reliabilityGateMessage.reasons.slice(0, 3).join(" / ")}
+                      </small>
+                    )}
+                  </div>
+                )}
                 <div
                   style={{
                     ...styles.previewGrid,
@@ -1084,6 +1150,23 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#a43d4b",
     fontSize: "13px",
     fontWeight: 800,
+  },
+  reliabilityGateBox: {
+    display: "grid",
+    gap: "4px",
+    padding: "10px 12px",
+    borderRadius: "14px",
+    background: "rgba(255, 104, 120, 0.12)",
+    border: "1px solid rgba(255, 104, 120, 0.34)",
+    color: "#a43d4b",
+    fontSize: "12px",
+    fontWeight: 800,
+    lineHeight: 1.45,
+  },
+  reliabilityWarningBox: {
+    background: "rgba(255, 193, 86, 0.15)",
+    border: "1px solid rgba(255, 193, 86, 0.42)",
+    color: "#8a641c",
   },
   previewPanel: {
     display: "grid",

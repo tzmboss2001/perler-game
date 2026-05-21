@@ -63,6 +63,19 @@ test("photo progress modal exposes phase1c confirm save flow without backend pro
   assert.doesNotMatch(source, /fetch\(/);
 });
 
+test("photo progress modal exposes reliability gate status before confirmation", () => {
+  const source = read(modalPath);
+
+  assert.match(source, /getReliabilityGateMessage/);
+  assert.match(source, /reliabilityGateMessage/);
+  assert.match(source, /confirmationModel\?\.reliability/);
+  assert.match(source, /confirmationModel\?\.canSaveDefaultSelection/);
+  assert.match(source, /reliabilityGateBox/);
+  assert.match(source, /reliabilityWarningBox/);
+  assert.match(source, /retry_required/);
+  assert.match(source, /review_carefully/);
+});
+
 test("photo progress modal is fixed overlay and does not occupy making layout", () => {
   const source = read(modalPath);
 
