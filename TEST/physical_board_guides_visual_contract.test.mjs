@@ -10,7 +10,7 @@ test("making overlay and export renderers draw dashed ten-cell cross guides from
   assert.match(makingSource, /tenCellCrossGuides/);
   assert.match(
     makingSource,
-    /setLineDash\(\[Math\.max\(2, drawCellSize \* 0\.28\), Math\.max\(2, drawCellSize \* 0\.22\)\]\)/,
+    /ctx\.setLineDash\(\[\s*Math\.max\(2, Math\.min\(8, drawCellSize \* 0\.28\)\),\s*Math\.max\(2, Math\.min\(7, drawCellSize \* 0\.22\)\),\s*\]\)/,
   );
 
   assert.match(exportSource, /getPhysicalBoardTenCellCrossGuides/);

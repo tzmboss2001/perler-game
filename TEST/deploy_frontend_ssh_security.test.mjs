@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync("SCRIPT/deploy_frontend_ssh.py", "utf8");
+const source = readFileSync("SCRIPT/deploy_frontend_ssh.py", "utf8").replace(
+  /\r\n/g,
+  "\n",
+);
 
 test("deploy script prompts for ssh password instead of requiring command-line password", () => {
   assert.match(source, /import getpass/);
@@ -24,7 +27,7 @@ test("deploy script does not embed sudo password in remote shell command", () =>
 
 test("deploy script sends sudo password without pty echo", () => {
   const match = source.match(
-    /def exec_cmd_with_password\([\s\S]*?\n\n\ndef sudo_bash/,
+    /def exec_cmd_with_password\([\s\S]*?(?=\n\n\ndef \w+)/,
   );
   assert.ok(match);
   assert.doesNotMatch(match[0], /get_pty=True/);
