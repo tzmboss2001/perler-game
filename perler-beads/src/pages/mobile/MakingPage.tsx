@@ -103,7 +103,7 @@ import { getToken } from "../../services/api/authApi";
 import BannerAd from "../../components/ads/BannerAd";
 import RewardedUnlockModal from "../../components/ads/RewardedUnlockModal";
 import { adService } from "../../services/adService";
-import BoardVisionAssistModal from "../../components/BoardVisionAssistModal";
+import PhotoProgressSyncModal from "../../components/PhotoProgressSyncModal";
 import countBeadUsage from "../../services/beadUsageService";
 import beadInventoryService from "../../services/beadInventoryService";
 
@@ -328,7 +328,7 @@ const MakingPage: React.FC = () => {
   const [showRewardedUnlockModal, setShowRewardedUnlockModal] = useState(false);
   const pendingExportAfterRewardRef = useRef<(() => void) | null>(null);
   const [showReplaceModal, setShowReplaceModal] = useState(false);
-  const [showVisionAssist, setShowVisionAssist] = useState(false);
+  const [showPhotoProgressSync, setShowPhotoProgressSync] = useState(false);
   const [lastReplaceSnapshot, setLastReplaceSnapshot] =
     useState<ReplaceHistoryState | null>(null);
   const [redoReplaceSnapshot, setRedoReplaceSnapshot] =
@@ -520,6 +520,13 @@ const MakingPage: React.FC = () => {
         ? `local_${localProjectId}`
         : `draft_${beadData.width}x${beadData.height}`;
     return `making_single_board_state_${scope}`;
+  }, [beadData, localProjectId, projectId]);
+
+  const photoProgressProjectId = useMemo(() => {
+    if (!beadData) return "anonymous";
+    if (projectId) return `project_${projectId}`;
+    if (localProjectId) return `local_${localProjectId}`;
+    return `draft_${beadData.width}x${beadData.height}`;
   }, [beadData, localProjectId, projectId]);
 
   const cloneBeadData = useCallback((data: BeadPixelData): BeadPixelData => {
@@ -1502,9 +1509,6 @@ const MakingPage: React.FC = () => {
     selection.blockY,
     visionBoardRecommendation,
   ]);
-
-  const visionInitialColorId =
-    selection.type === "color" ? (selection.colorId ?? null) : null;
 
   const selectedBlockAnchor = useMemo(() => {
     if (!beadData || selection.type === null) return null;
@@ -5929,22 +5933,6 @@ const MakingPage: React.FC = () => {
                       </button>
                     </div>
                     <div style={styles.settingRow}>
-                      <span style={styles.settingLabel}>辅助</span>
-                      <button
-                        style={{
-                          ...styles.actionBtn,
-                          padding: "8px 12px",
-                          fontSize: "12px",
-                        }}
-                        onClick={() => {
-                          setShowSettings(false);
-                          setShowVisionAssist(true);
-                        }}
-                      >
-                        打开
-                      </button>
-                    </div>
-                    <div style={styles.settingRow}>
                       <span style={styles.settingLabel}>自动切换</span>
                       <button
                         style={{
@@ -6041,7 +6029,7 @@ const MakingPage: React.FC = () => {
                   </button>
                 </div>
                 <div style={styles.settingRow}>
-                  <span style={styles.settingLabel}>视觉辅助（试验）</span>
+                  <span style={styles.settingLabel}>拍照同步（试验）</span>
                   <button
                     style={{
                       ...styles.actionBtn,
@@ -6050,10 +6038,10 @@ const MakingPage: React.FC = () => {
                     }}
                     onClick={() => {
                       setShowSettings(false);
-                      setShowVisionAssist(true);
+                      setShowPhotoProgressSync(true);
                     }}
                   >
-                    试用
+                    开始
                   </button>
                 </div>
                 <div style={styles.settingDivider} />
@@ -6479,7 +6467,7 @@ const MakingPage: React.FC = () => {
                             常用工具
                           </span>
                           <span style={styles.makingDesktopSidebarSlotText}>
-                            图纸导出、视觉辅助和常用开关
+                            图纸导出、拍照同步和常用开关
                           </span>
                         </div>
                         {showSidebarReplaceAction && (
@@ -6509,10 +6497,10 @@ const MakingPage: React.FC = () => {
                           style={styles.makingDesktopSidebarActionBtn}
                           onClick={() => {
                             setShowSettings(false);
-                            setShowVisionAssist(true);
+                            setShowPhotoProgressSync(true);
                           }}
                         >
-                          视觉辅助
+                          拍照同步
                         </button>
                       </div>
                       <div style={styles.makingDesktopSidebarToggleList}>
@@ -7132,13 +7120,13 @@ const MakingPage: React.FC = () => {
       )}
 
       {beadData && visionBoardRecommendation && (
-        <BoardVisionAssistModal
-          visible={showVisionAssist}
-          onClose={() => setShowVisionAssist(false)}
+        <PhotoProgressSyncModal
+          visible={showPhotoProgressSync}
+          onClose={() => setShowPhotoProgressSync(false)}
           beadData={beadData}
           boardSize={visionBoardRecommendation.boardSize}
           initialBoardIndex={visionInitialBoardIndex}
-          initialColorId={visionInitialColorId}
+          projectId={photoProgressProjectId}
         />
       )}
 
