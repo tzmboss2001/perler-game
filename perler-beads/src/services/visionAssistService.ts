@@ -253,21 +253,21 @@ const evaluateVisionQuality = (emptyReferenceRgb: VisionRgb): VisionDetectionQua
   const issues: string[] = [];
 
   if (brightness < 95) {
-    issues.push("鐢婚潰鍋忔殫");
+    issues.push("画面偏暗");
   } else if (brightness < 125) {
-    issues.push("鍏夌嚎鐣ユ殫");
+    issues.push("光线略暗");
   }
 
   if (brightness > 242) {
-    issues.push("绌烘澘鍖哄煙杩囦寒锛屽彲鑳芥湁鍙嶅厜");
+    issues.push("空板区域过亮，可能有反光");
   } else if (brightness > 228) {
-    issues.push("绌烘澘鍖哄煙鍋忎寒");
+    issues.push("空板区域偏亮");
   }
 
   if (tint > 34) {
-    issues.push("鐜鍋忚壊鏄庢樉");
+    issues.push("环境偏色明显");
   } else if (tint > 22) {
-    issues.push("鐜鏈夎交寰亸鑹?);
+    issues.push("环境有轻微偏色");
   }
 
   let level: VisionDetectionQuality["level"] = "good";
@@ -285,6 +285,7 @@ const evaluateVisionQuality = (emptyReferenceRgb: VisionRgb): VisionDetectionQua
     issues,
   };
 };
+
 export const createVisionFrameSignature = ({
   frameData,
   frameWidth,
@@ -1145,7 +1146,7 @@ export const splitBeadDataIntoBoards = (
 
       boards.push({
         index: boardIndex,
-        label: `鏉?{boardIndex + 1}`,
+        label: `板${boardIndex + 1}`,
         startX,
         startY,
         boardSize,
@@ -1376,10 +1377,10 @@ export const analyzeVisionProgress = ({
 
   quality.glareRatio = glareRatio;
   if (glareRatio >= 0.28) {
-    quality.issues.push("灞€閮ㄥ弽鍏夊亸寮?);
+    quality.issues.push("局部反光偏强");
     quality.level = "poor";
   } else if (glareRatio >= 0.12) {
-    quality.issues.push("鏈夊皯閲忓弽鍏?);
+    quality.issues.push("有少量反光");
     if (quality.level === "good") {
       quality.level = "warning";
     }
