@@ -86,8 +86,24 @@ const createPreview = () =>
     },
   });
 
+const createReliablePreview = () => {
+  const preview = createPreview();
+
+  return {
+    ...preview,
+    reliability: {
+      ...preview.reliability,
+      level: "good",
+      userAction: "can_confirm",
+      reasons: [],
+    },
+  };
+};
+
 test("confirmation model selects only high-confidence done candidates by default", () => {
-  const model = createPhotoProgressConfirmationModel({ preview: createPreview() });
+  const model = createPhotoProgressConfirmationModel({
+    preview: createReliablePreview(),
+  });
 
   assert.deepEqual(model.defaultSelectedCellIndexes, [0]);
   assert.deepEqual(model.selectableCellIndexes, [0]);
@@ -99,7 +115,7 @@ test("confirmation model selects only high-confidence done candidates by default
 
 test("confirmation model rejects previews without selectable done candidates", () => {
   const preview = {
-    ...createPreview(),
+    ...createReliablePreview(),
     cells: createPreview().cells.map((cell) => ({
       ...cell,
       state: cell.state === "done_candidate" ? "low_confidence" : cell.state,
@@ -107,6 +123,27 @@ test("confirmation model rejects previews without selectable done candidates", (
   };
   const model = createPhotoProgressConfirmationModel({ preview });
 
+  assert.deepEqual(model.defaultSelectedCellIndexes, []);
+  assert.equal(model.canSaveDefaultSelection, false);
+});
+
+test("confirmation model blocks saving when preview reliability requires retry", () => {
+  const basePreview = createPreview();
+  const preview = {
+    ...basePreview,
+    reliability: {
+      ...basePreview.reliability,
+      level: "blocked",
+      userAction: "retry_required",
+      reasons: ["wrong_ratio_too_high"],
+    },
+  };
+
+  const model = createPhotoProgressConfirmationModel({ preview });
+
+  assert.equal(model.reliability.level, "blocked");
+  assert.deepEqual(model.blockedReasons, ["wrong_ratio_too_high"]);
+  assert.deepEqual(model.selectableCellIndexes, []);
   assert.deepEqual(model.defaultSelectedCellIndexes, []);
   assert.equal(model.canSaveDefaultSelection, false);
 });
