@@ -52,6 +52,11 @@ interface PhotoProgressReliability {
   userAction: "can_confirm" | "review_carefully" | "retry_required";
 }
 
+interface CalibrationGridLine {
+  from: VisionPoint;
+  to: VisionPoint;
+}
+
 interface PhotoProgressPreview {
   boardNumber: number;
   boardSize: number;
@@ -74,6 +79,46 @@ const DEFAULT_TOLERANCE = 42;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+
+const interpolatePoint = (
+  start: VisionPoint,
+  end: VisionPoint,
+  ratio: number,
+): VisionPoint => ({
+  x: start.x + (end.x - start.x) * ratio,
+  y: start.y + (end.y - start.y) * ratio,
+});
+
+const createCalibrationGridLines = (
+  corners: VisionPoint[],
+  imageSize: { width: number; height: number },
+  divisions = 6,
+): CalibrationGridLine[] => {
+  if (corners.length !== 4 || !imageSize.width || !imageSize.height) {
+    return [];
+  }
+
+  const [topLeft, topRight, bottomRight, bottomLeft] = corners.map((corner) => ({
+    x: (corner.x / imageSize.width) * 100,
+    y: (corner.y / imageSize.height) * 100,
+  }));
+  const lines: CalibrationGridLine[] = [];
+
+  for (let index = 1; index < divisions; index += 1) {
+    const ratio = index / divisions;
+
+    lines.push({
+      from: interpolatePoint(topLeft, topRight, ratio),
+      to: interpolatePoint(bottomLeft, bottomRight, ratio),
+    });
+    lines.push({
+      from: interpolatePoint(topLeft, bottomLeft, ratio),
+      to: interpolatePoint(topRight, bottomRight, ratio),
+    });
+  }
+
+  return lines;
+};
 
 const getQualityLabel = (qualityLevel?: PhotoProgressPreview["qualityLevel"]) => {
   switch (qualityLevel) {
@@ -289,6 +334,10 @@ const PhotoProgressSyncModal = ({
   const reliabilityGateMessage = useMemo(
     () => getReliabilityGateMessage(confirmationModel?.reliability),
     [confirmationModel],
+  );
+  const calibrationGridLines = useMemo(
+    () => createCalibrationGridLines(corners, imageSize),
+    [corners, imageSize],
   );
 
   useEffect(() => {
@@ -615,6 +664,24 @@ const PhotoProgressSyncModal = ({
                   onLoad={(event) => drawImageToCanvas(event.currentTarget)}
                   onClick={handleImageClick}
                 />
+                {calibrationGridLines.length > 0 && (
+                  <svg
+                    style={styles.calibrationGridOverlay}
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    {calibrationGridLines.map((line, index) => (
+                      <line
+                        key={`${line.from.x}-${line.from.y}-${index}`}
+                        x1={`${line.from.x}%`}
+                        y1={`${line.from.y}%`}
+                        x2={`${line.to.x}%`}
+                        y2={`${line.to.y}%`}
+                        style={styles.calibrationGridLine}
+                      />
+                    ))}
+                  </svg>
+                )}
                 {corners.map((point, index) => (
                   <button
                     key={`${point.x}-${point.y}-${index}`}
@@ -1043,6 +1110,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
   hiddenCanvas: {
     display: "none",
+  },
+  calibrationGridOverlay: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+    zIndex: 1,
+  },
+  calibrationGridLine: {
+    stroke: "rgba(70, 200, 243, 0.52)",
+    strokeWidth: 0.35,
+    vectorEffect: "non-scaling-stroke",
   },
   cornerMarker: {
     position: "absolute",

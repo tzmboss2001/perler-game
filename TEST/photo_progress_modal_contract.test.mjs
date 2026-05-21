@@ -76,6 +76,17 @@ test("photo progress modal exposes reliability gate status before confirmation",
   assert.match(source, /review_carefully/);
 });
 
+test("photo progress modal exposes calibration grid overlay after four corners", () => {
+  const source = read(modalPath);
+
+  assert.match(source, /createCalibrationGridLines/);
+  assert.match(source, /calibrationGridLines/);
+  assert.match(source, /calibrationGridOverlay/);
+  assert.match(source, /calibrationGridLine/);
+  assert.match(source, /pointerEvents:\s*"none"/);
+  assert.match(source, /<svg/);
+});
+
 test("photo progress modal is fixed overlay and does not occupy making layout", () => {
   const source = read(modalPath);
 
