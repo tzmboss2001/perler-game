@@ -71,15 +71,16 @@ test("photo progress modal is fixed overlay and does not occupy making layout", 
   assert.doesNotMatch(source, /position:\s*"static"/);
 });
 
-test("making page wires photo sync entry without replacing existing vision assist", () => {
+test("making page exposes photo sync entry and removes legacy realtime vision assist", () => {
   const source = read(makingPath);
 
   assert.match(source, /PhotoProgressSyncModal/);
   assert.match(source, /showPhotoProgressSync/);
   assert.match(source, /setShowPhotoProgressSync\(true\)/);
   assert.match(source, /拍照同步/);
-  assert.match(source, /setShowVisionAssist\(true\)/);
-  assert.match(source, /BoardVisionAssistModal/);
+  assert.doesNotMatch(source, /showVisionAssist/);
+  assert.doesNotMatch(source, /setShowVisionAssist\(true\)/);
+  assert.doesNotMatch(source, /BoardVisionAssistModal/);
 });
 
 test("making page passes stable project id into photo progress sync modal", () => {
