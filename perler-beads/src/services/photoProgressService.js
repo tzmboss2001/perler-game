@@ -199,6 +199,31 @@ export const confirmPhotoProgressPreview = ({
   };
 };
 
+export const createPhotoProgressConfirmationModel = ({
+  preview,
+  minConfidence = 0.75,
+}) => {
+  const cells = Array.isArray(preview?.cells) ? preview.cells : [];
+  const selectableCells = cells.filter(
+    (cell) =>
+      cell.state === "done_candidate" &&
+      Number(cell.confidence || 0) >= minConfidence,
+  );
+
+  return {
+    boardNumber: preview?.boardNumber || 0,
+    doneCandidateCount: countByState(cells, "done_candidate"),
+    selectableCellIndexes: selectableCells.map((cell) => cell.index),
+    defaultSelectedCellIndexes: selectableCells.map((cell) => cell.index),
+    canSaveDefaultSelection: selectableCells.length > 0,
+    blockedCounts: {
+      suspectedWrong: countByState(cells, "suspected_wrong"),
+      lowConfidence: countByState(cells, "low_confidence"),
+      pending: countByState(cells, "pending"),
+    },
+  };
+};
+
 export const createPhotoProgressStorageKey = ({ projectId, beadDataHash }) =>
   `photo-progress:v1:${normalizeProjectId(projectId)}:${beadDataHash}`;
 

@@ -506,6 +506,13 @@ const MakingPage: React.FC = () => {
     return `making_single_board_state_${scope}`;
   }, [beadData, localProjectId, projectId]);
 
+  const photoProgressProjectId = useMemo(() => {
+    if (!beadData) return "anonymous";
+    if (projectId) return `project_${projectId}`;
+    if (localProjectId) return `local_${localProjectId}`;
+    return `draft_${beadData.width}x${beadData.height}`;
+  }, [beadData, localProjectId, projectId]);
+
   const cloneBeadData = useCallback((data: BeadPixelData): BeadPixelData => {
     return {
       ...data,
@@ -6740,6 +6747,7 @@ const MakingPage: React.FC = () => {
           beadData={beadData}
           boardSize={visionBoardRecommendation.boardSize}
           initialBoardIndex={visionInitialBoardIndex}
+          projectId={photoProgressProjectId}
         />
       )}
 

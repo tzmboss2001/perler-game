@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "@phosphor-icons/react";
 import type { BeadPixelData } from "../services/colorMatchService";
-import { createPhotoProgressPreview } from "../services/photoProgressService.js";
+import {
+  confirmPhotoProgressPreview,
+  createPhotoProgressBeadDataHash,
+  createPhotoProgressConfirmationModel,
+  createPhotoProgressPreview,
+  savePhotoProgressSnapshot,
+} from "../services/photoProgressService.js";
 import {
   VisionPoint,
   VisionRgb,
@@ -14,6 +20,7 @@ export type PhotoProgressSyncStep =
   | "corners"
   | "empty-reference"
   | "preview"
+  | "confirm"
   | "error";
 
 interface PhotoProgressSyncModalProps {
@@ -22,6 +29,9 @@ interface PhotoProgressSyncModalProps {
   beadData: BeadPixelData;
   boardSize: number;
   initialBoardIndex?: number;
+  projectId?: string | number;
+  storage?: Storage;
+  onSaved?: (snapshot: unknown) => void;
 }
 
 interface PhotoProgressPreviewCell {
@@ -70,6 +80,18 @@ const getQualityLabel = (qualityLevel?: PhotoProgressPreview["qualityLevel"]) =>
   }
 };
 
+const getStorage = (storage?: Storage) => {
+  if (storage) {
+    return storage;
+  }
+
+  if (typeof window !== "undefined") {
+    return window.localStorage;
+  }
+
+  return null;
+};
+
 const getStepTitle = (
   step: PhotoProgressSyncStep,
   corners: VisionPoint[],
@@ -89,6 +111,9 @@ const getStepTitle = (
   }
   if (step === "preview") {
     return "识别预览，不会自动保存进度";
+  }
+  if (step === "confirm") {
+    return "确认保存拍照同步结果";
   }
   if (step === "error") {
     return "识别准备失败";
@@ -182,6 +207,9 @@ const PhotoProgressSyncModal = ({
   beadData,
   boardSize,
   initialBoardIndex = 0,
+  projectId = "anonymous",
+  storage,
+  onSaved,
 }: PhotoProgressSyncModalProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -203,6 +231,17 @@ const PhotoProgressSyncModal = ({
   const [emptyPoint, setEmptyPoint] = useState<VisionPoint | null>(null);
   const [preview, setPreview] = useState<PhotoProgressPreview | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [selectedCandidateIndexes, setSelectedCandidateIndexes] = useState<
+    number[]
+  >([]);
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [saveErrorText, setSaveErrorText] = useState<string | null>(null);
+  const [isSavingProgress, setIsSavingProgress] = useState(false);
+
+  const confirmationModel = useMemo(
+    () => (preview ? createPhotoProgressConfirmationModel({ preview }) : null),
+    [preview],
+  );
 
   useEffect(() => {
     if (!visible) {
@@ -221,6 +260,19 @@ const PhotoProgressSyncModal = ({
     [],
   );
 
+  useEffect(() => {
+    if (!confirmationModel) {
+      setSelectedCandidateIndexes([]);
+      setReviewConfirmed(false);
+      setSaveErrorText(null);
+      return;
+    }
+
+    setSelectedCandidateIndexes(confirmationModel.defaultSelectedCellIndexes);
+    setReviewConfirmed(false);
+    setSaveErrorText(null);
+  }, [confirmationModel]);
+
   if (!visible) {
     return null;
   }
@@ -235,6 +287,10 @@ const PhotoProgressSyncModal = ({
     setEmptyPoint(null);
     setPreview(null);
     setErrorText(null);
+    setSelectedCandidateIndexes([]);
+    setReviewConfirmed(false);
+    setSaveErrorText(null);
+    setIsSavingProgress(false);
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
       objectUrlRef.current = null;
@@ -277,6 +333,8 @@ const PhotoProgressSyncModal = ({
     setEmptyPoint(null);
     setPreview(null);
     setErrorText(null);
+    setSaveErrorText(null);
+    setReviewConfirmed(false);
   };
 
   const updateCorner = (point: VisionPoint) => {
@@ -297,6 +355,7 @@ const PhotoProgressSyncModal = ({
       return next;
     });
     setPreview(null);
+    setSaveErrorText(null);
   };
 
   const handleImageClick = (event: React.MouseEvent<HTMLImageElement>) => {
@@ -366,7 +425,62 @@ const PhotoProgressSyncModal = ({
 
     setPreview(nextPreview);
     setErrorText(null);
+    setSaveErrorText(null);
     setStep("preview");
+  };
+
+  const handleEnterConfirmProgress = () => {
+    if (!preview || !confirmationModel?.canSaveDefaultSelection) {
+      return;
+    }
+
+    setSelectedCandidateIndexes(confirmationModel.defaultSelectedCellIndexes);
+    setReviewConfirmed(false);
+    setSaveErrorText(null);
+    setStep("confirm");
+  };
+
+  const handleToggleCandidate = (cellIndex: number) => {
+    setSelectedCandidateIndexes((previous) => {
+      if (previous.includes(cellIndex)) {
+        return previous.filter((index) => index !== cellIndex);
+      }
+      return [...previous, cellIndex];
+    });
+    setSaveErrorText(null);
+  };
+
+  const handleSaveConfirmedProgress = () => {
+    if (!preview || !reviewConfirmed || selectedCandidateIndexes.length === 0) {
+      return;
+    }
+
+    setIsSavingProgress(true);
+    setSaveErrorText(null);
+    const beadDataHash = createPhotoProgressBeadDataHash(beadData);
+    const confirmedAt = Date.now();
+    const snapshot = confirmPhotoProgressPreview({
+      preview,
+      confirmedCellIndexes: selectedCandidateIndexes,
+      confirmedAt,
+    });
+    const result = savePhotoProgressSnapshot({
+      storage: getStorage(storage),
+      projectId,
+      beadDataHash,
+      snapshot,
+      savedAt: Date.now(),
+    });
+
+    if (!result.ok) {
+      setSaveErrorText(result.message || "保存失败，请稍后重试");
+      setIsSavingProgress(false);
+      return;
+    }
+
+    onSaved?.(result.snapshot);
+    setIsSavingProgress(false);
+    onClose();
   };
 
   const pointToPercent = (point: VisionPoint) => ({
@@ -375,6 +489,16 @@ const PhotoProgressSyncModal = ({
   });
 
   const canPreview = corners.length === 4 && Boolean(emptyReferenceRgb);
+  const selectedCandidateSet = new Set(selectedCandidateIndexes);
+  const selectableCells =
+    preview?.cells.filter((cell) =>
+      confirmationModel?.selectableCellIndexes.includes(cell.index),
+    ) || [];
+  const canSaveConfirmedProgress =
+    Boolean(preview) &&
+    reviewConfirmed &&
+    selectedCandidateIndexes.length > 0 &&
+    !isSavingProgress;
 
   return (
     <div style={styles.backdrop} role="dialog" aria-modal="true">
@@ -594,6 +718,88 @@ const PhotoProgressSyncModal = ({
                   <span><i style={styles.wrongDot} />疑似错误</span>
                   <span><i style={styles.lowDot} />低可信</span>
                 </div>
+                {step === "preview" && (
+                  <button
+                    style={styles.primaryButton}
+                    disabled={!confirmationModel?.canSaveDefaultSelection}
+                    onClick={handleEnterConfirmProgress}
+                  >
+                    进入确认保存
+                  </button>
+                )}
+                {step === "confirm" && confirmationModel && (
+                  <div style={styles.confirmPanel}>
+                    <div style={styles.confirmHeader}>
+                      <div>
+                        <strong>确认保存拍照同步结果</strong>
+                        <span style={styles.confirmHint}>
+                          只会保存你确认的候选完成格；疑似错误、未完成和低可信区域不会写入完成。
+                        </span>
+                      </div>
+                      <span style={styles.confirmCount}>
+                        {selectedCandidateIndexes.length} / {selectableCells.length}
+                      </span>
+                    </div>
+
+                    <div style={styles.confirmBlockedLine}>
+                      不保存：疑似错误 {confirmationModel.blockedCounts.suspectedWrong}，
+                      低可信 {confirmationModel.blockedCounts.lowConfidence}，未完成{" "}
+                      {confirmationModel.blockedCounts.pending}
+                    </div>
+
+                    <div style={styles.candidateList}>
+                      {selectableCells.map((cell) => (
+                        <label key={cell.index} style={styles.candidateItem}>
+                          <input
+                            type="checkbox"
+                            checked={selectedCandidateSet.has(cell.index)}
+                            onChange={() => handleToggleCandidate(cell.index)}
+                          />
+                          <span>
+                            第 {cell.y + 1} 行 / 第 {cell.x + 1} 列 ·{" "}
+                            {cell.targetColorId || "未知色号"} · 可信度{" "}
+                            {Math.round(cell.confidence * 100)}%
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <label style={styles.reviewCheck}>
+                      <input
+                        type="checkbox"
+                        checked={reviewConfirmed}
+                        onChange={(event) => {
+                          setReviewConfirmed(event.target.checked);
+                          setSaveErrorText(null);
+                        }}
+                      />
+                      <span>我已复核候选完成区域，只保存我确认的完成格</span>
+                    </label>
+
+                    {saveErrorText && (
+                      <div style={styles.errorBox}>{saveErrorText}</div>
+                    )}
+
+                    <div style={styles.confirmActions}>
+                      <button
+                        style={styles.secondaryButton}
+                        onClick={() => {
+                          setSaveErrorText(null);
+                          setStep("preview");
+                        }}
+                      >
+                        返回预览
+                      </button>
+                      <button
+                        style={styles.primaryButton}
+                        disabled={!canSaveConfirmedProgress}
+                        onClick={handleSaveConfirmedProgress}
+                      >
+                        {isSavingProgress ? "保存中..." : "保存本次同步结果"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -886,6 +1092,82 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "18px",
     background: "rgba(255,255,255,0.88)",
     border: "1px solid rgba(255, 188, 161, 0.34)",
+  },
+  confirmPanel: {
+    display: "grid",
+    gap: "10px",
+    padding: "12px",
+    borderRadius: "16px",
+    background: "rgba(245, 250, 255, 0.78)",
+    border: "1px solid rgba(118, 198, 239, 0.34)",
+  },
+  confirmHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "12px",
+  },
+  confirmHint: {
+    display: "block",
+    marginTop: "4px",
+    fontSize: "12px",
+    fontWeight: 700,
+    color: "#837691",
+    lineHeight: 1.5,
+  },
+  confirmCount: {
+    flexShrink: 0,
+    padding: "5px 9px",
+    borderRadius: "999px",
+    background: "rgba(70, 206, 143, 0.15)",
+    color: "#167856",
+    fontSize: "12px",
+    fontWeight: 900,
+  },
+  confirmBlockedLine: {
+    padding: "7px 9px",
+    borderRadius: "12px",
+    background: "rgba(255,255,255,0.78)",
+    color: "#837691",
+    fontSize: "12px",
+    fontWeight: 800,
+    lineHeight: 1.5,
+  },
+  candidateList: {
+    maxHeight: "150px",
+    overflow: "auto",
+    display: "grid",
+    gap: "6px",
+    padding: "2px",
+  },
+  candidateItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 9px",
+    borderRadius: "12px",
+    background: "rgba(255,255,255,0.84)",
+    border: "1px solid rgba(255, 188, 161, 0.26)",
+    fontSize: "12px",
+    fontWeight: 800,
+    color: "#5f5573",
+  },
+  reviewCheck: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "9px 10px",
+    borderRadius: "13px",
+    background: "rgba(255,255,255,0.9)",
+    border: "1px solid rgba(255, 188, 161, 0.3)",
+    fontSize: "12px",
+    fontWeight: 900,
+  },
+  confirmActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "8px",
+    flexWrap: "wrap",
   },
   summaryGrid: {
     display: "grid",

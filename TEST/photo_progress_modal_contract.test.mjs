@@ -28,7 +28,7 @@ test("photo progress modal exposes upload, calibration, reference, preview, and 
   assert.match(source, /"error"/);
 });
 
-test("photo progress modal uses static image upload and recognition preview only", () => {
+test("photo progress modal uses static image upload and recognition preview before confirmation", () => {
   const source = read(modalPath);
 
   assert.match(source, /type="file"/);
@@ -41,10 +41,26 @@ test("photo progress modal uses static image upload and recognition preview only
   assert.match(source, /runPreview/);
   assert.match(source, /analyzeVisionProgress/);
   assert.match(source, /createPhotoProgressPreview/);
-  assert.doesNotMatch(source, /confirmPhotoProgressPreview/);
   assert.doesNotMatch(source, /localStorage\.setItem/);
   assert.doesNotMatch(source, /projectApi\.updateProgress/);
   assert.doesNotMatch(source, /findBestVisionBoardMatch/);
+});
+
+test("photo progress modal exposes phase1c confirm save flow without backend progress writes", () => {
+  const source = read(modalPath);
+
+  assert.match(source, /"confirm"/);
+  assert.match(source, /createPhotoProgressConfirmationModel/);
+  assert.match(source, /confirmPhotoProgressPreview/);
+  assert.match(source, /createPhotoProgressBeadDataHash/);
+  assert.match(source, /savePhotoProgressSnapshot/);
+  assert.match(source, /selectedCandidateIndexes/);
+  assert.match(source, /reviewConfirmed/);
+  assert.match(source, /handleSaveConfirmedProgress/);
+  assert.match(source, /saveErrorText/);
+  assert.doesNotMatch(source, /boardStatusMap/);
+  assert.doesNotMatch(source, /projectApi\.updateProgress/);
+  assert.doesNotMatch(source, /fetch\(/);
 });
 
 test("photo progress modal is fixed overlay and does not occupy making layout", () => {
@@ -64,4 +80,14 @@ test("making page wires photo sync entry without replacing existing vision assis
   assert.match(source, /拍照同步/);
   assert.match(source, /setShowVisionAssist\(true\)/);
   assert.match(source, /BoardVisionAssistModal/);
+});
+
+test("making page passes stable project id into photo progress sync modal", () => {
+  const source = read(makingPath);
+
+  assert.match(source, /photoProgressProjectId/);
+  assert.match(source, /project_\$\{projectId\}/);
+  assert.match(source, /local_\$\{localProjectId\}/);
+  assert.match(source, /draft_\$\{beadData\.width\}x\$\{beadData\.height\}/);
+  assert.match(source, /projectId=\{photoProgressProjectId\}/);
 });
