@@ -55,6 +55,17 @@ async function main() {
       viewport: { width: 1365, height: 900 },
     });
     const page = await context.newPage();
+    await page.route('**/api/v1/user/preferences', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: { my_color_ids: [] },
+        }),
+      });
+    });
     page.setDefaultTimeout(60000);
     await page.addInitScript((dateTag) => {
       window.__E2E_BYPASS_LOGIN__ = true;
