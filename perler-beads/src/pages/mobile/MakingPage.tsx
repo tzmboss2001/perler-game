@@ -364,7 +364,7 @@ const MakingPage: React.FC = () => {
   const [voiceEnabled, setVoiceEnabled] = useState(canSpeak());
   const [assistPackEnabled, setAssistPackEnabled] = useState(true);
   const [focusCurrentBoard, setFocusCurrentBoard] = useState(true);
-  const [gridEnhanceEnabled, setGridEnhanceEnabled] = useState(false);
+  const [gridEnhanceEnabled, setGridEnhanceEnabled] = useState(true);
   const adaptiveGridVisibilityRef = useRef(DEFAULT_ADAPTIVE_GRID_VISIBILITY);
   const adaptiveGridToneCacheRef = useRef<
     Map<string, "light" | "dark" | "mixed">
@@ -3649,6 +3649,7 @@ const MakingPage: React.FC = () => {
     if (
       !beadData ||
       !overlayCanvasRef.current ||
+      !wrapperRef.current ||
       !displayBoardRect ||
       !renderMetrics ||
       displayWidth <= 0 ||
@@ -3656,18 +3657,37 @@ const MakingPage: React.FC = () => {
     )
       return;
 
+    const wrapper = wrapperRef.current;
     const canvas = overlayCanvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Keep overlay backing store aligned with the same safe DPR budget as the base canvas.
-    // Using raw devicePixelRatio here can blow the overlay past mobile canvas limits and white-screen.
-    const dpr = renderDpr;
-    const drawCellWidth = safeRenderCellSize;
-    const drawCellHeight = safeRenderCellSize;
-    const drawCellSize = safeRenderCellSize;
+    const wrapperWidth = wrapper.clientWidth;
+    const wrapperHeight = wrapper.clientHeight;
+    if (wrapperWidth <= 0 || wrapperHeight <= 0) return;
+
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const stageDisplayScale = getLiveStageDisplayScale({
+      targetScale: scale,
+      committedRenderScale: renderScale,
+    });
+    const drawCellWidth = safeRenderCellSize * stageDisplayScale;
+    const drawCellHeight = safeRenderCellSize * stageDisplayScale;
+    const drawCellSize = drawCellWidth;
+    const stageLeft =
+      (wrapperWidth - safeRenderCanvasWidth * stageDisplayScale) / 2 +
+      translateX;
+    const stageTop =
+      (wrapperHeight - safeRenderCanvasHeight * stageDisplayScale) / 2 +
+      translateY;
     const displayStartX = displayBoardRect.startX;
     const displayStartY = displayBoardRect.startY;
+    const localXToScreen = (x: number) => stageLeft + x * drawCellWidth;
+    const localYToScreen = (y: number) => stageTop + y * drawCellHeight;
+    const globalXToScreen = (x: number) =>
+      localXToScreen(x - displayStartX);
+    const globalYToScreen = (y: number) =>
+      localYToScreen(y - displayStartY);
     const selectedBlockRect = getBlockRectBySelection(
       selection.blockX,
       selection.blockY,
@@ -3686,8 +3706,8 @@ const MakingPage: React.FC = () => {
       currentBoardRect &&
       selection.type !== null
         ? {
-            left: (currentBoardRect.startX - displayStartX) * drawCellWidth,
-            top: (currentBoardRect.startY - displayStartY) * drawCellHeight,
+            left: globalXToScreen(currentBoardRect.startX),
+            top: globalYToScreen(currentBoardRect.startY),
             width:
               (currentBoardRect.endX - currentBoardRect.startX) * drawCellWidth,
             height:
@@ -3696,29 +3716,48 @@ const MakingPage: React.FC = () => {
           }
         : null;
 
-    canvas.width = Math.max(1, Math.floor(safeRenderCanvasWidth * dpr));
-    canvas.height = Math.max(1, Math.floor(safeRenderCanvasHeight * dpr));
-    canvas.style.width = `${safeRenderCanvasWidth}px`;
-    canvas.style.height = `${safeRenderCanvasHeight}px`;
+    canvas.width = Math.max(1, Math.floor(wrapperWidth * dpr));
+    canvas.height = Math.max(1, Math.floor(wrapperHeight * dpr));
+    canvas.style.width = `${wrapperWidth}px`;
+    canvas.style.height = `${wrapperHeight}px`;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.scale(dpr, dpr);
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true;
 
-    const visibleStartX = 0;
-    const visibleStartY = 0;
-    const visibleEndX = displayWidth;
-    const visibleEndY = displayHeight;
-    const visibleGlobalStartX = displayStartX;
-    const visibleGlobalStartY = displayStartY;
-    const visibleGlobalEndX = displayStartX + displayWidth;
-    const visibleGlobalEndY = displayStartY + displayHeight;
-    const baseGridWidth = Math.min(1, Math.max(0.35, 0.9 / dpr));
-    const guideWidth = Math.min(1.4, Math.max(0.75, 1.15 / dpr));
-    const boardWidth = Math.min(2, Math.max(1.1, 1.6 / dpr));
-    const highlightWidth = Math.min(2.5, Math.max(1.3, 2 / dpr));
-    const snapCanvasCoord = (value: number) => Math.round(value * dpr) / dpr;
+    const visibleStartX = Math.max(
+      0,
+      Math.floor(-stageLeft / drawCellWidth) - 1,
+    );
+    const visibleStartY = Math.max(
+      0,
+      Math.floor(-stageTop / drawCellHeight) - 1,
+    );
+    const visibleEndX = Math.min(
+      displayWidth,
+      Math.ceil((wrapperWidth - stageLeft) / drawCellWidth) + 1,
+    );
+    const visibleEndY = Math.min(
+      displayHeight,
+      Math.ceil((wrapperHeight - stageTop) / drawCellHeight) + 1,
+    );
+    const visibleGlobalStartX = displayStartX + visibleStartX;
+    const visibleGlobalStartY = displayStartY + visibleStartY;
+    const visibleGlobalEndX = displayStartX + visibleEndX;
+    const visibleGlobalEndY = displayStartY + visibleEndY;
+    const minDeviceLineWidth = 0.5 / Math.max(1, dpr);
+    const toCanvasLineWidth = (screenWidth: number) =>
+      Math.max(minDeviceLineWidth, screenWidth);
+    const baseGridWidth = toCanvasLineWidth(0.9);
+    const guideWidth = toCanvasLineWidth(1.15);
+    const boardWidth = toCanvasLineWidth(1.6);
+    const highlightWidth = toCanvasLineWidth(2);
+    const snapCanvasCoord = (value: number, lineWidth = 1) => {
+      const deviceLineWidth = Math.max(1, Math.round(lineWidth * dpr));
+      const offset = deviceLineWidth % 2 === 1 ? 0.5 : 0;
+      return (Math.round(value * dpr) + offset) / dpr;
+    };
     const drawVLine = (
       x: number,
       y1: number,
@@ -3726,9 +3765,10 @@ const MakingPage: React.FC = () => {
       strokeStyle: string,
       lineWidth: number,
     ) => {
-      const snappedX = snapCanvasCoord(x);
-      const startY = snapCanvasCoord(Math.min(y1, y2));
-      const endY = snapCanvasCoord(Math.max(y1, y2));
+      const snappedX = snapCanvasCoord(x, lineWidth);
+      const startY = Math.max(0, Math.min(wrapperHeight, Math.min(y1, y2)));
+      const endY = Math.max(0, Math.min(wrapperHeight, Math.max(y1, y2)));
+      if (endY <= startY) return;
       ctx.save();
       ctx.strokeStyle = strokeStyle;
       ctx.lineWidth = lineWidth;
@@ -3745,9 +3785,10 @@ const MakingPage: React.FC = () => {
       strokeStyle: string,
       lineWidth: number,
     ) => {
-      const snappedY = snapCanvasCoord(y);
-      const startX = snapCanvasCoord(Math.min(x1, x2));
-      const endX = snapCanvasCoord(Math.max(x1, x2));
+      const snappedY = snapCanvasCoord(y, lineWidth);
+      const startX = Math.max(0, Math.min(wrapperWidth, Math.min(x1, x2)));
+      const endX = Math.max(0, Math.min(wrapperWidth, Math.max(x1, x2)));
+      if (endX <= startX) return;
       ctx.save();
       ctx.strokeStyle = strokeStyle;
       ctx.lineWidth = lineWidth;
@@ -3816,33 +3857,60 @@ const MakingPage: React.FC = () => {
         drawHLine(y, x1, x2, layer.strokeStyle, layer.lineWidth);
       }
     };
+    const readableSmallGridLayers =
+      gridEnhanceEnabled && adaptiveGridVisibility.smallGrid
+        ? getAdaptiveGridVisualLayers({
+            tone: "mixed",
+            lineKind: "small",
+            boostLevel: "none",
+            dpr,
+          })
+        : null;
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, safeRenderCanvasWidth, safeRenderCanvasHeight);
+    ctx.rect(0, 0, wrapperWidth, wrapperHeight);
     ctx.clip();
 
     // 1. 基础小格
     if (drawCellSize >= 7) {
       for (let x = visibleStartX; x <= visibleEndX; x++) {
-        const screenX = x * drawCellWidth;
-        drawVLine(
-          screenX,
-          0,
-          safeRenderCanvasHeight,
-          "rgba(17,24,39,0.22)",
-          baseGridWidth,
-        );
+        const screenX = localXToScreen(x);
+        if (readableSmallGridLayers) {
+          strokeLayeredVLine(
+            screenX,
+            0,
+            wrapperHeight,
+            readableSmallGridLayers,
+          );
+        } else {
+          drawVLine(
+            screenX,
+            0,
+            wrapperHeight,
+            "rgba(17,24,39,0.22)",
+            baseGridWidth,
+          );
+        }
       }
       for (let y = visibleStartY; y <= visibleEndY; y++) {
-        const screenY = y * drawCellHeight;
-        drawHLine(
-          screenY,
-          0,
-          safeRenderCanvasWidth,
-          "rgba(17,24,39,0.22)",
-          baseGridWidth,
-        );
+        const screenY = localYToScreen(y);
+        if (readableSmallGridLayers) {
+          strokeLayeredHLine(
+            screenY,
+            0,
+            wrapperWidth,
+            readableSmallGridLayers,
+          );
+        } else {
+          drawHLine(
+            screenY,
+            0,
+            wrapperWidth,
+            "rgba(17,24,39,0.22)",
+            baseGridWidth,
+          );
+        }
       }
     }
 
@@ -3916,20 +3984,18 @@ const MakingPage: React.FC = () => {
               boostLevel,
               dpr,
             });
-            const clippedLeft =
-              (Math.max(regionRect.startX, visibleGlobalStartX) -
-                displayStartX) *
-              drawCellWidth;
-            const clippedRight =
-              (Math.min(regionRect.endX, visibleGlobalEndX) - displayStartX) *
-              drawCellWidth;
-            const clippedTop =
-              (Math.max(regionRect.startY, visibleGlobalStartY) -
-                displayStartY) *
-              drawCellHeight;
-            const clippedBottom =
-              (Math.min(regionRect.endY, visibleGlobalEndY) - displayStartY) *
-              drawCellHeight;
+            const clippedLeft = globalXToScreen(
+              Math.max(regionRect.startX, visibleGlobalStartX),
+            );
+            const clippedRight = globalXToScreen(
+              Math.min(regionRect.endX, visibleGlobalEndX),
+            );
+            const clippedTop = globalYToScreen(
+              Math.max(regionRect.startY, visibleGlobalStartY),
+            );
+            const clippedBottom = globalYToScreen(
+              Math.min(regionRect.endY, visibleGlobalEndY),
+            );
 
             if (adaptiveGridVisibility.crossGuide) {
               const centerX = boardOriginX + guide.centerX;
@@ -3938,14 +4004,14 @@ const MakingPage: React.FC = () => {
                 centerX >= visibleGlobalStartX &&
                 centerX <= visibleGlobalEndX
               ) {
-                const x = (centerX - displayStartX) * drawCellWidth;
+                const x = globalXToScreen(centerX);
                 strokeLayeredVLine(x, clippedTop, clippedBottom, crossLayers);
               }
               if (
                 centerY >= visibleGlobalStartY &&
                 centerY <= visibleGlobalEndY
               ) {
-                const y = (centerY - displayStartY) * drawCellHeight;
+                const y = globalYToScreen(centerY);
                 strokeLayeredHLine(y, clippedLeft, clippedRight, crossLayers);
               }
             }
@@ -3953,7 +4019,7 @@ const MakingPage: React.FC = () => {
             for (const offset of guideOffsets) {
               const globalX = boardOriginX + offset;
               if (globalX > regionRect.startX && globalX < regionRect.endX) {
-                const screenX = (globalX - displayStartX) * drawCellWidth;
+                const screenX = globalXToScreen(globalX);
                 strokeLayeredVLine(
                   screenX,
                   clippedTop,
@@ -3964,7 +4030,7 @@ const MakingPage: React.FC = () => {
 
               const globalY = boardOriginY + offset;
               if (globalY > regionRect.startY && globalY < regionRect.endY) {
-                const screenY = (globalY - displayStartY) * drawCellHeight;
+                const screenY = globalYToScreen(globalY);
                 strokeLayeredHLine(
                   screenY,
                   clippedLeft,
@@ -3983,11 +4049,11 @@ const MakingPage: React.FC = () => {
       for (const offset of guideOffsets) {
         const lineX = originX + offset;
         if (lineX < visibleGlobalStartX || lineX > visibleGlobalEndX) continue;
-        const screenX = (lineX - displayStartX) * drawCellWidth;
+        const screenX = globalXToScreen(lineX);
         drawVLine(
           screenX,
           0,
-          safeRenderCanvasHeight,
+          wrapperHeight,
           "rgba(0,0,0,0.72)",
           guideWidth,
         );
@@ -3998,11 +4064,11 @@ const MakingPage: React.FC = () => {
       for (const offset of guideOffsets) {
         const lineY = originY + offset;
         if (lineY < visibleGlobalStartY || lineY > visibleGlobalEndY) continue;
-        const screenY = (lineY - displayStartY) * drawCellHeight;
+        const screenY = globalYToScreen(lineY);
         drawHLine(
           screenY,
           0,
-          safeRenderCanvasWidth,
+          wrapperWidth,
           "rgba(0,0,0,0.72)",
           guideWidth,
         );
@@ -4013,8 +4079,12 @@ const MakingPage: React.FC = () => {
     if (drawCellSize >= 10 && tenCellCrossGuides.length > 0) {
       ctx.save();
       ctx.strokeStyle = "rgba(15,23,42,0.34)";
-      ctx.lineWidth = Math.min(1.1, Math.max(0.55, 0.8 / dpr));
-      ctx.setLineDash([Math.max(2, drawCellSize * 0.28), Math.max(2, drawCellSize * 0.22)]);
+      const crossGuideWidth = toCanvasLineWidth(0.8);
+      ctx.lineWidth = crossGuideWidth;
+      ctx.setLineDash([
+        Math.max(2, Math.min(8, drawCellSize * 0.28)),
+        Math.max(2, Math.min(7, drawCellSize * 0.22)),
+      ]);
       ctx.lineCap = "round";
 
       for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
@@ -4047,13 +4117,16 @@ const MakingPage: React.FC = () => {
               const endY = Math.min(guideEndY, visibleGlobalEndY);
               if (endY > startY) {
                 const screenX = snapCanvasCoord(
-                  (guideCenterX - displayStartX) * drawCellWidth,
+                  globalXToScreen(guideCenterX),
+                  crossGuideWidth,
                 );
                 const screenStartY = snapCanvasCoord(
-                  (startY - displayStartY) * drawCellHeight,
+                  globalYToScreen(startY),
+                  crossGuideWidth,
                 );
                 const screenEndY = snapCanvasCoord(
-                  (endY - displayStartY) * drawCellHeight,
+                  globalYToScreen(endY),
+                  crossGuideWidth,
                 );
                 ctx.beginPath();
                 ctx.moveTo(screenX, screenStartY);
@@ -4070,13 +4143,16 @@ const MakingPage: React.FC = () => {
               const endX = Math.min(guideEndX, visibleGlobalEndX);
               if (endX > startX) {
                 const screenY = snapCanvasCoord(
-                  (guideCenterY - displayStartY) * drawCellHeight,
+                  globalYToScreen(guideCenterY),
+                  crossGuideWidth,
                 );
                 const screenStartX = snapCanvasCoord(
-                  (startX - displayStartX) * drawCellWidth,
+                  globalXToScreen(startX),
+                  crossGuideWidth,
                 );
                 const screenEndX = snapCanvasCoord(
-                  (endX - displayStartX) * drawCellWidth,
+                  globalXToScreen(endX),
+                  crossGuideWidth,
                 );
                 ctx.beginPath();
                 ctx.moveTo(screenStartX, screenY);
@@ -4096,11 +4172,11 @@ const MakingPage: React.FC = () => {
     for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
       const lineX = boardCol * physicalBoardSize;
       if (lineX < visibleGlobalStartX || lineX > visibleGlobalEndX) continue;
-      const screenX = (lineX - displayStartX) * drawCellWidth;
+      const screenX = globalXToScreen(lineX);
       drawVLine(
         screenX,
         0,
-        safeRenderCanvasHeight,
+        wrapperHeight,
         "rgba(0,0,0,0.92)",
         boardWidth,
       );
@@ -4108,11 +4184,11 @@ const MakingPage: React.FC = () => {
     for (let boardRow = boardRowStart; boardRow <= boardRowEnd; boardRow++) {
       const lineY = boardRow * physicalBoardSize;
       if (lineY < visibleGlobalStartY || lineY > visibleGlobalEndY) continue;
-      const screenY = (lineY - displayStartY) * drawCellHeight;
+      const screenY = globalYToScreen(lineY);
       drawHLine(
         screenY,
         0,
-        safeRenderCanvasWidth,
+        wrapperWidth,
         "rgba(0,0,0,0.92)",
         boardWidth,
       );
@@ -4134,8 +4210,8 @@ const MakingPage: React.FC = () => {
           ) {
             continue;
           }
-          const cx = (centerCellX - displayStartX) * drawCellWidth;
-          const cy = (centerCellY - displayStartY) * drawCellHeight;
+          const cx = globalXToScreen(centerCellX);
+          const cy = globalYToScreen(centerCellY);
           drawVLine(
             cx,
             cy - crossArm,
@@ -4171,8 +4247,8 @@ const MakingPage: React.FC = () => {
           ) {
             continue;
           }
-          const x = (startX - displayStartX) * drawCellWidth + 4;
-          const y = (startY - displayStartY) * drawCellHeight + 4;
+          const x = globalXToScreen(startX) + 4;
+          const y = globalYToScreen(startY) + 4;
           const text = `板${boardRow * physicalBoardCols + boardCol + 1}`;
           ctx.save();
           ctx.font = `700 ${labelFont}px "Trebuchet MS", "PingFang SC", sans-serif`;
@@ -4205,19 +4281,17 @@ const MakingPage: React.FC = () => {
     }
 
     if (selection.type === "block" || selection.type === "color") {
-      const localStartX = selectedBlockStartX - displayStartX;
-      const localStartY = selectedBlockStartY - displayStartY;
-      const x = localStartX * drawCellWidth;
-      const y = localStartY * drawCellHeight;
+      const x = globalXToScreen(selectedBlockStartX);
+      const y = globalYToScreen(selectedBlockStartY);
       const w = (selectedBlockEndX - selectedBlockStartX) * drawCellWidth;
       const h = (selectedBlockEndY - selectedBlockStartY) * drawCellHeight;
-      const snappedLeft = snapCanvasCoord(x);
-      const snappedTop = snapCanvasCoord(y);
-      const snappedRight = snapCanvasCoord(x + w);
-      const snappedBottom = snapCanvasCoord(y + h);
       ctx.save();
       ctx.strokeStyle = "#ff6aa2";
-      ctx.lineWidth = Math.max(1.5, 2.2 / dpr);
+      ctx.lineWidth = toCanvasLineWidth(2.2);
+      const snappedLeft = snapCanvasCoord(x, ctx.lineWidth);
+      const snappedTop = snapCanvasCoord(y, ctx.lineWidth);
+      const snappedRight = snapCanvasCoord(x + w, ctx.lineWidth);
+      const snappedBottom = snapCanvasCoord(y + h, ctx.lineWidth);
       ctx.strokeRect(
         snappedLeft,
         snappedTop,
@@ -4246,12 +4320,18 @@ const MakingPage: React.FC = () => {
           const index = globalY * beadData.width + globalX;
           if (!highlightedIndices.has(index)) continue;
 
-          const px = x * drawCellWidth;
-          const py = y * drawCellHeight;
-          const snappedPx = snapCanvasCoord(px);
-          const snappedPy = snapCanvasCoord(py);
-          const snappedRight = snapCanvasCoord(px + drawCellWidth);
-          const snappedBottom = snapCanvasCoord(py + drawCellHeight);
+          const px = localXToScreen(x);
+          const py = localYToScreen(y);
+          const snappedPx = snapCanvasCoord(px, targetStrokeWidth);
+          const snappedPy = snapCanvasCoord(py, targetStrokeWidth);
+          const snappedRight = snapCanvasCoord(
+            px + drawCellWidth,
+            targetStrokeWidth,
+          );
+          const snappedBottom = snapCanvasCoord(
+            py + drawCellHeight,
+            targetStrokeWidth,
+          );
           const snappedWidth = Math.max(0, snappedRight - snappedPx);
           const snappedHeight = Math.max(0, snappedBottom - snappedPy);
 
@@ -4315,7 +4395,11 @@ const MakingPage: React.FC = () => {
     physicalBoardCols,
     physicalBoardRows,
     physicalBoardSize,
-    renderDpr,
+    renderScale,
+    translateX,
+    translateY,
+    viewportHeight,
+    viewportWidth,
   ]);
 
   useLayoutEffect(() => {
@@ -4917,6 +5001,27 @@ const MakingPage: React.FC = () => {
                             }
                           >
                             {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
+                          </button>
+                          <button
+                            style={styles.singleBoardMobileToolChip}
+                            onClick={handleOpenTraditionalOverview}
+                            title="切换到整图模式"
+                          >
+                            整图
+                          </button>
+                          <button
+                            style={{
+                              ...styles.singleBoardMobileToolChip,
+                              ...(gridEnhanceEnabled
+                                ? styles.singleBoardMobileToolChipActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setGridEnhanceEnabled((enabled) => !enabled)
+                            }
+                            title="切换清晰网格"
+                          >
+                            {gridEnhanceEnabled ? "清晰" : "轻网格"}
                           </button>
                           <button
                             style={styles.singleBoardMobileToolChip}
@@ -5970,7 +6075,9 @@ const MakingPage: React.FC = () => {
                   </button>
                 </div>
                 <div style={styles.settingRow}>
-                  <span style={styles.settingLabel}>网格增强</span>
+                  <span style={styles.settingLabel}>
+                    {gridEnhanceEnabled ? "清晰网格" : "轻网格"}
+                  </span>
                   <button
                     style={{
                       ...styles.toggleBtn,
@@ -5979,7 +6086,7 @@ const MakingPage: React.FC = () => {
                     onClick={() =>
                       setGridEnhanceEnabled((enabled) => !enabled)
                     }
-                    title="增强当前制作区域的网格可读性"
+                    title="切换清晰网格"
                   >
                     {gridEnhanceEnabled ? (
                       <GridFour size={16} weight="fill" />
@@ -6094,8 +6201,8 @@ const MakingPage: React.FC = () => {
                 style={styles.canvas}
                 onClick={handleCanvasClick}
               />
-              <canvas ref={overlayCanvasRef} style={styles.overlayCanvas} />
             </div>
+            <canvas ref={overlayCanvasRef} style={styles.overlayCanvas} />
             <canvas
               ref={textOverlayCanvasRef}
               style={styles.textOverlayCanvas}
@@ -6498,7 +6605,7 @@ const MakingPage: React.FC = () => {
                         </div>
                         <div style={styles.makingDesktopSidebarToggleRow}>
                           <span style={styles.makingDesktopSidebarToggleLabel}>
-                            网格增强
+                            {gridEnhanceEnabled ? "清晰网格" : "轻网格"}
                           </span>
                           <button
                             style={{
@@ -6510,7 +6617,7 @@ const MakingPage: React.FC = () => {
                             onClick={() =>
                               setGridEnhanceEnabled((enabled) => !enabled)
                             }
-                            title="增强当前制作区域的网格可读性"
+                            title="切换清晰网格"
                           >
                             {gridEnhanceEnabled ? (
                               <GridFour size={16} weight="fill" />
@@ -7933,7 +8040,7 @@ const styles: Record<string, React.CSSProperties> = {
   singleBoardMobileToolToggleBtnActive: {
     background:
       "linear-gradient(145deg, rgba(255,255,255,0.98), rgba(255,248,240,0.96))",
-    borderColor: makingCandy.borderStrong,
+    border: `1px solid ${makingCandy.borderStrong}`,
   },
 
   singleBoardMobileToolChip: {
@@ -7954,7 +8061,7 @@ const styles: Record<string, React.CSSProperties> = {
     background:
       "linear-gradient(145deg, rgba(125,211,252,0.18), rgba(244,114,182,0.16))",
     color: makingCandy.text,
-    borderColor: makingCandy.borderStrong,
+    border: `1px solid ${makingCandy.borderStrong}`,
   },
 
   singleBoardMobileOverviewBtn: {
@@ -8949,7 +9056,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     height: "100%",
     pointerEvents: "none" as const,
-    imageRendering: "pixelated",
+    imageRendering: "auto",
   },
 
   textOverlayCanvas: {

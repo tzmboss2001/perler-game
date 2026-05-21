@@ -96,6 +96,58 @@ test("adaptive grid visual layers avoid pure black and pure white while keeping 
   assert.ok(cross[1].alpha > small[1].alpha);
 });
 
+test("enhanced grid keeps clean readable dark strokes on high dpr mobile screens", () => {
+  const cross = getAdaptiveGridVisualLayers({
+    tone: "mixed",
+    lineKind: "cross",
+    boostLevel: "currentBoard",
+    dpr: 3,
+  });
+  const guide = getAdaptiveGridVisualLayers({
+    tone: "light",
+    lineKind: "guide",
+    boostLevel: "currentBoard",
+    dpr: 3,
+  });
+  const crossPrimary = cross.at(-1);
+  const guidePrimary = guide.at(-1);
+
+  assert.match(crossPrimary.strokeStyle, /^rgba\(15,\s*23,\s*42,/);
+  assert.match(guidePrimary.strokeStyle, /^rgba\(15,\s*23,\s*42,/);
+  assert.ok(crossPrimary.lineWidth >= 0.8);
+  assert.ok(guidePrimary.lineWidth >= 1);
+  assert.ok(crossPrimary.alpha >= 0.42);
+  assert.ok(guidePrimary.alpha >= 0.56);
+});
+
+test("enhanced grid normalizes line widths when the canvas stage is live-scaled", () => {
+  const small = getAdaptiveGridVisualLayers({
+    tone: "mixed",
+    lineKind: "small",
+    boostLevel: "none",
+    dpr: 3,
+    displayScale: 2.5,
+  });
+  const guide = getAdaptiveGridVisualLayers({
+    tone: "light",
+    lineKind: "guide",
+    boostLevel: "currentBoard",
+    dpr: 3,
+    displayScale: 2.5,
+  });
+  const darkCross = getAdaptiveGridVisualLayers({
+    tone: "dark",
+    lineKind: "cross",
+    boostLevel: "currentBoard",
+    dpr: 3,
+    displayScale: 2.5,
+  });
+
+  assert.ok(small.at(-1).lineWidth <= 0.34);
+  assert.ok(guide.at(-1).lineWidth <= 0.5);
+  assert.ok(darkCross.at(-1).lineWidth <= 0.4);
+});
+
 test("adaptive grid visibility uses hysteresis around drawCellSize thresholds", () => {
   const hidden = resolveAdaptiveGridVisibility({
     enabled: true,

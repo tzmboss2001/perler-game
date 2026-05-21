@@ -53,25 +53,25 @@ export function getAdaptiveGridRegionTone({
 
 const STYLE_TABLE = {
   small: {
-    width: 0.7,
-    darkTop: 0.18,
-    lightTop: 0.16,
-    mixedDark: 0.14,
-    mixedLight: 0.1,
+    width: 0.76,
+    darkTop: 0.34,
+    lightTop: 0.08,
+    mixedDark: 0.34,
+    mixedLight: 0.06,
   },
   cross: {
-    width: 0.95,
-    darkTop: 0.3,
-    lightTop: 0.28,
-    mixedDark: 0.22,
-    mixedLight: 0.16,
+    width: 0.94,
+    darkTop: 0.46,
+    lightTop: 0.1,
+    mixedDark: 0.46,
+    mixedLight: 0.08,
   },
   guide: {
-    width: 1.25,
-    darkTop: 0.42,
-    lightTop: 0.36,
-    mixedDark: 0.32,
-    mixedLight: 0.18,
+    width: 1.18,
+    darkTop: 0.58,
+    lightTop: 0.11,
+    mixedDark: 0.58,
+    mixedLight: 0.08,
   },
 };
 
@@ -90,22 +90,32 @@ export function getAdaptiveGridVisualLayers({
   lineKind,
   boostLevel = "none",
   dpr = 1,
+  displayScale = 1,
 }) {
   const table = STYLE_TABLE[lineKind] || STYLE_TABLE.cross;
   const boost = BOOST[boostLevel] || 1;
-  const width = Math.min(2, Math.max(0.45, table.width / Math.max(dpr, 1)));
+  const safeDpr = Math.max(1, Number.isFinite(dpr) ? dpr : 1);
+  const safeDisplayScale = Math.max(
+    0.0001,
+    Number.isFinite(displayScale) ? displayScale : 1,
+  );
+  const minCanvasWidth = 0.5 / safeDpr;
+  const width = Math.min(
+    1.5,
+    Math.max(minCanvasWidth, table.width / safeDisplayScale),
+  );
 
   if (tone === "dark") {
     return [
       {
         strokeStyle: rgba(248, 250, 252, table.lightTop * boost),
-        lineWidth: width,
+        lineWidth: Math.max(minCanvasWidth, width * 0.72),
         alpha: Number((table.lightTop * boost).toFixed(3)),
       },
       {
-        strokeStyle: rgba(30, 41, 59, table.mixedDark * 0.72 * boost),
-        lineWidth: Math.max(0.4, width * 0.78),
-        alpha: Number((table.mixedDark * 0.72 * boost).toFixed(3)),
+        strokeStyle: rgba(15, 23, 42, table.darkTop * 0.78 * boost),
+        lineWidth: Math.max(minCanvasWidth, width * 0.9),
+        alpha: Number((table.darkTop * 0.78 * boost).toFixed(3)),
       },
     ];
   }
@@ -114,12 +124,12 @@ export function getAdaptiveGridVisualLayers({
     return [
       {
         strokeStyle: rgba(248, 250, 252, table.mixedLight * 0.72 * boost),
-        lineWidth: width,
+        lineWidth: Math.max(minCanvasWidth, width * 0.68),
         alpha: Number((table.mixedLight * 0.72 * boost).toFixed(3)),
       },
       {
         strokeStyle: rgba(15, 23, 42, table.darkTop * boost),
-        lineWidth: Math.max(0.4, width * 0.84),
+        lineWidth: width,
         alpha: Number((table.darkTop * boost).toFixed(3)),
       },
     ];
@@ -128,12 +138,12 @@ export function getAdaptiveGridVisualLayers({
   return [
     {
       strokeStyle: rgba(248, 250, 252, table.mixedLight * boost),
-      lineWidth: width,
+      lineWidth: Math.max(minCanvasWidth, width * 0.68),
       alpha: Number((table.mixedLight * boost).toFixed(3)),
     },
     {
       strokeStyle: rgba(15, 23, 42, table.mixedDark * boost),
-      lineWidth: Math.max(0.4, width * 0.82),
+      lineWidth: width,
       alpha: Number((table.mixedDark * boost).toFixed(3)),
     },
   ];
