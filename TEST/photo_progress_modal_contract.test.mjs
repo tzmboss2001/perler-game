@@ -87,6 +87,16 @@ test("photo progress modal exposes calibration grid overlay after four corners",
   assert.match(source, /<svg/);
 });
 
+test("photo progress modal uses multi-point empty-hole reference sampling", () => {
+  const source = read(modalPath);
+
+  assert.match(source, /EMPTY_REFERENCE_SAMPLE_OFFSETS/);
+  assert.match(source, /sampleCanvasPatchRgb/);
+  assert.match(source, /getMedianRgb/);
+  assert.match(source, /Math\.min\(canvas\.width,\s*canvas\.height\)/);
+  assert.match(source, /EMPTY_REFERENCE_SAMPLE_OFFSETS\.map/);
+});
+
 test("photo progress modal is fixed overlay and does not occupy making layout", () => {
   const source = read(modalPath);
 

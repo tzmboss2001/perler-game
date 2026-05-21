@@ -76,6 +76,13 @@ interface PhotoProgressPreview {
 
 const CORNER_LABELS = ["左上", "右上", "右下", "左下"];
 const DEFAULT_TOLERANCE = 42;
+const EMPTY_REFERENCE_SAMPLE_OFFSETS = [
+  { x: 0, y: 0 },
+  { x: -1, y: 0 },
+  { x: 1, y: 0 },
+  { x: 0, y: -1 },
+  { x: 0, y: 1 },
+];
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -225,7 +232,21 @@ const getImagePoint = (
   };
 };
 
-const sampleCanvasRgb = (
+const getMedianRgb = (samples: VisionRgb[]): VisionRgb => {
+  if (!samples.length) {
+    return [255, 255, 255];
+  }
+
+  return [0, 1, 2].map((channelIndex) => {
+    const values = samples
+      .map((sample) => sample[channelIndex])
+      .sort((left, right) => left - right);
+
+    return values[Math.floor(values.length / 2)];
+  }) as VisionRgb;
+};
+
+const sampleCanvasPatchRgb = (
   canvas: HTMLCanvasElement,
   point: VisionPoint,
   radius = 2,
@@ -263,6 +284,29 @@ const sampleCanvasRgb = (
     Math.round(green / count),
     Math.round(blue / count),
   ];
+};
+
+const sampleCanvasRgb = (
+  canvas: HTMLCanvasElement,
+  point: VisionPoint,
+  radius = 2,
+): VisionRgb => {
+  const sampleStep = Math.max(
+    4,
+    Math.round(Math.min(canvas.width, canvas.height) * 0.006),
+  );
+  const samples = EMPTY_REFERENCE_SAMPLE_OFFSETS.map((offset) =>
+    sampleCanvasPatchRgb(
+      canvas,
+      {
+        x: point.x + offset.x * sampleStep,
+        y: point.y + offset.y * sampleStep,
+      },
+      radius,
+    ),
+  );
+
+  return getMedianRgb(samples);
 };
 
 const getCellStyle = (state: PhotoProgressPreviewCell["state"]) => {
