@@ -1,16 +1,25 @@
-﻿import React, { useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Download, FileImage, Image, X } from '@phosphor-icons/react';
 import { colors, radius, shadows, typography } from '../styles/designSystem';
 import { useToast } from './Toast';
 import {
   BeadPixelData,
+  renderBeadsOverviewCanvas,
   renderBeadsPaginated,
   renderBeadsToCanvas,
   renderBeadsToCanvasWithList,
 } from '../services/colorMatchService';
 import { BOARD_SPECS, recommendBoard } from '../services/boardService';
 import { adService } from '../services/adService';
+import {
+  buildOverviewExportFilename,
+  buildPaginatedBoardExportFilename,
+} from '../utils/singleBoardInteraction.js';
+import {
+  buildPaginatedZipFilename,
+  createStoredZipBlob,
+} from '../utils/zipExport.js';
 
 const EXPORT_MAX_DIMENSION = 32767;
 const EXPORT_MAX_AREA = 268000000;
@@ -32,13 +41,17 @@ const getSafeExportCellSize = (
   );
 };
 
-const downloadCanvasAsPng = async (canvas: HTMLCanvasElement, filename: string) => {
+const canvasToPngBlob = async (canvas: HTMLCanvasElement) => {
   const blob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob((nextBlob) => resolve(nextBlob), 'image/png');
   });
   if (!blob) {
     throw new Error('导出失败：浏览器未能生成图片数据');
   }
+  return blob;
+};
+
+const downloadBlob = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob);
   try {
     const link = document.createElement('a');
@@ -48,6 +61,11 @@ const downloadCanvasAsPng = async (canvas: HTMLCanvasElement, filename: string) 
   } finally {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+};
+
+const downloadCanvasAsPng = async (canvas: HTMLCanvasElement, filename: string) => {
+  const blob = await canvasToPngBlob(canvas);
+  downloadBlob(blob, filename);
 };
 
 const buildExportRetryCellSizes = (
@@ -71,6 +89,9 @@ interface ExportModalProps {
   visible: boolean;
   onClose: () => void;
   beadData: BeadPixelData;
+  defaultPaginateMode?: boolean;
+  defaultBoardSize?: number;
+  includeOverview?: boolean;
   onNeedRewardUnlock?: (reason: 'premium_export', onUnlocked?: () => void) => void;
 }
 
@@ -88,6 +109,9 @@ const ExportModal: React.FC<ExportModalProps> = ({
   visible,
   onClose,
   beadData,
+  defaultPaginateMode = false,
+  defaultBoardSize,
+  includeOverview = false,
   onNeedRewardUnlock,
 }) => {
   const toast = useToast();
@@ -97,13 +121,19 @@ const ExportModal: React.FC<ExportModalProps> = ({
   const [showCoords, setShowCoords] = useState(true);
   const [showMajorGrid, setShowMajorGrid] = useState(true);
   const [showBeadList, setShowBeadList] = useState(true);
-  const [paginateMode, setPaginateMode] = useState(false);
+  const [paginateMode, setPaginateMode] = useState(defaultPaginateMode);
 
   const smartBoard = useMemo(
     () => recommendBoard(beadData.width, beadData.height),
     [beadData.width, beadData.height],
   );
-  const [boardSize, setBoardSize] = useState(smartBoard.boardSize);
+  const [boardSize, setBoardSize] = useState(defaultBoardSize ?? smartBoard.boardSize);
+
+  useEffect(() => {
+    if (!visible) return;
+    setPaginateMode(defaultPaginateMode);
+    setBoardSize(defaultBoardSize ?? smartBoard.boardSize);
+  }, [defaultBoardSize, defaultPaginateMode, smartBoard.boardSize, visible]);
 
   const patternWidth = beadData.width;
   const patternHeight = beadData.height;
@@ -211,6 +241,24 @@ const ExportModal: React.FC<ExportModalProps> = ({
         let lastError: unknown = null;
         for (const cellSize of retryCellSizes) {
           try {
+            const zipFiles: Array<{ name: string; blob: Blob }> = [];
+            if (includeOverview) {
+              const overviewCanvas = document.createElement('canvas');
+              const overviewCellSize = Math.max(
+                4,
+                Math.min(14, Math.floor(1800 / Math.max(patternWidth, patternHeight))),
+              );
+              renderBeadsOverviewCanvas(beadData, overviewCanvas, overviewCellSize, boardSize);
+              zipFiles.push({
+                name: buildOverviewExportFilename({
+                  width: patternWidth,
+                  height: patternHeight,
+                  timestamp,
+                }),
+                blob: await canvasToPngBlob(overviewCanvas),
+              });
+            }
+
             const pages = renderBeadsPaginated(beadData, cellSize, boardSize, {
               showGrid,
               showCoords,
@@ -219,12 +267,28 @@ const ExportModal: React.FC<ExportModalProps> = ({
             });
 
             for (const page of pages) {
-              await downloadCanvasAsPng(
-                page.canvas,
-                `perler-${patternWidth}x${patternHeight}-p${page.pageIndex + 1}of${page.totalPages}-${timestamp}.png`,
-              );
-              await new Promise((resolve) => setTimeout(resolve, 200));
+              zipFiles.push({
+                name: buildPaginatedBoardExportFilename({
+                  width: patternWidth,
+                  height: patternHeight,
+                  boardNumber: page.boardNumber,
+                  pageIndex: page.pageIndex,
+                  totalPages: page.totalPages,
+                  timestamp,
+                }),
+                blob: await canvasToPngBlob(page.canvas),
+              });
             }
+
+            const zipBlob = await createStoredZipBlob(zipFiles);
+            downloadBlob(
+              zipBlob,
+              buildPaginatedZipFilename({
+                width: patternWidth,
+                height: patternHeight,
+                timestamp,
+              }),
+            );
             successfulCellSize = cellSize;
             break;
           } catch (error) {
@@ -328,7 +392,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
                   style={{
                     ...styles.optionItem,
                     ...(selectedOption === option.id ? styles.optionItemActive : {}),
-                    borderColor: selectedOption === option.id ? option.color : colors.border.soft,
+                    border: `1px solid ${selectedOption === option.id ? option.color : colors.border.soft}`,
                   }}
                   onClick={() => setSelectedOption(option.id)}
                 >
@@ -415,7 +479,8 @@ const ExportModal: React.FC<ExportModalProps> = ({
                   ))}
                 </select>
                 <div style={styles.pageHint}>
-                  预计导出 {paginatedPageCount} 页（当前图案 {patternWidth}x{patternHeight}）
+                  将下载 1 个 ZIP 压缩包，内含 {paginatedPageCount} 张分板图纸
+                  {includeOverview ? '和 1 张总览图' : ''}（当前图案 {patternWidth}x{patternHeight}）
                 </div>
               </div>
             </section>

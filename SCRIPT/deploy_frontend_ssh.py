@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import getpass
 import os
 import posixpath
 import shlex
@@ -10,17 +11,30 @@ from pathlib import Path
 
 import paramiko
 
+ENV_PASSWORD_KEY = "DEPLOY_FRONTEND_SSH_PASSWORD"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Deploy frontend dist via SSH (paramiko).")
     parser.add_argument("--host", required=True)
     parser.add_argument("--user", required=True)
-    parser.add_argument("--password", required=True)
     parser.add_argument("--local-dist", required=True)
     parser.add_argument("--remote-root", default="/www/wwwroot/perler-beads")
     parser.add_argument("--domain", default="app-pd.shop888.vip")
     parser.add_argument("--api-upstream", default="http://127.0.0.1:8012")
     return parser.parse_args()
+
+
+def resolve_password(args: argparse.Namespace) -> str:
+    env_password = os.environ.get(ENV_PASSWORD_KEY)
+    if env_password:
+        return env_password
+
+    password = getpass.getpass(f"SSH password for {args.user}@{args.host}: ")
+    if not password:
+        print("[ERR] empty SSH password is not allowed", file=sys.stderr)
+        raise SystemExit(2)
+    return password
 
 
 def sftp_mkdir_p(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
@@ -56,18 +70,24 @@ def exec_cmd(ssh: paramiko.SSHClient, command: str) -> tuple[int, str, str]:
     return code, out, err
 
 
-def exec_cmd_pty(ssh: paramiko.SSHClient, command: str) -> tuple[int, str, str]:
-    stdin, stdout, stderr = ssh.exec_command(command, get_pty=True)
+def exec_cmd_with_password(
+    ssh: paramiko.SSHClient,
+    command: str,
+    password: str,
+) -> tuple[int, str, str]:
+    stdin, stdout, stderr = ssh.exec_command(command)
+    stdin.write(password + "\n")
+    stdin.flush()
+    stdin.channel.shutdown_write()
     out = stdout.read().decode("utf-8", "ignore")
     err = stderr.read().decode("utf-8", "ignore")
     code = stdout.channel.recv_exit_status()
     return code, out, err
 
 
-def sudo_bash(command: str, password: str) -> str:
-    quoted_password = shlex.quote(password)
+def sudo_bash(command: str) -> str:
     quoted_command = shlex.quote(command)
-    return f"printf '%s\\n' {quoted_password} | sudo -S -p '' bash -lc {quoted_command}"
+    return f"sudo -S -p '' bash -lc {quoted_command}"
 
 
 def main() -> int:
@@ -77,9 +97,10 @@ def main() -> int:
         print(f"[ERR] local dist not found: {local_dist}")
         return 1
 
+    password = resolve_password(args)
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(hostname=args.host, username=args.user, password=args.password, timeout=15)
+    ssh.connect(hostname=args.host, username=args.user, password=password, timeout=15)
     sftp = ssh.open_sftp()
 
     ts = int(time.time())
@@ -230,7 +251,7 @@ cp {remote_http_conf_tmp} {remote_conf}
 nginx -t
 nginx -s reload
 """.strip()
-    code, out, err = exec_cmd_pty(ssh, sudo_bash(deploy_http_cmd, args.password))
+    code, out, err = exec_cmd_with_password(ssh, sudo_bash(deploy_http_cmd), password)
     print(out)
     if err.strip():
         print(err)
@@ -247,7 +268,7 @@ nginx -t
 nginx -s reload
 rm -rf {remote_tmp}
 """.strip()
-    code, out, err = exec_cmd_pty(ssh, sudo_bash(certbot_cmd, args.password))
+    code, out, err = exec_cmd_with_password(ssh, sudo_bash(certbot_cmd), password)
     print(out)
     if err.strip():
         print(err)

@@ -75,6 +75,7 @@ export interface VisionDetectionResult {
   matchedGuideCells: VisionDetectedCell[];
   wrongGuideCells: VisionDetectedCell[];
   wrongCellsDetail: VisionDetectedCell[];
+  detectedCells: VisionDetectedCell[];
   wrongColorSuggestions: VisionWrongColorSuggestion[];
   quality: VisionDetectionQuality;
   markerRadius: number;
@@ -115,32 +116,6 @@ interface AnalyzeVisionProgressOptions {
   tolerance: number;
   preferredColorId?: string | null;
 }
-
-interface FindBestBoardMatchOptions {
-  frameData: Uint8ClampedArray;
-  frameWidth: number;
-  frameHeight: number;
-  boardTiles: VisionBoardTile[];
-  corners: [VisionPoint, VisionPoint, VisionPoint, VisionPoint];
-  emptyReferenceRgb: VisionRgb;
-  tolerance: number;
-  preferredColorId?: string | null;
-}
-
-export interface VisionBoardMatchResult {
-  tile: VisionBoardTile;
-  detection: VisionDetectionResult;
-  score: number;
-}
-
-export const calculateVisionBoardMatchScore = (
-  detection: VisionDetectionResult,
-) =>
-  detection.matchedCells * 6 +
-  detection.progress * 240 -
-  detection.wrongCells * 8 -
-  detection.extraFilledCells * 5 -
-  detection.missingCells * 0.2;
 
 interface VisionSampleAnalysis {
   rgb: VisionRgb;
@@ -184,7 +159,6 @@ const hexToRgb = (hex: string): VisionRgb => {
     parseInt(normalized.slice(4, 6), 16) || 0,
   ];
 };
-
 const getBeadRgb = (bead: BeadColor): VisionRgb => {
   if (
     Array.isArray(bead.rgb) &&
@@ -1427,46 +1401,9 @@ export const analyzeVisionProgress = ({
     matchedGuideCells,
     wrongGuideCells,
     wrongCellsDetail,
+    detectedCells: cells,
     wrongColorSuggestions,
     quality,
     markerRadius,
   };
-};
-
-export const findBestVisionBoardMatch = ({
-  frameData,
-  frameWidth,
-  frameHeight,
-  boardTiles,
-  corners,
-  emptyReferenceRgb,
-  tolerance,
-  preferredColorId,
-}: FindBestBoardMatchOptions): VisionBoardMatchResult | null => {
-  let bestMatch: VisionBoardMatchResult | null = null;
-
-  for (const tile of boardTiles) {
-    const detection = analyzeVisionProgress({
-      frameData,
-      frameWidth,
-      frameHeight,
-      boardTile: tile,
-      corners,
-      emptyReferenceRgb,
-      tolerance,
-      preferredColorId,
-    });
-
-    const score = calculateVisionBoardMatchScore(detection);
-
-    if (!bestMatch || score > bestMatch.score) {
-      bestMatch = {
-        tile,
-        detection,
-        score,
-      };
-    }
-  }
-
-  return bestMatch;
 };

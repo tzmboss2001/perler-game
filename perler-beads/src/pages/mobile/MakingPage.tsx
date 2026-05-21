@@ -13,6 +13,7 @@ import {
   Eye,
   EyeSlash,
   Gear,
+  GridFour,
   Lightning,
   LightningSlash,
   X,
@@ -48,7 +49,9 @@ import {
   clampMakingStageTranslate,
   clampSingleBoardMobileOverviewOffset,
   clampSingleBoardMobileOverviewWidth,
+  getColorIndicesInRectByIdFirst,
   getColorIdTextStyle,
+  getColorSpotlightVisualStyle,
   getMakingDesktopSingleBoardUiFlags,
   getRenderScaleAnchorDelayMs,
   getSafeRenderMetricsBudget,
@@ -74,13 +77,23 @@ import {
   getSingleBoardSwipeStatus,
   getTextOverlayStabilizationFrames,
   parseSingleBoardOnboardingState,
+  resolveColorCellSelection,
   resolveSingleBoardSwipeDirection,
   shouldShowSingleBoardMobileOverviewButton,
 } from "../../utils/singleBoardInteraction.js";
+import {
+  DEFAULT_ADAPTIVE_GRID_VISIBILITY,
+  getAdaptiveGridBoostLevel,
+  getAdaptiveGridRegionTone,
+  getAdaptiveGridVisualLayers,
+  getViewportCenterGridRect,
+  resolveAdaptiveGridVisibility,
+} from "../../utils/adaptiveGrid.js";
 import BottomNav from "../../components/BottomNav";
 import {
   recommendBoard,
   getPhysicalBoardGuideOffsets,
+  getPhysicalBoardTenCellCrossGuides,
   getPhysicalBoardCenterOffset,
   getPhysicalBoardBlockCoordinate,
   getPhysicalBoardBlockRect,
@@ -90,7 +103,7 @@ import { getToken } from "../../services/api/authApi";
 import BannerAd from "../../components/ads/BannerAd";
 import RewardedUnlockModal from "../../components/ads/RewardedUnlockModal";
 import { adService } from "../../services/adService";
-import BoardVisionAssistModal from "../../components/BoardVisionAssistModal";
+import PhotoProgressSyncModal from "../../components/PhotoProgressSyncModal";
 import countBeadUsage from "../../services/beadUsageService";
 import beadInventoryService from "../../services/beadInventoryService";
 
@@ -315,7 +328,7 @@ const MakingPage: React.FC = () => {
   const [showRewardedUnlockModal, setShowRewardedUnlockModal] = useState(false);
   const pendingExportAfterRewardRef = useRef<(() => void) | null>(null);
   const [showReplaceModal, setShowReplaceModal] = useState(false);
-  const [showVisionAssist, setShowVisionAssist] = useState(false);
+  const [showPhotoProgressSync, setShowPhotoProgressSync] = useState(false);
   const [lastReplaceSnapshot, setLastReplaceSnapshot] =
     useState<ReplaceHistoryState | null>(null);
   const [redoReplaceSnapshot, setRedoReplaceSnapshot] =
@@ -351,6 +364,11 @@ const MakingPage: React.FC = () => {
   const [voiceEnabled, setVoiceEnabled] = useState(canSpeak());
   const [assistPackEnabled, setAssistPackEnabled] = useState(true);
   const [focusCurrentBoard, setFocusCurrentBoard] = useState(true);
+  const [gridEnhanceEnabled, setGridEnhanceEnabled] = useState(true);
+  const adaptiveGridVisibilityRef = useRef(DEFAULT_ADAPTIVE_GRID_VISIBILITY);
+  const adaptiveGridToneCacheRef = useRef<
+    Map<string, "light" | "dark" | "mixed">
+  >(new Map());
   const [viewMode, setViewMode] = useState<MakingViewMode>("traditional");
   const [activeBoardNumber, setActiveBoardNumber] = useState(1);
   const [boardStatusMap, setBoardStatusMap] = useState<BoardStatusMap>({});
@@ -504,6 +522,13 @@ const MakingPage: React.FC = () => {
     return `making_single_board_state_${scope}`;
   }, [beadData, localProjectId, projectId]);
 
+  const photoProgressProjectId = useMemo(() => {
+    if (!beadData) return "anonymous";
+    if (projectId) return `project_${projectId}`;
+    if (localProjectId) return `local_${localProjectId}`;
+    return `draft_${beadData.width}x${beadData.height}`;
+  }, [beadData, localProjectId, projectId]);
+
   const cloneBeadData = useCallback((data: BeadPixelData): BeadPixelData => {
     return {
       ...data,
@@ -601,6 +626,11 @@ const MakingPage: React.FC = () => {
     return recommendBoard(beadData.width, beadData.height).boardSize;
   }, [beadData]);
 
+  useEffect(() => {
+    adaptiveGridToneCacheRef.current.clear();
+    adaptiveGridVisibilityRef.current = DEFAULT_ADAPTIVE_GRID_VISIBILITY;
+  }, [beadData, physicalBoardSize]);
+
   const physicalBoardCols = useMemo(() => {
     if (!beadData) return 1;
     return Math.max(1, Math.ceil(beadData.width / physicalBoardSize));
@@ -641,43 +671,33 @@ const MakingPage: React.FC = () => {
     [beadData, physicalBoardSize],
   );
 
-  // 获取指定区块内某颜色的全部格子索引
-  const getColorIndicesInBlock = useCallback(
-    (colorHex: string, blockX: number, blockY: number): number[] => {
+  const getColorIndicesInRect = useCallback(
+    (
+      rect: { startX: number; startY: number; endX: number; endY: number } | null,
+      colorId?: string,
+      colorHex?: string,
+    ): number[] => {
       if (!beadData) return [];
-      const rect = getBlockRectBySelection(blockX, blockY);
-      if (!rect) return [];
-
-      const indices: number[] = [];
-      for (let y = rect.startY; y < rect.endY; y++) {
-        for (let x = rect.startX; x < rect.endX; x++) {
-          const index = y * beadData.width + x;
-          const bead = beadData.beads[index];
-          if (bead && bead.hex === colorHex) {
-            indices.push(index);
-          }
-        }
-      }
-      return indices;
+      return getColorIndicesInRectByIdFirst({
+        beads: beadData.beads,
+        width: beadData.width,
+        rect,
+        colorId,
+        colorHex,
+      });
     },
-    [beadData, getBlockRectBySelection],
+    [beadData],
   );
-
-  // 获取选中颜色在当前区块的数量
-  const colorCountInBlock = useMemo(() => {
-    if (selection.type !== "color" || !selection.colorHex) return 0;
-    return getColorIndicesInBlock(
-      selection.colorHex,
-      selection.blockX,
-      selection.blockY,
-    ).length;
-  }, [selection, getColorIndicesInBlock]);
 
   // 获取选中颜色在整幅作品的数量
   const colorCountTotal = useMemo(() => {
-    if (!beadData || !selection.colorHex) return 0;
-    return beadData.beads.filter((b) => b.hex === selection.colorHex).length;
-  }, [beadData, selection.colorHex]);
+    if (!beadData || (!selection.colorId && !selection.colorHex)) return 0;
+    return getColorIndicesInRect(
+      { startX: 0, startY: 0, endX: beadData.width, endY: beadData.height },
+      selection.colorId,
+      selection.colorHex,
+    ).length;
+  }, [beadData, getColorIndicesInRect, selection.colorHex, selection.colorId]);
 
   const boardRects = useMemo(() => {
     if (!beadData) return [];
@@ -713,6 +733,50 @@ const MakingPage: React.FC = () => {
       boardRects.find((item) => item.boardNumber === activeBoardNumber) || null
     );
   }, [activeBoardNumber, boardRects]);
+
+  const selectedColorHighlightRect = useMemo(() => {
+    if (!beadData || selection.type !== "color") return null;
+    if (viewMode === "singleBoard") {
+      return activeBoardRect;
+    }
+    return getBlockRectBySelection(selection.blockX, selection.blockY);
+  }, [
+    activeBoardRect,
+    beadData,
+    getBlockRectBySelection,
+    selection.blockX,
+    selection.blockY,
+    selection.type,
+    viewMode,
+  ]);
+
+  const getSelectedColorHighlightIndices = useCallback((): number[] => {
+    if (
+      selection.type !== "color" ||
+      (!selection.colorId && !selection.colorHex)
+    ) {
+      return [];
+    }
+    return getColorIndicesInRect(
+      selectedColorHighlightRect,
+      selection.colorId,
+      selection.colorHex,
+    );
+  }, [
+    getColorIndicesInRect,
+    selectedColorHighlightRect,
+    selection.colorHex,
+    selection.colorId,
+    selection.type,
+  ]);
+
+  const colorCountInHighlightScope = useMemo(
+    () => getSelectedColorHighlightIndices().length,
+    [getSelectedColorHighlightIndices],
+  );
+
+  const colorHighlightScopeLabel =
+    viewMode === "singleBoard" ? "当前板" : "区内";
 
   const showSingleBoardMobileOverviewButton = useMemo(
     () =>
@@ -988,8 +1052,8 @@ const MakingPage: React.FC = () => {
         wrapperWidth: wrapperRect.width,
         wrapperHeight: wrapperRect.height,
         isSingleBoardMobileImmersive:
-          singleBoardMobileImmersiveRef.current &&
-          !options?.ignoreImmersivePanSlack,
+          singleBoardMobileImmersiveRef.current,
+        allowImmersiveVerticalSlack: !options?.ignoreImmersivePanSlack,
       });
     },
     [baseCellSize, displayBoardRect, displayHeight, displayWidth],
@@ -1210,9 +1274,11 @@ const MakingPage: React.FC = () => {
       nextScale: number,
       x: number,
       y: number,
-      options?: { immediate?: boolean },
+      options?: { immediate?: boolean; ignoreImmersivePanSlack?: boolean },
     ) => {
-      const clamped = clampTranslate(nextScale, x, y);
+      const clamped = clampTranslate(nextScale, x, y, {
+        ignoreImmersivePanSlack: options?.ignoreImmersivePanSlack,
+      });
       translateRef.current = clamped;
       scaleRef.current = nextScale;
       const predictedRenderMetrics =
@@ -1443,9 +1509,6 @@ const MakingPage: React.FC = () => {
     selection.blockY,
     visionBoardRecommendation,
   ]);
-
-  const visionInitialColorId =
-    selection.type === "color" ? (selection.colorId ?? null) : null;
 
   const selectedBlockAnchor = useMemo(() => {
     if (!beadData || selection.type === null) return null;
@@ -2838,6 +2901,101 @@ const MakingPage: React.FC = () => {
     };
   }, []);
 
+  const applyCellSelection = useCallback(
+    (
+      globalCellX: number,
+      globalCellY: number,
+      screenX: number,
+      screenY: number,
+    ) => {
+      if (!beadData) return;
+      const blockCoordinate = getPhysicalBoardBlockCoordinate(
+        globalCellX,
+        globalCellY,
+        physicalBoardSize,
+      );
+      const blockX = blockCoordinate.blockX;
+      const blockY = blockCoordinate.blockY;
+
+      if (scale < DETAIL_MODE_THRESHOLD) {
+        if (
+          selection.type === "block" &&
+          selection.blockX === blockX &&
+          selection.blockY === blockY
+        ) {
+          setSelection({ type: null, blockX: 0, blockY: 0 });
+          setSelectedCell(null);
+          setTooltipState((prev) => ({ ...prev, visible: false }));
+          return;
+        }
+
+        setSelection({ type: "block", blockX, blockY });
+        setSelectedCell(null);
+        setTooltipState((prev) => ({ ...prev, visible: false }));
+        return;
+      }
+
+      const index = globalCellY * beadData.width + globalCellX;
+      const bead = beadData.beads[index];
+      if (!bead) {
+        setSelection({ type: null, blockX: 0, blockY: 0 });
+        setSelectedCell(null);
+        setTooltipState((prev) => ({ ...prev, visible: false }));
+        return;
+      }
+
+      const boardCoordinate = getPhysicalBoardCoordinate(
+        globalCellX,
+        globalCellY,
+      );
+
+      setTooltipState({
+        visible: true,
+        row: globalCellY + 1,
+        col: globalCellX + 1,
+        boardNumber: boardCoordinate.boardNumber,
+        localRow: boardCoordinate.localRow,
+        localCol: boardCoordinate.localCol,
+        screenX,
+        screenY,
+      });
+
+      if (voiceEnabled) {
+        speakCoordinate(
+          globalCellY + 1,
+          globalCellX + 1,
+          boardCoordinate.boardNumber,
+          boardCoordinate.localRow,
+          boardCoordinate.localCol,
+        );
+      }
+
+      const nextSelection = resolveColorCellSelection({
+        previousSelection: selection,
+        previousSelectedCell: selectedCell,
+        nextCell: { x: globalCellX, y: globalCellY },
+        nextBead: bead,
+        blockX,
+        blockY,
+      });
+
+      setSelection(nextSelection.selection);
+      setSelectedCell(nextSelection.selectedCell);
+      if (nextSelection.shouldClearTooltip) {
+        setTooltipState((prev) => ({ ...prev, visible: false }));
+      }
+    },
+    [
+      beadData,
+      getPhysicalBoardCoordinate,
+      physicalBoardSize,
+      scale,
+      selectedCell,
+      selection,
+      voiceEnabled,
+    ],
+  );
+
   // ===== 点击处理（交互核心）=====
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -2891,110 +3049,16 @@ const MakingPage: React.FC = () => {
 
       const globalCellX = displayBoardRect.startX + cellX;
       const globalCellY = displayBoardRect.startY + cellY;
-
-      // 计算所在区块（按现实豆板分区）
-      const blockCoordinate = getPhysicalBoardBlockCoordinate(
-        globalCellX,
-        globalCellY,
-        physicalBoardSize,
-      );
-      const blockX = blockCoordinate.blockX;
-      const blockY = blockCoordinate.blockY;
-
-      // 根据缩放级别决定行为
-      if (scale < DETAIL_MODE_THRESHOLD) {
-        // 缩小状态：选中区块
-        if (
-          selection.type === "block" &&
-          selection.blockX === blockX &&
-          selection.blockY === blockY
-        ) {
-          setSelection({ type: null, blockX: 0, blockY: 0 });
-          setSelectedCell(null);
-          setTooltipState((prev) => ({ ...prev, visible: false }));
-        } else {
-          setSelection({
-            type: "block",
-            blockX,
-            blockY,
-          });
-          setSelectedCell(null);
-          setTooltipState((prev) => ({ ...prev, visible: false }));
-        }
-      } else {
-        // 放大状态：选中颜色
-        const index = globalCellY * beadData.width + globalCellX;
-        const bead = beadData.beads[index];
-        if (!bead) {
-          setSelection({ type: null, blockX: 0, blockY: 0 });
-          setSelectedCell(null);
-          setTooltipState((prev) => ({ ...prev, visible: false }));
-          return;
-        }
-
-        // 显示坐标提示
-        const screenX = e.clientX - wrapperRect.left;
-        const screenY = e.clientY - wrapperRect.top;
-        const boardCoordinate = getPhysicalBoardCoordinate(
-          globalCellX,
-          globalCellY,
-        );
-
-        setTooltipState({
-          visible: true,
-          row: globalCellY + 1,
-          col: globalCellX + 1,
-          boardNumber: boardCoordinate.boardNumber,
-          localRow: boardCoordinate.localRow,
-          localCol: boardCoordinate.localCol,
-          screenX,
-          screenY,
-        });
-
-        if (voiceEnabled) {
-          speakCoordinate(
-            globalCellY + 1,
-            globalCellX + 1,
-            boardCoordinate.boardNumber,
-            boardCoordinate.localRow,
-            boardCoordinate.localCol,
-          );
-        }
-
-        const sameCell =
-          selection.type === "color" &&
-          selectedCell?.x === globalCellX &&
-          selectedCell?.y === globalCellY;
-
-        // 只有重复点击同一个格子时才取消；点击其他格子一律直接切换
-        if (sameCell) {
-          setSelection({ type: null, blockX: 0, blockY: 0 });
-          setSelectedCell(null);
-          setTooltipState((prev) => ({ ...prev, visible: false }));
-        } else {
-          setSelection({
-            type: "color",
-            blockX,
-            blockY,
-            colorHex: bead.hex,
-            colorId: bead.id,
-          });
-          setSelectedCell({ x: globalCellX, y: globalCellY });
-        }
-      }
+      const screenX = e.clientX - wrapperRect.left;
+      const screenY = e.clientY - wrapperRect.top;
+      applyCellSelection(globalCellX, globalCellY, screenX, screenY);
     },
     [
+      applyCellSelection,
       beadData,
       displayBoardRect,
       displayHeight,
       displayWidth,
-      getPhysicalBoardCoordinate,
-      physicalBoardSize,
-      scale,
-      selectedCell,
-      selection,
-      voiceEnabled,
-      toast,
       markSingleBoardMobileCanvasInteraction,
       isSingleBoardInteractionLocked,
     ],
@@ -3159,7 +3223,10 @@ const MakingPage: React.FC = () => {
           (1 - ratioFromStart) * (start.focalY - centerY) +
           deltaFocalY;
 
-        commitTranslate(nextScale, nextX, nextY);
+        const isPinchZoomingOut = nextScale < start.scale - 0.001;
+        commitTranslate(nextScale, nextX, nextY, {
+          ignoreImmersivePanSlack: isPinchZoomingOut,
+        });
       }
     },
     [
@@ -3230,90 +3297,9 @@ const MakingPage: React.FC = () => {
           ) {
             const globalCellX = displayBoardRect.startX + cellX;
             const globalCellY = displayBoardRect.startY + cellY;
-            const blockCoordinate = getPhysicalBoardBlockCoordinate(
-              globalCellX,
-              globalCellY,
-              physicalBoardSize,
-            );
-            const blockX = blockCoordinate.blockX;
-            const blockY = blockCoordinate.blockY;
-
-            if (scale < DETAIL_MODE_THRESHOLD) {
-              if (
-                selection.type === "block" &&
-                selection.blockX === blockX &&
-                selection.blockY === blockY
-              ) {
-                setSelection({ type: null, blockX: 0, blockY: 0 });
-                setSelectedCell(null);
-                setTooltipState((prev) => ({ ...prev, visible: false }));
-              } else {
-                setSelection({ type: "block", blockX, blockY });
-                setSelectedCell(null);
-                setTooltipState((prev) => ({ ...prev, visible: false }));
-              }
-            } else {
-              const index = globalCellY * beadData.width + globalCellX;
-              const bead = beadData.beads[index];
-              if (!bead) {
-                setSelection({ type: null, blockX: 0, blockY: 0 });
-                setSelectedCell(null);
-                setTooltipState((prev) => ({ ...prev, visible: false }));
-                lastTapProcessedRef.current = Date.now();
-                return;
-              }
-
-              const screenX = touch.clientX - wrapperRect.left;
-              const screenY = touch.clientY - wrapperRect.top;
-              const boardCoordinate = getPhysicalBoardCoordinate(
-                globalCellX,
-                globalCellY,
-              );
-
-              setTooltipState({
-                visible: true,
-                row: globalCellY + 1,
-                col: globalCellX + 1,
-                boardNumber: boardCoordinate.boardNumber,
-                localRow: boardCoordinate.localRow,
-                localCol: boardCoordinate.localCol,
-                screenX,
-                screenY,
-              });
-
-              if (voiceEnabled) {
-                speakCoordinate(
-                  globalCellY + 1,
-                  globalCellX + 1,
-                  boardCoordinate.boardNumber,
-                  boardCoordinate.localRow,
-                  boardCoordinate.localCol,
-                );
-              }
-
-              const sameBlock =
-                selection.blockX === blockX && selection.blockY === blockY;
-
-              // 点击当前区块内相同颜色：回到区块高亮，不清空区块
-              if (
-                selection.type === "color" &&
-                sameBlock &&
-                selection.colorHex === bead.hex
-              ) {
-                setSelection({ type: "block", blockX, blockY });
-                setSelectedCell(null);
-                setTooltipState((prev) => ({ ...prev, visible: false }));
-              } else {
-                setSelection({
-                  type: "color",
-                  blockX,
-                  blockY,
-                  colorHex: bead.hex,
-                  colorId: bead.id,
-                });
-                setSelectedCell({ x: globalCellX, y: globalCellY });
-              }
-            }
+            const screenX = touch.clientX - wrapperRect.left;
+            const screenY = touch.clientY - wrapperRect.top;
+            applyCellSelection(globalCellX, globalCellY, screenX, screenY);
           }
 
           // 标记已处理，防止后续 click 事件重复触发
@@ -3328,17 +3314,12 @@ const MakingPage: React.FC = () => {
       singleBoardSwipeGestureRef.current.triggered = false;
     },
     [
+      applyCellSelection,
       beadData,
       displayBoardRect,
       displayHeight,
       displayWidth,
-      getPhysicalBoardCoordinate,
-      physicalBoardSize,
-      scale,
-      selection,
       markSingleBoardMobileCanvasInteraction,
-      voiceEnabled,
-      toast,
       isSingleBoardInteractionLocked,
     ],
   );
@@ -3526,17 +3507,18 @@ const MakingPage: React.FC = () => {
     const selectedBlockStartY = selectedBlockRect?.startY ?? 0;
     const selectedBlockEndX = selectedBlockRect?.endX ?? 0;
     const selectedBlockEndY = selectedBlockRect?.endY ?? 0;
+    const colorScopeStartX = selectedColorHighlightRect?.startX ?? 0;
+    const colorScopeStartY = selectedColorHighlightRect?.startY ?? 0;
+    const colorScopeEndX = selectedColorHighlightRect?.endX ?? 0;
+    const colorScopeEndY = selectedColorHighlightRect?.endY ?? 0;
 
     // 获取选中颜色的索引集合
     const highlightedIndices = new Set(
-      selection.type === "color" && selection.colorHex
-        ? getColorIndicesInBlock(
-            selection.colorHex,
-            selection.blockX,
-            selection.blockY,
-          )
-        : [],
+      selection.type === "color" ? getSelectedColorHighlightIndices() : [],
     );
+    const colorSpotlightStyle = getColorSpotlightVisualStyle({
+      dpr: renderDpr,
+    });
 
     const focusedBoardRect =
       assistPackEnabled &&
@@ -3585,22 +3567,22 @@ const MakingPage: React.FC = () => {
         }
 
         // 选中颜色时：区块外明显弱化，区块内非目标格子轻度变暗，
-        // 目标颜色整格轻量高亮，让原色仍然可读。
+        // 目标颜色保留原色并轻量提亮，让视觉焦点落在目标格。
         if (selection.type === "color") {
           const inBlock =
-            globalX >= selectedBlockStartX &&
-            globalX < selectedBlockEndX &&
-            globalY >= selectedBlockStartY &&
-            globalY < selectedBlockEndY;
+            globalX >= colorScopeStartX &&
+            globalX < colorScopeEndX &&
+            globalY >= colorScopeStartY &&
+            globalY < colorScopeEndY;
 
           if (!inBlock) {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+            ctx.fillStyle = colorSpotlightStyle.outsideScopeDim;
             ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
           } else if (!highlightedIndices.has(index)) {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+            ctx.fillStyle = colorSpotlightStyle.insideScopeDim;
             ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
           } else if (highlightedIndices.has(index)) {
-            ctx.fillStyle = "rgba(255, 255, 255, 0.14)";
+            ctx.fillStyle = colorSpotlightStyle.targetLift;
             ctx.fillRect(px, py, safeRenderCellSize, safeRenderCellSize);
           }
         }
@@ -3609,7 +3591,10 @@ const MakingPage: React.FC = () => {
 
     if (focusedBoardRect) {
       ctx.save();
-      ctx.fillStyle = "rgba(255, 247, 237, 0.56)";
+      ctx.fillStyle =
+        selection.type === "color"
+          ? colorSpotlightStyle.outsideScopeDim
+          : "rgba(255, 247, 237, 0.56)";
       if (focusedBoardRect.top > 0) {
         ctx.fillRect(0, 0, safeRenderCanvasWidth, focusedBoardRect.top);
       }
@@ -3653,12 +3638,13 @@ const MakingPage: React.FC = () => {
     displayWidth,
     focusCurrentBoard,
     getBlockRectBySelection,
-    getColorIndicesInBlock,
+    getSelectedColorHighlightIndices,
     renderDpr,
     renderScale,
     safeRenderCellSize,
     safeRenderCanvasHeight,
     safeRenderCanvasWidth,
+    selectedColorHighlightRect,
     selection,
     showColorId,
   ]);
@@ -3667,6 +3653,7 @@ const MakingPage: React.FC = () => {
     if (
       !beadData ||
       !overlayCanvasRef.current ||
+      !wrapperRef.current ||
       !displayBoardRect ||
       !renderMetrics ||
       displayWidth <= 0 ||
@@ -3674,18 +3661,37 @@ const MakingPage: React.FC = () => {
     )
       return;
 
+    const wrapper = wrapperRef.current;
     const canvas = overlayCanvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Keep overlay backing store aligned with the same safe DPR budget as the base canvas.
-    // Using raw devicePixelRatio here can blow the overlay past mobile canvas limits and white-screen.
-    const dpr = renderDpr;
-    const drawCellWidth = safeRenderCellSize;
-    const drawCellHeight = safeRenderCellSize;
-    const drawCellSize = safeRenderCellSize;
+    const wrapperWidth = wrapper.clientWidth;
+    const wrapperHeight = wrapper.clientHeight;
+    if (wrapperWidth <= 0 || wrapperHeight <= 0) return;
+
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const stageDisplayScale = getLiveStageDisplayScale({
+      targetScale: scale,
+      committedRenderScale: renderScale,
+    });
+    const drawCellWidth = safeRenderCellSize * stageDisplayScale;
+    const drawCellHeight = safeRenderCellSize * stageDisplayScale;
+    const drawCellSize = drawCellWidth;
+    const stageLeft =
+      (wrapperWidth - safeRenderCanvasWidth * stageDisplayScale) / 2 +
+      translateX;
+    const stageTop =
+      (wrapperHeight - safeRenderCanvasHeight * stageDisplayScale) / 2 +
+      translateY;
     const displayStartX = displayBoardRect.startX;
     const displayStartY = displayBoardRect.startY;
+    const localXToScreen = (x: number) => stageLeft + x * drawCellWidth;
+    const localYToScreen = (y: number) => stageTop + y * drawCellHeight;
+    const globalXToScreen = (x: number) =>
+      localXToScreen(x - displayStartX);
+    const globalYToScreen = (y: number) =>
+      localYToScreen(y - displayStartY);
     const selectedBlockRect = getBlockRectBySelection(
       selection.blockX,
       selection.blockY,
@@ -3695,22 +3701,17 @@ const MakingPage: React.FC = () => {
     const selectedBlockEndX = selectedBlockRect?.endX ?? 0;
     const selectedBlockEndY = selectedBlockRect?.endY ?? 0;
     const highlightedIndices = new Set(
-      selection.type === "color" && selection.colorHex
-        ? getColorIndicesInBlock(
-            selection.colorHex,
-            selection.blockX,
-            selection.blockY,
-          )
-        : [],
+      selection.type === "color" ? getSelectedColorHighlightIndices() : [],
     );
+    const colorSpotlightStyle = getColorSpotlightVisualStyle({ dpr });
     const focusedBoardRect =
       assistPackEnabled &&
       focusCurrentBoard &&
       currentBoardRect &&
       selection.type !== null
         ? {
-            left: (currentBoardRect.startX - displayStartX) * drawCellWidth,
-            top: (currentBoardRect.startY - displayStartY) * drawCellHeight,
+            left: globalXToScreen(currentBoardRect.startX),
+            top: globalYToScreen(currentBoardRect.startY),
             width:
               (currentBoardRect.endX - currentBoardRect.startX) * drawCellWidth,
             height:
@@ -3719,29 +3720,48 @@ const MakingPage: React.FC = () => {
           }
         : null;
 
-    canvas.width = Math.max(1, Math.floor(safeRenderCanvasWidth * dpr));
-    canvas.height = Math.max(1, Math.floor(safeRenderCanvasHeight * dpr));
-    canvas.style.width = `${safeRenderCanvasWidth}px`;
-    canvas.style.height = `${safeRenderCanvasHeight}px`;
+    canvas.width = Math.max(1, Math.floor(wrapperWidth * dpr));
+    canvas.height = Math.max(1, Math.floor(wrapperHeight * dpr));
+    canvas.style.width = `${wrapperWidth}px`;
+    canvas.style.height = `${wrapperHeight}px`;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.scale(dpr, dpr);
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true;
 
-    const visibleStartX = 0;
-    const visibleStartY = 0;
-    const visibleEndX = displayWidth;
-    const visibleEndY = displayHeight;
-    const visibleGlobalStartX = displayStartX;
-    const visibleGlobalStartY = displayStartY;
-    const visibleGlobalEndX = displayStartX + displayWidth;
-    const visibleGlobalEndY = displayStartY + displayHeight;
-    const baseGridWidth = Math.min(1, Math.max(0.35, 0.9 / dpr));
-    const guideWidth = Math.min(1.4, Math.max(0.75, 1.15 / dpr));
-    const boardWidth = Math.min(2, Math.max(1.1, 1.6 / dpr));
-    const highlightWidth = Math.min(2.5, Math.max(1.3, 2 / dpr));
-    const snapCanvasCoord = (value: number) => Math.round(value * dpr) / dpr;
+    const visibleStartX = Math.max(
+      0,
+      Math.floor(-stageLeft / drawCellWidth) - 1,
+    );
+    const visibleStartY = Math.max(
+      0,
+      Math.floor(-stageTop / drawCellHeight) - 1,
+    );
+    const visibleEndX = Math.min(
+      displayWidth,
+      Math.ceil((wrapperWidth - stageLeft) / drawCellWidth) + 1,
+    );
+    const visibleEndY = Math.min(
+      displayHeight,
+      Math.ceil((wrapperHeight - stageTop) / drawCellHeight) + 1,
+    );
+    const visibleGlobalStartX = displayStartX + visibleStartX;
+    const visibleGlobalStartY = displayStartY + visibleStartY;
+    const visibleGlobalEndX = displayStartX + visibleEndX;
+    const visibleGlobalEndY = displayStartY + visibleEndY;
+    const minDeviceLineWidth = 0.5 / Math.max(1, dpr);
+    const toCanvasLineWidth = (screenWidth: number) =>
+      Math.max(minDeviceLineWidth, screenWidth);
+    const baseGridWidth = toCanvasLineWidth(0.9);
+    const guideWidth = toCanvasLineWidth(1.15);
+    const boardWidth = toCanvasLineWidth(1.6);
+    const highlightWidth = toCanvasLineWidth(2);
+    const snapCanvasCoord = (value: number, lineWidth = 1) => {
+      const deviceLineWidth = Math.max(1, Math.round(lineWidth * dpr));
+      const offset = deviceLineWidth % 2 === 1 ? 0.5 : 0;
+      return (Math.round(value * dpr) + offset) / dpr;
+    };
     const drawVLine = (
       x: number,
       y1: number,
@@ -3749,9 +3769,10 @@ const MakingPage: React.FC = () => {
       strokeStyle: string,
       lineWidth: number,
     ) => {
-      const snappedX = snapCanvasCoord(x);
-      const startY = snapCanvasCoord(Math.min(y1, y2));
-      const endY = snapCanvasCoord(Math.max(y1, y2));
+      const snappedX = snapCanvasCoord(x, lineWidth);
+      const startY = Math.max(0, Math.min(wrapperHeight, Math.min(y1, y2)));
+      const endY = Math.max(0, Math.min(wrapperHeight, Math.max(y1, y2)));
+      if (endY <= startY) return;
       ctx.save();
       ctx.strokeStyle = strokeStyle;
       ctx.lineWidth = lineWidth;
@@ -3768,9 +3789,10 @@ const MakingPage: React.FC = () => {
       strokeStyle: string,
       lineWidth: number,
     ) => {
-      const snappedY = snapCanvasCoord(y);
-      const startX = snapCanvasCoord(Math.min(x1, x2));
-      const endX = snapCanvasCoord(Math.max(x1, x2));
+      const snappedY = snapCanvasCoord(y, lineWidth);
+      const startX = Math.max(0, Math.min(wrapperWidth, Math.min(x1, x2)));
+      const endX = Math.max(0, Math.min(wrapperWidth, Math.max(x1, x2)));
+      if (endX <= startX) return;
       ctx.save();
       ctx.strokeStyle = strokeStyle;
       ctx.lineWidth = lineWidth;
@@ -3780,53 +3802,262 @@ const MakingPage: React.FC = () => {
       ctx.stroke();
       ctx.restore();
     };
+    const adaptiveGridVisibility = resolveAdaptiveGridVisibility({
+      enabled: gridEnhanceEnabled,
+      drawCellSize,
+      previous: adaptiveGridVisibilityRef.current,
+    });
+    adaptiveGridVisibilityRef.current = adaptiveGridVisibility;
+    const viewportCenterRect =
+      adaptiveGridVisibility.workingBoost && beadData
+        ? getViewportCenterGridRect({
+            displayStartX,
+            displayStartY,
+            displayWidth,
+            displayHeight,
+            artworkWidth: beadData.width,
+            artworkHeight: beadData.height,
+            physicalBoardSize,
+          })
+        : null;
+    const getToneForRect = (rect: {
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+    }) => {
+      const key = `${rect.startX}:${rect.startY}:${rect.endX}:${rect.endY}`;
+      const cached = adaptiveGridToneCacheRef.current.get(key);
+      if (cached) return cached;
+      const tone = getAdaptiveGridRegionTone({
+        beads: beadData.beads,
+        width: beadData.width,
+        height: beadData.height,
+        startX: rect.startX,
+        startY: rect.startY,
+        endX: rect.endX,
+        endY: rect.endY,
+      });
+      adaptiveGridToneCacheRef.current.set(key, tone);
+      return tone;
+    };
+    const strokeLayeredVLine = (
+      x: number,
+      y1: number,
+      y2: number,
+      layers: Array<{ strokeStyle: string; lineWidth: number }>,
+    ) => {
+      for (const layer of layers) {
+        drawVLine(x, y1, y2, layer.strokeStyle, layer.lineWidth);
+      }
+    };
+    const strokeLayeredHLine = (
+      y: number,
+      x1: number,
+      x2: number,
+      layers: Array<{ strokeStyle: string; lineWidth: number }>,
+    ) => {
+      for (const layer of layers) {
+        drawHLine(y, x1, x2, layer.strokeStyle, layer.lineWidth);
+      }
+    };
+    const readableSmallGridLayers =
+      gridEnhanceEnabled && adaptiveGridVisibility.smallGrid
+        ? getAdaptiveGridVisualLayers({
+            tone: "mixed",
+            lineKind: "small",
+            boostLevel: "none",
+            dpr,
+          })
+        : null;
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, safeRenderCanvasWidth, safeRenderCanvasHeight);
+    ctx.rect(0, 0, wrapperWidth, wrapperHeight);
     ctx.clip();
 
     // 1. 基础小格
     if (drawCellSize >= 7) {
       for (let x = visibleStartX; x <= visibleEndX; x++) {
-        const screenX = x * drawCellWidth;
-        drawVLine(
-          screenX,
-          0,
-          safeRenderCanvasHeight,
-          "rgba(17,24,39,0.22)",
-          baseGridWidth,
-        );
+        const screenX = localXToScreen(x);
+        if (readableSmallGridLayers) {
+          strokeLayeredVLine(
+            screenX,
+            0,
+            wrapperHeight,
+            readableSmallGridLayers,
+          );
+        } else {
+          drawVLine(
+            screenX,
+            0,
+            wrapperHeight,
+            "rgba(17,24,39,0.22)",
+            baseGridWidth,
+          );
+        }
       }
       for (let y = visibleStartY; y <= visibleEndY; y++) {
-        const screenY = y * drawCellHeight;
-        drawHLine(
-          screenY,
-          0,
-          safeRenderCanvasWidth,
-          "rgba(17,24,39,0.22)",
-          baseGridWidth,
-        );
+        const screenY = localYToScreen(y);
+        if (readableSmallGridLayers) {
+          strokeLayeredHLine(
+            screenY,
+            0,
+            wrapperWidth,
+            readableSmallGridLayers,
+          );
+        } else {
+          drawHLine(
+            screenY,
+            0,
+            wrapperWidth,
+            "rgba(17,24,39,0.22)",
+            baseGridWidth,
+          );
+        }
       }
     }
 
     // 2. 现实豆板内部对称分区线
     const guideOffsets = getPhysicalBoardGuideOffsets(physicalBoardSize);
+    const tenCellCrossGuides =
+      getPhysicalBoardTenCellCrossGuides(physicalBoardSize);
     const boardColStart = Math.floor(visibleGlobalStartX / physicalBoardSize);
     const boardColEnd = Math.ceil(visibleGlobalEndX / physicalBoardSize);
     const boardRowStart = Math.floor(visibleGlobalStartY / physicalBoardSize);
     const boardRowEnd = Math.ceil(visibleGlobalEndY / physicalBoardSize);
+    const drawAdaptiveGridEnhancement = () => {
+      if (!adaptiveGridVisibility.adaptive || tenCellCrossGuides.length === 0) {
+        return;
+      }
+
+      const currentRect = currentBoardRect
+        ? {
+            startX: currentBoardRect.startX,
+            startY: currentBoardRect.startY,
+            endX: currentBoardRect.endX,
+            endY: currentBoardRect.endY,
+          }
+        : null;
+
+      for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
+        for (
+          let boardRow = boardRowStart;
+          boardRow <= boardRowEnd;
+          boardRow++
+        ) {
+          const boardOriginX = boardCol * physicalBoardSize;
+          const boardOriginY = boardRow * physicalBoardSize;
+
+          for (const guide of tenCellCrossGuides) {
+            const regionRect = {
+              startX: Math.max(0, boardOriginX + guide.startX),
+              startY: Math.max(0, boardOriginY + guide.startY),
+              endX: Math.min(boardOriginX + guide.endX, beadData.width),
+              endY: Math.min(boardOriginY + guide.endY, beadData.height),
+            };
+
+            if (
+              regionRect.endX <= regionRect.startX ||
+              regionRect.endY <= regionRect.startY ||
+              regionRect.endX < visibleGlobalStartX ||
+              regionRect.startX > visibleGlobalEndX ||
+              regionRect.endY < visibleGlobalStartY ||
+              regionRect.startY > visibleGlobalEndY
+            ) {
+              continue;
+            }
+
+            const boostLevel = getAdaptiveGridBoostLevel({
+              regionRect,
+              currentBoardRect: currentRect,
+              viewportCenterRect,
+            });
+            if (boostLevel === "none") continue;
+
+            const tone = getToneForRect(regionRect);
+            const crossLayers = getAdaptiveGridVisualLayers({
+              tone,
+              lineKind: "cross",
+              boostLevel,
+              dpr,
+            });
+            const guideLayers = getAdaptiveGridVisualLayers({
+              tone,
+              lineKind: "guide",
+              boostLevel,
+              dpr,
+            });
+            const clippedLeft = globalXToScreen(
+              Math.max(regionRect.startX, visibleGlobalStartX),
+            );
+            const clippedRight = globalXToScreen(
+              Math.min(regionRect.endX, visibleGlobalEndX),
+            );
+            const clippedTop = globalYToScreen(
+              Math.max(regionRect.startY, visibleGlobalStartY),
+            );
+            const clippedBottom = globalYToScreen(
+              Math.min(regionRect.endY, visibleGlobalEndY),
+            );
+
+            if (adaptiveGridVisibility.crossGuide) {
+              const centerX = boardOriginX + guide.centerX;
+              const centerY = boardOriginY + guide.centerY;
+              if (
+                centerX >= visibleGlobalStartX &&
+                centerX <= visibleGlobalEndX
+              ) {
+                const x = globalXToScreen(centerX);
+                strokeLayeredVLine(x, clippedTop, clippedBottom, crossLayers);
+              }
+              if (
+                centerY >= visibleGlobalStartY &&
+                centerY <= visibleGlobalEndY
+              ) {
+                const y = globalYToScreen(centerY);
+                strokeLayeredHLine(y, clippedLeft, clippedRight, crossLayers);
+              }
+            }
+
+            for (const offset of guideOffsets) {
+              const globalX = boardOriginX + offset;
+              if (globalX > regionRect.startX && globalX < regionRect.endX) {
+                const screenX = globalXToScreen(globalX);
+                strokeLayeredVLine(
+                  screenX,
+                  clippedTop,
+                  clippedBottom,
+                  guideLayers,
+                );
+              }
+
+              const globalY = boardOriginY + offset;
+              if (globalY > regionRect.startY && globalY < regionRect.endY) {
+                const screenY = globalYToScreen(globalY);
+                strokeLayeredHLine(
+                  screenY,
+                  clippedLeft,
+                  clippedRight,
+                  guideLayers,
+                );
+              }
+            }
+          }
+        }
+      }
+    };
 
     for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
       const originX = boardCol * physicalBoardSize;
       for (const offset of guideOffsets) {
         const lineX = originX + offset;
         if (lineX < visibleGlobalStartX || lineX > visibleGlobalEndX) continue;
-        const screenX = (lineX - displayStartX) * drawCellWidth;
+        const screenX = globalXToScreen(lineX);
         drawVLine(
           screenX,
           0,
-          safeRenderCanvasHeight,
+          wrapperHeight,
           "rgba(0,0,0,0.72)",
           guideWidth,
         );
@@ -3837,26 +4068,119 @@ const MakingPage: React.FC = () => {
       for (const offset of guideOffsets) {
         const lineY = originY + offset;
         if (lineY < visibleGlobalStartY || lineY > visibleGlobalEndY) continue;
-        const screenY = (lineY - displayStartY) * drawCellHeight;
+        const screenY = globalYToScreen(lineY);
         drawHLine(
           screenY,
           0,
-          safeRenderCanvasWidth,
+          wrapperWidth,
           "rgba(0,0,0,0.72)",
           guideWidth,
         );
       }
     }
 
-    // 3. 豆板边界线
+    // 3. 每个完整 10x10 区块内部的数格虚线十字
+    if (drawCellSize >= 10 && tenCellCrossGuides.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(15,23,42,0.34)";
+      const crossGuideWidth = toCanvasLineWidth(0.8);
+      ctx.lineWidth = crossGuideWidth;
+      ctx.setLineDash([
+        Math.max(2, Math.min(8, drawCellSize * 0.28)),
+        Math.max(2, Math.min(7, drawCellSize * 0.22)),
+      ]);
+      ctx.lineCap = "round";
+
+      for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
+        for (let boardRow = boardRowStart; boardRow <= boardRowEnd; boardRow++) {
+          const originX = boardCol * physicalBoardSize;
+          const originY = boardRow * physicalBoardSize;
+
+          for (const guide of tenCellCrossGuides) {
+            const guideStartX = originX + guide.startX;
+            const guideStartY = originY + guide.startY;
+            const guideEndX = originX + guide.endX;
+            const guideEndY = originY + guide.endY;
+            const guideCenterX = originX + guide.centerX;
+            const guideCenterY = originY + guide.centerY;
+
+            if (
+              guideEndX < visibleGlobalStartX ||
+              guideStartX > visibleGlobalEndX ||
+              guideEndY < visibleGlobalStartY ||
+              guideStartY > visibleGlobalEndY
+            ) {
+              continue;
+            }
+
+            if (
+              guideCenterX >= visibleGlobalStartX &&
+              guideCenterX <= visibleGlobalEndX
+            ) {
+              const startY = Math.max(guideStartY, visibleGlobalStartY);
+              const endY = Math.min(guideEndY, visibleGlobalEndY);
+              if (endY > startY) {
+                const screenX = snapCanvasCoord(
+                  globalXToScreen(guideCenterX),
+                  crossGuideWidth,
+                );
+                const screenStartY = snapCanvasCoord(
+                  globalYToScreen(startY),
+                  crossGuideWidth,
+                );
+                const screenEndY = snapCanvasCoord(
+                  globalYToScreen(endY),
+                  crossGuideWidth,
+                );
+                ctx.beginPath();
+                ctx.moveTo(screenX, screenStartY);
+                ctx.lineTo(screenX, screenEndY);
+                ctx.stroke();
+              }
+            }
+
+            if (
+              guideCenterY >= visibleGlobalStartY &&
+              guideCenterY <= visibleGlobalEndY
+            ) {
+              const startX = Math.max(guideStartX, visibleGlobalStartX);
+              const endX = Math.min(guideEndX, visibleGlobalEndX);
+              if (endX > startX) {
+                const screenY = snapCanvasCoord(
+                  globalYToScreen(guideCenterY),
+                  crossGuideWidth,
+                );
+                const screenStartX = snapCanvasCoord(
+                  globalXToScreen(startX),
+                  crossGuideWidth,
+                );
+                const screenEndX = snapCanvasCoord(
+                  globalXToScreen(endX),
+                  crossGuideWidth,
+                );
+                ctx.beginPath();
+                ctx.moveTo(screenStartX, screenY);
+                ctx.lineTo(screenEndX, screenY);
+                ctx.stroke();
+              }
+            }
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    drawAdaptiveGridEnhancement();
+
+    // 4. 豆板边界线
     for (let boardCol = boardColStart; boardCol <= boardColEnd; boardCol++) {
       const lineX = boardCol * physicalBoardSize;
       if (lineX < visibleGlobalStartX || lineX > visibleGlobalEndX) continue;
-      const screenX = (lineX - displayStartX) * drawCellWidth;
+      const screenX = globalXToScreen(lineX);
       drawVLine(
         screenX,
         0,
-        safeRenderCanvasHeight,
+        wrapperHeight,
         "rgba(0,0,0,0.92)",
         boardWidth,
       );
@@ -3864,17 +4188,17 @@ const MakingPage: React.FC = () => {
     for (let boardRow = boardRowStart; boardRow <= boardRowEnd; boardRow++) {
       const lineY = boardRow * physicalBoardSize;
       if (lineY < visibleGlobalStartY || lineY > visibleGlobalEndY) continue;
-      const screenY = (lineY - displayStartY) * drawCellHeight;
+      const screenY = globalYToScreen(lineY);
       drawHLine(
         screenY,
         0,
-        safeRenderCanvasWidth,
+        wrapperWidth,
         "rgba(0,0,0,0.92)",
         boardWidth,
       );
     }
 
-    // 4. 每块板中心十字
+    // 5. 每块板中心十字
     if (drawCellSize >= 8) {
       const centerOffset = getPhysicalBoardCenterOffset(physicalBoardSize);
       const crossArm = Math.min(8, Math.max(4, drawCellSize * 0.38));
@@ -3890,8 +4214,8 @@ const MakingPage: React.FC = () => {
           ) {
             continue;
           }
-          const cx = (centerCellX - displayStartX) * drawCellWidth;
-          const cy = (centerCellY - displayStartY) * drawCellHeight;
+          const cx = globalXToScreen(centerCellX);
+          const cy = globalYToScreen(centerCellY);
           drawVLine(
             cx,
             cy - crossArm,
@@ -3910,7 +4234,7 @@ const MakingPage: React.FC = () => {
       }
     }
 
-    // 5. 板号标签
+    // 6. 板号标签
     if (drawCellSize >= 7) {
       const labelFont = Math.min(16, Math.max(11, drawCellSize * 0.6));
       for (let boardRow = 0; boardRow < physicalBoardRows; boardRow++) {
@@ -3927,8 +4251,8 @@ const MakingPage: React.FC = () => {
           ) {
             continue;
           }
-          const x = (startX - displayStartX) * drawCellWidth + 4;
-          const y = (startY - displayStartY) * drawCellHeight + 4;
+          const x = globalXToScreen(startX) + 4;
+          const y = globalYToScreen(startY) + 4;
           const text = `板${boardRow * physicalBoardCols + boardCol + 1}`;
           ctx.save();
           ctx.font = `700 ${labelFont}px "Trebuchet MS", "PingFang SC", sans-serif`;
@@ -3961,19 +4285,17 @@ const MakingPage: React.FC = () => {
     }
 
     if (selection.type === "block" || selection.type === "color") {
-      const localStartX = selectedBlockStartX - displayStartX;
-      const localStartY = selectedBlockStartY - displayStartY;
-      const x = localStartX * drawCellWidth;
-      const y = localStartY * drawCellHeight;
+      const x = globalXToScreen(selectedBlockStartX);
+      const y = globalYToScreen(selectedBlockStartY);
       const w = (selectedBlockEndX - selectedBlockStartX) * drawCellWidth;
       const h = (selectedBlockEndY - selectedBlockStartY) * drawCellHeight;
-      const snappedLeft = snapCanvasCoord(x);
-      const snappedTop = snapCanvasCoord(y);
-      const snappedRight = snapCanvasCoord(x + w);
-      const snappedBottom = snapCanvasCoord(y + h);
       ctx.save();
       ctx.strokeStyle = "#ff6aa2";
-      ctx.lineWidth = Math.max(1.5, 2.2 / dpr);
+      ctx.lineWidth = toCanvasLineWidth(2.2);
+      const snappedLeft = snapCanvasCoord(x, ctx.lineWidth);
+      const snappedTop = snapCanvasCoord(y, ctx.lineWidth);
+      const snappedRight = snapCanvasCoord(x + w, ctx.lineWidth);
+      const snappedBottom = snapCanvasCoord(y + h, ctx.lineWidth);
       ctx.strokeRect(
         snappedLeft,
         snappedTop,
@@ -3985,9 +4307,15 @@ const MakingPage: React.FC = () => {
 
     if (selection.type === "color" && highlightedIndices.size > 0) {
       ctx.save();
-      const highlightFill = "rgba(255, 106, 162, 0.18)";
-      const selectedStroke = "rgba(255, 255, 255, 0.98)";
-      const selectedStrokeWidth = Math.max(1.5, 2.6 / dpr);
+      const highlightFill = colorSpotlightStyle.targetLift;
+      const targetStroke = colorSpotlightStyle.targetStroke;
+      const targetStrokeWidth = colorSpotlightStyle.targetStrokeWidth;
+      const selectedOuterStroke = colorSpotlightStyle.selectedOuterStroke;
+      const selectedInnerStroke = colorSpotlightStyle.selectedInnerStroke;
+      const selectedOuterStrokeWidth =
+        colorSpotlightStyle.selectedOuterStrokeWidth;
+      const selectedInnerStrokeWidth =
+        colorSpotlightStyle.selectedInnerStrokeWidth;
 
       for (let y = visibleStartY; y < visibleEndY; y++) {
         const globalY = displayStartY + y;
@@ -3996,30 +4324,54 @@ const MakingPage: React.FC = () => {
           const index = globalY * beadData.width + globalX;
           if (!highlightedIndices.has(index)) continue;
 
-          const px = x * drawCellWidth;
-          const py = y * drawCellHeight;
-          const snappedPx = snapCanvasCoord(px);
-          const snappedPy = snapCanvasCoord(py);
-          const snappedRight = snapCanvasCoord(px + drawCellWidth);
-          const snappedBottom = snapCanvasCoord(py + drawCellHeight);
+          const px = localXToScreen(x);
+          const py = localYToScreen(y);
+          const snappedPx = snapCanvasCoord(px, targetStrokeWidth);
+          const snappedPy = snapCanvasCoord(py, targetStrokeWidth);
+          const snappedRight = snapCanvasCoord(
+            px + drawCellWidth,
+            targetStrokeWidth,
+          );
+          const snappedBottom = snapCanvasCoord(
+            py + drawCellHeight,
+            targetStrokeWidth,
+          );
           const snappedWidth = Math.max(0, snappedRight - snappedPx);
           const snappedHeight = Math.max(0, snappedBottom - snappedPy);
 
           ctx.fillStyle = highlightFill;
           ctx.fillRect(snappedPx, snappedPy, snappedWidth, snappedHeight);
+          ctx.strokeStyle = targetStroke;
+          ctx.lineWidth = targetStrokeWidth;
+          ctx.strokeRect(
+            snappedPx + targetStrokeWidth * 0.5,
+            snappedPy + targetStrokeWidth * 0.5,
+            Math.max(0, snappedWidth - targetStrokeWidth),
+            Math.max(0, snappedHeight - targetStrokeWidth),
+          );
 
           if (
             selectedCell &&
             selectedCell.x === globalX &&
             selectedCell.y === globalY
           ) {
-            ctx.strokeStyle = selectedStroke;
-            ctx.lineWidth = selectedStrokeWidth;
+            ctx.strokeStyle = selectedOuterStroke;
+            ctx.lineWidth = selectedOuterStrokeWidth;
             ctx.strokeRect(
-              snappedPx + selectedStrokeWidth * 0.5,
-              snappedPy + selectedStrokeWidth * 0.5,
-              Math.max(0, snappedWidth - selectedStrokeWidth),
-              Math.max(0, snappedHeight - selectedStrokeWidth),
+              snappedPx + selectedOuterStrokeWidth * 0.5,
+              snappedPy + selectedOuterStrokeWidth * 0.5,
+              Math.max(0, snappedWidth - selectedOuterStrokeWidth),
+              Math.max(0, snappedHeight - selectedOuterStrokeWidth),
+            );
+            ctx.strokeStyle = selectedInnerStroke;
+            ctx.lineWidth = selectedInnerStrokeWidth;
+            const innerInset =
+              selectedOuterStrokeWidth + selectedInnerStrokeWidth * 0.5;
+            ctx.strokeRect(
+              snappedPx + innerInset,
+              snappedPy + innerInset,
+              Math.max(0, snappedWidth - innerInset * 2),
+              Math.max(0, snappedHeight - innerInset * 2),
             );
           }
         }
@@ -4032,7 +4384,7 @@ const MakingPage: React.FC = () => {
     displayHeight,
     displayWidth,
     getBlockRectBySelection,
-    getColorIndicesInBlock,
+    getSelectedColorHighlightIndices,
     showColorId,
     scale,
     safeRenderCellSize,
@@ -4042,11 +4394,16 @@ const MakingPage: React.FC = () => {
     currentBoardRect,
     assistPackEnabled,
     focusCurrentBoard,
+    gridEnhanceEnabled,
     selectedCell,
     physicalBoardCols,
     physicalBoardRows,
     physicalBoardSize,
-    renderDpr,
+    renderScale,
+    translateX,
+    translateY,
+    viewportHeight,
+    viewportWidth,
   ]);
 
   useLayoutEffect(() => {
@@ -4568,9 +4925,7 @@ const MakingPage: React.FC = () => {
                             <button
                               style={{
                                 ...styles.singleBoardMobileOverviewBtn,
-                                width: "auto",
-                                minWidth: "64px",
-                                padding: "0 12px",
+                                ...styles.singleBoardMobileNavRowFill,
                                 fontSize: "11px",
                               }}
                               onClick={() =>
@@ -4590,14 +4945,20 @@ const MakingPage: React.FC = () => {
                             </button>
                           )}
                           <button
-                            style={styles.singleBoardMobileSecondaryBtn}
+                            style={{
+                              ...styles.singleBoardMobileSecondaryBtn,
+                              ...styles.singleBoardMobileNavRowFill,
+                            }}
                             onClick={resetCurrentView}
                             disabled={!activeBoardRect}
                           >
                             复位
                           </button>
                           <button
-                            style={styles.singleBoardMobilePrimaryBtn}
+                            style={{
+                              ...styles.singleBoardMobilePrimaryBtn,
+                              ...styles.singleBoardMobileNavRowFill,
+                            }}
                             onClick={() => {
                               if (activeBoardDone && nextPendingBoardNumber) {
                                 activateBoard(nextPendingBoardNumber, true);
@@ -4614,6 +4975,7 @@ const MakingPage: React.FC = () => {
                           <button
                             style={{
                               ...styles.singleBoardMobileToolToggleBtn,
+                              ...styles.singleBoardMobileNavRowFill,
                               ...(singleBoardMobileToolbarExpanded
                                 ? styles.singleBoardMobileToolToggleBtnActive
                                 : {}),
@@ -4643,6 +5005,27 @@ const MakingPage: React.FC = () => {
                             }
                           >
                             {autoAdvanceOnBoardDone ? "自动切换" : "停留"}
+                          </button>
+                          <button
+                            style={styles.singleBoardMobileToolChip}
+                            onClick={handleOpenTraditionalOverview}
+                            title="切换到整图模式"
+                          >
+                            整图
+                          </button>
+                          <button
+                            style={{
+                              ...styles.singleBoardMobileToolChip,
+                              ...(gridEnhanceEnabled
+                                ? styles.singleBoardMobileToolChipActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setGridEnhanceEnabled((enabled) => !enabled)
+                            }
+                            title="切换清晰网格"
+                          >
+                            {gridEnhanceEnabled ? "清晰" : "轻网格"}
                           </button>
                           <button
                             style={styles.singleBoardMobileToolChip}
@@ -5550,22 +5933,6 @@ const MakingPage: React.FC = () => {
                       </button>
                     </div>
                     <div style={styles.settingRow}>
-                      <span style={styles.settingLabel}>辅助</span>
-                      <button
-                        style={{
-                          ...styles.actionBtn,
-                          padding: "8px 12px",
-                          fontSize: "12px",
-                        }}
-                        onClick={() => {
-                          setShowSettings(false);
-                          setShowVisionAssist(true);
-                        }}
-                      >
-                        打开
-                      </button>
-                    </div>
-                    <div style={styles.settingRow}>
                       <span style={styles.settingLabel}>自动切换</span>
                       <button
                         style={{
@@ -5662,7 +6029,7 @@ const MakingPage: React.FC = () => {
                   </button>
                 </div>
                 <div style={styles.settingRow}>
-                  <span style={styles.settingLabel}>视觉辅助（试验）</span>
+                  <span style={styles.settingLabel}>拍照同步（试验）</span>
                   <button
                     style={{
                       ...styles.actionBtn,
@@ -5671,10 +6038,10 @@ const MakingPage: React.FC = () => {
                     }}
                     onClick={() => {
                       setShowSettings(false);
-                      setShowVisionAssist(true);
+                      setShowPhotoProgressSync(true);
                     }}
                   >
-                    试用
+                    开始
                   </button>
                 </div>
                 <div style={styles.settingDivider} />
@@ -5692,6 +6059,27 @@ const MakingPage: React.FC = () => {
                       <CheckCircle size={16} weight="fill" />
                     ) : (
                       <CheckCircle size={16} />
+                    )}
+                  </button>
+                </div>
+                <div style={styles.settingRow}>
+                  <span style={styles.settingLabel}>
+                    {gridEnhanceEnabled ? "清晰网格" : "轻网格"}
+                  </span>
+                  <button
+                    style={{
+                      ...styles.toggleBtn,
+                      ...(gridEnhanceEnabled ? styles.toggleBtnActive : {}),
+                    }}
+                    onClick={() =>
+                      setGridEnhanceEnabled((enabled) => !enabled)
+                    }
+                    title="切换清晰网格"
+                  >
+                    {gridEnhanceEnabled ? (
+                      <GridFour size={16} weight="fill" />
+                    ) : (
+                      <GridFour size={16} />
                     )}
                   </button>
                 </div>
@@ -5759,7 +6147,8 @@ const MakingPage: React.FC = () => {
                       border: "1px solid rgba(255,255,255,0.3)",
                     }}
                   />
-                  区内{colorCountInBlock}颗 / 总计{colorCountTotal}颗
+                  {colorHighlightScopeLabel}
+                  {colorCountInHighlightScope}颗 / 总计{colorCountTotal}颗
                 </span>
               )}
             </div>
@@ -5800,8 +6189,8 @@ const MakingPage: React.FC = () => {
                 style={styles.canvas}
                 onClick={handleCanvasClick}
               />
-              <canvas ref={overlayCanvasRef} style={styles.overlayCanvas} />
             </div>
+            <canvas ref={overlayCanvasRef} style={styles.overlayCanvas} />
             <canvas
               ref={textOverlayCanvasRef}
               style={styles.textOverlayCanvas}
@@ -6078,7 +6467,7 @@ const MakingPage: React.FC = () => {
                             常用工具
                           </span>
                           <span style={styles.makingDesktopSidebarSlotText}>
-                            图纸导出、视觉辅助和常用开关
+                            图纸导出、拍照同步和常用开关
                           </span>
                         </div>
                         {showSidebarReplaceAction && (
@@ -6108,10 +6497,10 @@ const MakingPage: React.FC = () => {
                           style={styles.makingDesktopSidebarActionBtn}
                           onClick={() => {
                             setShowSettings(false);
-                            setShowVisionAssist(true);
+                            setShowPhotoProgressSync(true);
                           }}
                         >
-                          视觉辅助
+                          拍照同步
                         </button>
                       </div>
                       <div style={styles.makingDesktopSidebarToggleList}>
@@ -6199,6 +6588,29 @@ const MakingPage: React.FC = () => {
                               <CheckCircle size={16} weight="fill" />
                             ) : (
                               <CheckCircle size={16} />
+                            )}
+                          </button>
+                        </div>
+                        <div style={styles.makingDesktopSidebarToggleRow}>
+                          <span style={styles.makingDesktopSidebarToggleLabel}>
+                            {gridEnhanceEnabled ? "清晰网格" : "轻网格"}
+                          </span>
+                          <button
+                            style={{
+                              ...styles.toggleBtn,
+                              ...(gridEnhanceEnabled
+                                ? styles.toggleBtnActive
+                                : {}),
+                            }}
+                            onClick={() =>
+                              setGridEnhanceEnabled((enabled) => !enabled)
+                            }
+                            title="切换清晰网格"
+                          >
+                            {gridEnhanceEnabled ? (
+                              <GridFour size={16} weight="fill" />
+                            ) : (
+                              <GridFour size={16} />
                             )}
                           </button>
                         </div>
@@ -6664,6 +7076,9 @@ const MakingPage: React.FC = () => {
           visible={showExportModal}
           onClose={() => setShowExportModal(false)}
           beadData={beadData}
+          defaultPaginateMode={viewMode === "singleBoard"}
+          defaultBoardSize={physicalBoardSize}
+          includeOverview={viewMode === "singleBoard"}
           onNeedRewardUnlock={(_reason, onUnlocked) => {
             pendingExportAfterRewardRef.current = onUnlocked || null;
             setShowRewardedUnlockModal(true);
@@ -6705,13 +7120,13 @@ const MakingPage: React.FC = () => {
       )}
 
       {beadData && visionBoardRecommendation && (
-        <BoardVisionAssistModal
-          visible={showVisionAssist}
-          onClose={() => setShowVisionAssist(false)}
+        <PhotoProgressSyncModal
+          visible={showPhotoProgressSync}
+          onClose={() => setShowPhotoProgressSync(false)}
           beadData={beadData}
           boardSize={visionBoardRecommendation.boardSize}
           initialBoardIndex={visionInitialBoardIndex}
-          initialColorId={visionInitialColorId}
+          projectId={photoProgressProjectId}
         />
       )}
 
@@ -7084,7 +7499,7 @@ const styles: Record<string, React.CSSProperties> = {
     background:
       "linear-gradient(145deg, #7fd8ff 0%, #85b7ff 55%, #ff93bf 100%)",
     color: "#ffffff",
-    borderColor: "rgba(126,163,255,0.45)",
+    border: "1px solid rgba(126,163,255,0.45)",
     boxShadow: makingCandy.shadow,
   },
 
@@ -7569,11 +7984,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   singleBoardMobileNavRow: {
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     alignItems: "center",
     gap: "4px",
-    flexWrap: "wrap" as const,
     minWidth: 0,
+  },
+
+  singleBoardMobileNavRowFill: {
+    width: "100%",
+    minWidth: 0,
+    height: "28px",
+    padding: "0 8px",
   },
 
   singleBoardMobileToolRow: {
@@ -7606,7 +8028,7 @@ const styles: Record<string, React.CSSProperties> = {
   singleBoardMobileToolToggleBtnActive: {
     background:
       "linear-gradient(145deg, rgba(255,255,255,0.98), rgba(255,248,240,0.96))",
-    borderColor: makingCandy.borderStrong,
+    border: `1px solid ${makingCandy.borderStrong}`,
   },
 
   singleBoardMobileToolChip: {
@@ -7627,7 +8049,7 @@ const styles: Record<string, React.CSSProperties> = {
     background:
       "linear-gradient(145deg, rgba(125,211,252,0.18), rgba(244,114,182,0.16))",
     color: makingCandy.text,
-    borderColor: makingCandy.borderStrong,
+    border: `1px solid ${makingCandy.borderStrong}`,
   },
 
   singleBoardMobileOverviewBtn: {
@@ -8546,7 +8968,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   toggleBtnActive: {
     background: `${colors.bead.cyan}20`,
-    borderColor: colors.bead.cyan,
+    border: `1px solid ${colors.bead.cyan}`,
     color: colors.bead.cyan,
   },
 
@@ -8622,7 +9044,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     height: "100%",
     pointerEvents: "none" as const,
-    imageRendering: "pixelated",
+    imageRendering: "auto",
   },
 
   textOverlayCanvas: {

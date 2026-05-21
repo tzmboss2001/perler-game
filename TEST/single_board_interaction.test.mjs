@@ -2,8 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildCompletedSingleBoardOnboardingState,
+  buildOverviewExportFilename,
+  buildPaginatedBoardExportFilename,
   clampSingleBoardMobileOverviewOffset,
   clampSingleBoardMobileOverviewWidth,
+  getColorIndicesInRectByIdFirst,
   getMakingDesktopSingleBoardUiFlags,
   getMakingDesktopLayoutFlags,
   getMakingDesktopSidebarLayout,
@@ -11,6 +14,7 @@ import {
   getTextOverlayVisualState,
   getSafeRenderMetricsBudget,
   getColorIdTextStyle,
+  getColorSpotlightVisualStyle,
   getRenderScaleAnchorDelayMs,
   getSingleBoardMobileUiFlags,
   getSingleBoardMobileOverviewLayout,
@@ -31,12 +35,121 @@ import {
   getSingleBoardMinScale,
   getSingleBoardSwipeStatus,
   parseSingleBoardOnboardingState,
+  resolveColorCellSelection,
   resolveSingleBoardSwipeDirection,
   shouldShowSingleBoardMobileOverviewButton,
 } from "../perler-beads/src/utils/singleBoardInteraction.js";
 
 test("single board min scale follows fit scale instead of snapping to fit scale", () => {
   assert.equal(getSingleBoardMinScale({ fitScale: 0.63, baseMinScale: 0.2 }), 0.2835);
+});
+
+test("color highlight collection prefers bead id and stays inside the requested rect", () => {
+  const redA = { id: "A01", hex: "#ff0000" };
+  const redB = { id: "B01", hex: "#ff0000" };
+  const blue = { id: "C01", hex: "#0000ff" };
+  const beads = [
+    redA, redB, blue,
+    redA, redA, redB,
+    blue, redA, redA,
+  ];
+
+  assert.deepEqual(
+    getColorIndicesInRectByIdFirst({
+      beads,
+      width: 3,
+      rect: { startX: 0, startY: 0, endX: 3, endY: 2 },
+      colorId: "A01",
+      colorHex: "#ff0000",
+    }),
+    [0, 3, 4],
+  );
+});
+
+test("color spotlight visual style makes non-target cells recede behind selected colors", () => {
+  const style = getColorSpotlightVisualStyle({ dpr: 2 });
+
+  assert.equal(style.outsideScopeDim, "rgba(0, 0, 0, 0.72)");
+  assert.equal(style.insideScopeDim, "rgba(0, 0, 0, 0.56)");
+  assert.equal(style.targetLift, "rgba(255, 255, 255, 0.10)");
+  assert.equal(style.targetStroke, "rgba(255, 255, 255, 0.92)");
+  assert.equal(style.selectedOuterStroke, "rgba(255, 40, 136, 1)");
+  assert.ok(style.selectedOuterStrokeWidth > style.targetStrokeWidth);
+  assert.ok(style.selectedInnerStrokeWidth >= style.targetStrokeWidth);
+});
+
+test("color cell selection moves to another same-color cell and only repeated same-cell click clears", () => {
+  const previousSelection = {
+    type: "color",
+    blockX: 1,
+    blockY: 2,
+    colorId: "A01",
+    colorHex: "#ff0000",
+  };
+  const nextBead = { id: "A01", hex: "#ff0000" };
+
+  assert.deepEqual(
+    resolveColorCellSelection({
+      previousSelection,
+      previousSelectedCell: { x: 4, y: 5 },
+      nextCell: { x: 6, y: 7 },
+      nextBead,
+      blockX: 1,
+      blockY: 2,
+    }),
+    {
+      selection: {
+        type: "color",
+        blockX: 1,
+        blockY: 2,
+        colorHex: "#ff0000",
+        colorId: "A01",
+      },
+      selectedCell: { x: 6, y: 7 },
+      shouldClearTooltip: false,
+    },
+  );
+
+  assert.deepEqual(
+    resolveColorCellSelection({
+      previousSelection,
+      previousSelectedCell: { x: 4, y: 5 },
+      nextCell: { x: 4, y: 5 },
+      nextBead,
+      blockX: 1,
+      blockY: 2,
+    }),
+    {
+      selection: { type: null, blockX: 0, blockY: 0 },
+      selectedCell: null,
+      shouldClearTooltip: true,
+    },
+  );
+});
+
+test("paginated board export filename carries board and page position", () => {
+  assert.equal(
+    buildPaginatedBoardExportFilename({
+      width: 156,
+      height: 104,
+      boardNumber: 2,
+      pageIndex: 1,
+      totalPages: 6,
+      timestamp: "20260515",
+    }),
+    "perler-156x104-board2-p2of6-20260515.png",
+  );
+});
+
+test("overview export filename is separate from board pages", () => {
+  assert.equal(
+    buildOverviewExportFilename({
+      width: 156,
+      height: 104,
+      timestamp: "20260515",
+    }),
+    "perler-156x104-overview-20260515.png",
+  );
 });
 
 test("single-board layout flags distinguish desktop from mobile", () => {
@@ -475,6 +588,22 @@ test("mobile single-board immersive mode allows conservative pan slack when boar
   );
 });
 
+test("mobile single-board pinch shrink can clamp without immersive vertical slack near fit", () => {
+  assert.deepEqual(
+    clampMakingStageTranslate({
+      x: 0,
+      y: 200,
+      canvasWidth: 570,
+      canvasHeight: 570,
+      wrapperWidth: 390,
+      wrapperHeight: 791,
+      isSingleBoardMobileImmersive: true,
+      allowImmersiveVerticalSlack: false,
+    }),
+    { x: 0, y: 0 },
+  );
+});
+
 test("mobile single-board immersive mode keeps normal bounds once board exceeds viewport", () => {
   assert.deepEqual(
     clampMakingStageTranslate({
@@ -772,6 +901,13 @@ test("live stage display scale uses committed render scale during delayed redraw
       committedRenderScale: 1,
     }),
     1.5,
+  );
+  assert.equal(
+    getLiveStageDisplayScale({
+      targetScale: 1,
+      committedRenderScale: 2,
+    }),
+    0.5,
   );
 });
 
