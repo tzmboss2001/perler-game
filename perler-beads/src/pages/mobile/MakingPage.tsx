@@ -69,6 +69,9 @@ import {
   getSingleBoardMobileToolbarState,
   SINGLE_BOARD_MOBILE_TOP_CHROME_BASE_OFFSET,
   getSingleBoardOverviewTitle,
+  formatScreenSpaceOverlayTransform,
+  getScreenSpaceOverlayTransitionTransform,
+  getScreenSpaceOverlayVisualState,
   getTextOverlayTransitionTransform,
   getTextOverlayVisualState,
   getSingleBoardAutoFocusScaleDecision,
@@ -351,6 +354,11 @@ const MakingPage: React.FC = () => {
     dpr: 1,
   });
   const textOverlayVisualStateRef = useRef<{
+    stageLeft: number;
+    stageTop: number;
+    cellScreenSize: number;
+  } | null>(null);
+  const overlayVisualStateRef = useRef<{
     stageLeft: number;
     stageTop: number;
     cellScreenSize: number;
@@ -1297,6 +1305,31 @@ const MakingPage: React.FC = () => {
         predictedRenderMetrics?.renderScale ?? renderScaleRef.current;
       applyStageTransformStyle(nextScale, clamped.x, clamped.y);
       if (
+        overlayCanvasRef.current &&
+        wrapperRef.current &&
+        predictedRenderMetrics
+      ) {
+        const nextOverlayVisualState = getScreenSpaceOverlayVisualState({
+          wrapperWidth: wrapperRef.current.clientWidth,
+          wrapperHeight: wrapperRef.current.clientHeight,
+          safeRenderCanvasWidth: predictedRenderMetrics.safeRenderCanvasWidth,
+          safeRenderCanvasHeight: predictedRenderMetrics.safeRenderCanvasHeight,
+          safeRenderCellSize: predictedRenderMetrics.safeRenderCellSize,
+          renderScale: predictedRenderScale,
+          scale: nextScale,
+          translateX: clamped.x,
+          translateY: clamped.y,
+        });
+        const overlayTransitionTransform =
+          getScreenSpaceOverlayTransitionTransform({
+            prevVisualState: overlayVisualStateRef.current,
+            nextVisualState: nextOverlayVisualState,
+          });
+        overlayCanvasRef.current.style.transformOrigin = "0 0";
+        overlayCanvasRef.current.style.transform =
+          formatScreenSpaceOverlayTransform(overlayTransitionTransform);
+      }
+      if (
         textOverlayCanvasRef.current &&
         wrapperRef.current &&
         predictedRenderMetrics
@@ -1318,7 +1351,8 @@ const MakingPage: React.FC = () => {
         });
         if (transitionTransform) {
           textOverlayCanvasRef.current.style.transformOrigin = "0 0";
-          textOverlayCanvasRef.current.style.transform = `matrix(${transitionTransform.scale}, 0, 0, ${transitionTransform.scale}, ${transitionTransform.translateX}, ${transitionTransform.translateY})`;
+          textOverlayCanvasRef.current.style.transform =
+            formatScreenSpaceOverlayTransform(transitionTransform);
         }
       }
       if (options?.immediate) {
@@ -3671,19 +3705,22 @@ const MakingPage: React.FC = () => {
     if (wrapperWidth <= 0 || wrapperHeight <= 0) return;
 
     const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const stageDisplayScale = getLiveStageDisplayScale({
-      targetScale: scale,
-      committedRenderScale: renderScale,
+    const currentOverlayVisualState = getScreenSpaceOverlayVisualState({
+      wrapperWidth,
+      wrapperHeight,
+      safeRenderCanvasWidth,
+      safeRenderCanvasHeight,
+      safeRenderCellSize,
+      renderScale,
+      scale,
+      translateX,
+      translateY,
     });
-    const drawCellWidth = safeRenderCellSize * stageDisplayScale;
-    const drawCellHeight = safeRenderCellSize * stageDisplayScale;
+    const drawCellWidth = currentOverlayVisualState.cellScreenSize;
+    const drawCellHeight = currentOverlayVisualState.cellScreenSize;
     const drawCellSize = drawCellWidth;
-    const stageLeft =
-      (wrapperWidth - safeRenderCanvasWidth * stageDisplayScale) / 2 +
-      translateX;
-    const stageTop =
-      (wrapperHeight - safeRenderCanvasHeight * stageDisplayScale) / 2 +
-      translateY;
+    const stageLeft = currentOverlayVisualState.stageLeft;
+    const stageTop = currentOverlayVisualState.stageTop;
     const displayStartX = displayBoardRect.startX;
     const displayStartY = displayBoardRect.startY;
     const localXToScreen = (x: number) => stageLeft + x * drawCellWidth;
@@ -3724,6 +3761,9 @@ const MakingPage: React.FC = () => {
     canvas.height = Math.max(1, Math.floor(wrapperHeight * dpr));
     canvas.style.width = `${wrapperWidth}px`;
     canvas.style.height = `${wrapperHeight}px`;
+    canvas.style.transform = "none";
+    canvas.style.transformOrigin = "0 0";
+    overlayVisualStateRef.current = currentOverlayVisualState;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);

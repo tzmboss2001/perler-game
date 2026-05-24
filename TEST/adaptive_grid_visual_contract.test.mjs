@@ -149,3 +149,27 @@ test("interactive grid overlay uses viewport backing store instead of scaled art
   assert.match(setupSource, /canvas\.width = Math\.max\(1, Math\.floor\(wrapperWidth \* dpr\)\)/);
   assert.doesNotMatch(setupSource, /safeRenderCanvasWidth \* dpr/);
 });
+
+test("interactive grid overlay follows live translate before viewport redraw", () => {
+  const commitStart = source.indexOf("const commitTranslate = useCallback");
+  const commitEnd = source.indexOf("const applyScaleAtPoint = useCallback", commitStart);
+  const commitSource = source.slice(commitStart, commitEnd);
+
+  assert.ok(commitStart > -1);
+  assert.ok(commitEnd > commitStart);
+  assert.match(commitSource, /overlayCanvasRef\.current/);
+  assert.match(commitSource, /getScreenSpaceOverlayVisualState/);
+  assert.match(commitSource, /getScreenSpaceOverlayTransitionTransform/);
+  assert.match(commitSource, /formatScreenSpaceOverlayTransform/);
+});
+
+test("interactive grid overlay clears live transform after exact redraw", () => {
+  const effectStart = source.indexOf("!overlayCanvasRef.current");
+  const effectEnd = source.indexOf("ctx.setTransform", effectStart);
+  const setupSource = source.slice(effectStart, effectEnd);
+
+  assert.ok(effectStart > -1);
+  assert.ok(effectEnd > effectStart);
+  assert.match(setupSource, /canvas\.style\.transform = "none"/);
+  assert.match(setupSource, /overlayVisualStateRef\.current = currentOverlayVisualState/);
+});

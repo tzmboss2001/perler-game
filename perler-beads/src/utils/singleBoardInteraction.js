@@ -373,6 +373,49 @@ export function getTextOverlayVisualState({
 
 /**
  * @param {{
+ *   wrapperWidth: number;
+ *   wrapperHeight: number;
+ *   safeRenderCanvasWidth: number;
+ *   safeRenderCanvasHeight: number;
+ *   safeRenderCellSize: number;
+ *   renderScale: number;
+ *   scale: number;
+ *   translateX: number;
+ *   translateY: number;
+ * }} input
+ */
+export function getScreenSpaceOverlayVisualState({
+  wrapperWidth,
+  wrapperHeight,
+  safeRenderCanvasWidth,
+  safeRenderCanvasHeight,
+  safeRenderCellSize,
+  renderScale,
+  scale,
+  translateX,
+  translateY,
+}) {
+  const currentDisplayScale = getLiveStageDisplayScale({
+    targetScale: scale,
+    committedRenderScale: renderScale,
+  });
+  const visualCanvasWidth = safeRenderCanvasWidth * currentDisplayScale;
+  const visualCanvasHeight = safeRenderCanvasHeight * currentDisplayScale;
+  return {
+    stageLeft: Number(
+      (((wrapperWidth - visualCanvasWidth) / 2) + translateX).toFixed(4),
+    ),
+    stageTop: Number(
+      (((wrapperHeight - visualCanvasHeight) / 2) + translateY).toFixed(4),
+    ),
+    cellScreenSize: Number(
+      (safeRenderCellSize * currentDisplayScale).toFixed(4),
+    ),
+  };
+}
+
+/**
+ * @param {{
  *   prevVisualState: { stageLeft: number; stageTop: number; cellScreenSize: number } | null;
  *   nextVisualState: { stageLeft: number; stageTop: number; cellScreenSize: number } | null;
  * }} input
@@ -402,6 +445,24 @@ export function getTextOverlayTransitionTransform({
       (nextVisualState.stageTop - scale * prevVisualState.stageTop).toFixed(4),
     ),
   };
+}
+
+/**
+ * @param {{
+ *   prevVisualState: { stageLeft: number; stageTop: number; cellScreenSize: number } | null;
+ *   nextVisualState: { stageLeft: number; stageTop: number; cellScreenSize: number } | null;
+ * }} input
+ */
+export function getScreenSpaceOverlayTransitionTransform(input) {
+  return getTextOverlayTransitionTransform(input);
+}
+
+/**
+ * @param {{ scale: number; translateX: number; translateY: number } | null} transform
+ */
+export function formatScreenSpaceOverlayTransform(transform) {
+  if (!transform) return "none";
+  return `matrix(${transform.scale}, 0, 0, ${transform.scale}, ${transform.translateX}, ${transform.translateY})`;
 }
 
 /**

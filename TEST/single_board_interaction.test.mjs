@@ -32,11 +32,14 @@ import {
   getSingleBoardMobileTopChromeOffset,
   getSingleBoardMobileToolbarState,
   getNeighborBoardNumber,
+  getScreenSpaceOverlayTransitionTransform,
+  getScreenSpaceOverlayVisualState,
   getSingleBoardMinScale,
   getSingleBoardSwipeStatus,
   parseSingleBoardOnboardingState,
   resolveColorCellSelection,
   resolveSingleBoardSwipeDirection,
+  formatScreenSpaceOverlayTransform,
   shouldShowSingleBoardMobileOverviewButton,
 } from "../perler-beads/src/utils/singleBoardInteraction.js";
 
@@ -908,6 +911,52 @@ test("live stage display scale uses committed render scale during delayed redraw
       committedRenderScale: 2,
     }),
     0.5,
+  );
+});
+
+test("screen-space overlay visual state follows live stage display scale below committed render scale", () => {
+  assert.deepEqual(
+    getScreenSpaceOverlayVisualState({
+      wrapperWidth: 400,
+      wrapperHeight: 300,
+      safeRenderCanvasWidth: 240,
+      safeRenderCanvasHeight: 240,
+      safeRenderCellSize: 10,
+      renderScale: 2,
+      scale: 1,
+      translateX: 10,
+      translateY: -5,
+    }),
+    {
+      stageLeft: 150,
+      stageTop: 85,
+      cellScreenSize: 5,
+    },
+  );
+});
+
+test("screen-space overlay transition follows drag before React redraw catches up", () => {
+  const transform = getScreenSpaceOverlayTransitionTransform({
+    prevVisualState: {
+      stageLeft: 150,
+      stageTop: 85,
+      cellScreenSize: 5,
+    },
+    nextVisualState: {
+      stageLeft: 198,
+      stageTop: 100,
+      cellScreenSize: 5,
+    },
+  });
+
+  assert.deepEqual(transform, {
+    scale: 1,
+    translateX: 48,
+    translateY: 15,
+  });
+  assert.equal(
+    formatScreenSpaceOverlayTransform(transform),
+    "matrix(1, 0, 0, 1, 48, 15)",
   );
 });
 
